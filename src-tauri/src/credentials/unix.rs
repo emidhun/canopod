@@ -3,7 +3,8 @@ use std::{ffi::CString, fs::{self, OpenOptions}, io, os::{fd::{AsRawFd, FromRawF
 
 pub(super) type Directory = File;
 
-pub(super) fn prepare_directory(path: &Path) -> io::Result<Directory> {
+pub(super) fn prepare_directory(path: &Path, create: bool) -> io::Result<Directory> {
+    if !create { return validate_directory(path) }
     match fs::DirBuilder::new().mode(0o700).create(path) {
         Ok(()) => {},
         Err(error) if error.kind() == io::ErrorKind::AlreadyExists => {},

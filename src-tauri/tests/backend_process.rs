@@ -1,5 +1,4 @@
 //! Exercise the actual GUI-free executable, not a mock lifecycle.
-#![cfg(unix)]
 use std::{io::{BufRead, BufReader}, path::PathBuf, process::{Child, Command, Stdio}, time::{Duration, Instant}};
 
 struct ChildGuard(Child);
@@ -10,15 +9,27 @@ struct Directory(PathBuf);
 impl Drop for Directory { fn drop(&mut self) { let _ = std::fs::remove_dir_all(&self.0); } }
 
 #[test]
-fn foreground_duplicate_launch_and_sigterm_release_the_owner() {
-    let dir = Directory(std::env::temp_dir().join(format!("canopy-backend-process-{}", std::process::id())));
+fn foreground_duplicate_launch_status_and_stop_release_the_owner() {
+    #[cfg(unix)]
+    let methods = ["api", "signal"];
+    #[cfg(not(unix))]
+    let methods = ["api"];
+    for method in methods { run_lifecycle(method); }
+}
+
+fn run_lifecycle(method: &str) {
+    let dir = Directory(std::env::temp_dir().join(format!("canopy-backend-process-{}-{method}", std::process::id())));
     std::fs::create_dir_all(&dir.0).unwrap();
-    let command = || {
+    let reservation = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+    let port = reservation.local_addr().unwrap().port().to_string();
+    drop(reservation);
+    let command = |action: &str| {
         let mut c = Command::new(env!("CARGO_BIN_EXE_canopy-backend"));
-        c.arg("serve").arg("--data-dir").arg(&dir.0).arg("--config-dir").arg(&dir.0).arg("--log-dir").arg(&dir.0);
+        c.arg(action).arg("--data-dir").arg(&dir.0).arg("--config-dir").arg(&dir.0).arg("--log-dir").arg(&dir.0);
+        if action == "serve" { c.arg("--port").arg(&port); }
         c
     };
-    let mut child = ChildGuard(command().stderr(Stdio::piped()).spawn().unwrap());
+    let mut child = ChildGuard(command("serve").stderr(Stdio::piped()).spawn().unwrap());
     let stderr = child.0.stderr.take().unwrap();
     let (send, receive) = std::sync::mpsc::channel();
     let reader = std::thread::spawn(move || {
@@ -27,15 +38,28 @@ fn foreground_duplicate_launch_and_sigterm_release_the_owner() {
         }
     });
     receive.recv_timeout(Duration::from_secs(15)).expect("backend did not become ready");
-    let second = command().output().unwrap();
+    let second = command("serve").output().unwrap();
     assert!(!second.status.success());
     assert!(String::from_utf8_lossy(&second.stderr).contains("another Canopy backend"));
     assert!(child.0.try_wait().unwrap().is_none());
-    unsafe { assert_eq!(libc::kill(child.0.id() as i32, libc::SIGTERM), 0); }
+    let status = command("status").output().unwrap();
+    assert!(status.status.success(), "{}", String::from_utf8_lossy(&status.stderr));
+    let snapshot: serde_json::Value = serde_json::from_slice(&status.stdout).unwrap();
+    assert_eq!(snapshot["pid"], child.0.id());
+    assert_eq!(snapshot["apiVersion"], "1");
+    if method == "api" {
+        let stop = command("stop").output().unwrap();
+        assert!(stop.status.success(), "{}", String::from_utf8_lossy(&stop.stderr));
+        let response: serde_json::Value = serde_json::from_slice(&stop.stdout).unwrap();
+        assert_eq!(response["status"], "stopping");
+    } else {
+        #[cfg(unix)]
+        unsafe { assert_eq!(libc::kill(child.0.id() as i32, libc::SIGTERM), 0); }
+    }
     let deadline = Instant::now() + Duration::from_secs(12);
     loop {
         if let Some(status) = child.0.try_wait().unwrap() { assert!(status.success()); break }
-        assert!(Instant::now() < deadline, "SIGTERM shutdown timed out");
+        assert!(Instant::now() < deadline, "{method} shutdown timed out");
         std::thread::sleep(Duration::from_millis(20));
     }
     reader.join().unwrap();

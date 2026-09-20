@@ -110,8 +110,8 @@ Build with `cargo build --manifest-path src-tauri/Cargo.toml --no-default-featur
 process supervisor. Directory defaults match Tauri's platform paths and bundle
 identifier. `--config-dir`, `--data-dir`, and `--log-dir` accept existing directories
 for isolated installations; invalid paths and duplicate flags fail explicitly.
-There is no network listener in this slice, so it is not yet usable through MCP
-or a browser. The desktop still hosts its own runtime and must be closed first.
+The authenticated control listener is described below; MCP and browser
+management are not implemented yet. The desktop still hosts its own runtime and must be closed first.
 
 Startup acquires the data-directory lock before reading state. It also refuses
 startup if a known legacy Canopy desktop process is visible. This conservative
@@ -140,7 +140,7 @@ no shutdown effect. Tests exercise a real long-running service across client
 detach and explicit shutdown, and an actual backend subprocess through duplicate
 launch and SIGTERM. Windows console-signal runtime testing remains pending.
 
-Application authentication, versioned status/stop/bootstrap, MCP transport,
+Desktop bootstrap, full application RPC, MCP transport,
 service installation and moving the desktop to client-only operation remain
 acceptance gates for #156; the foreground binary alone does not complete it.
 
@@ -176,6 +176,41 @@ returned alongside the committed new token as a durability warning, so callers
 cannot accidentally retain an old in-memory token after committing a new file.
 Single runtime ownership and serialized rotation are caller requirements.
 
-This slice does not create an HTTP listener, enable MCP, generate credentials
-at startup, or change permission profiles. Wire authentication, revocation and
-session invalidation through the later application/MCP transport layers.
+The primitive itself opens no sockets and changes no permission profiles. The
+application host below explicitly creates its own credential when needed. MCP
+revocation and session invalidation belong to its later transport layer.
+
+## Authenticated application control API
+
+`canopy-backend serve` now listens at `http://127.0.0.1:47831` by default.
+`serve --port <nonzero-port>` selects and persists an explicit port in
+`backend.json` in the config directory. A bind failure never chooses another
+port. The application token is loaded or created in private storage after
+binding succeeds; it is never printed. MCP remains disabled and `/mcp` is absent.
+This application listener is independent of future MCP enablement.
+
+`canopy-backend status` and `canopy-backend stop` read the existing private
+application credential and attach without creating state or launching a GUI.
+They disable proxy use and redirects and bound connect/request/response sizes.
+The API requires the application bearer plus `X-Canopy-Api-Version: 1`; unknown
+versions fail explicitly. Host must match the exact IPv4 endpoint, and any Origin
+must match its origin. Native clients without Origin still require the bearer.
+MCP credentials are rejected on application routes. No wildcard CORS is enabled.
+
+`GET /api/v1/status` returns only cached aggregate counts, API/backend versions,
+pid and uptime. It does not spawn subprocesses, claim services are ready, or
+return repository settings/secrets. Initial cached worktree counts can be zero
+while the first background scan runs. `POST /api/v1/stop` returns 202 and asks the
+independent supervisor to stop. Disconnecting a client does not request shutdown.
+
+The control server admits 32 connections and 8 authenticated requests, limits
+bodies to 64 KiB, gives headers and request bodies five seconds each, and caps
+handlers at ten seconds. Control connections have a 60-second maximum lifetime.
+Header timeout is applied in Hyper itself; request middleware alone cannot time
+out headers it has not received yet. Shutdown closes admission and gives accepted
+connections two seconds to flush while child cleanup proceeds independently.
+The core remains owned until its runtime and connection contexts are released.
+
+These are native application control endpoints, not browser pairing or general
+RPC. Snapshot reconciliation, browser sessions/CSRF, desktop attachment, MCP
+transport and live token-rotation/session invalidation remain later slices.

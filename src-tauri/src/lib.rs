@@ -3,6 +3,7 @@ mod commands;
 #[cfg(feature = "desktop")]
 mod desktop_host;
 pub mod backend;
+pub mod app_api;
 pub mod credentials;
 pub mod operations;
 pub mod runtime;

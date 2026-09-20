@@ -57,11 +57,15 @@ fn attributes(sd: &Allocation) -> SECURITY_ATTRIBUTES {
 // cannot be swapped between validation and a later Win32 path-based open or
 // rename while these handles live. The leaf DACL remains owner-only.
 pub(super) struct Directory { handles: Vec<File> }
-pub(super) fn prepare_directory(path: &Path) -> io::Result<Directory> {
+pub(super) fn prepare_directory(path: &Path, create: bool) -> io::Result<Directory> {
     let mut handles = Vec::new();
     let mut parents: Vec<_> = path.parent().ok_or_else(|| denied("credential parent missing"))?.ancestors().collect();
     parents.reverse();
     for parent in parents { handles.push(open_handle(parent, false, true, false)?); }
+    if !create {
+        handles.push(open_handle(path, false, true, true)?);
+        return Ok(Directory { handles });
+    }
     let sd = descriptor()?;
     let path_w = wide(path)?;
     let created = unsafe { CreateDirectoryW(PCWSTR(path_w.as_ptr()), Some(&attributes(&sd))) };

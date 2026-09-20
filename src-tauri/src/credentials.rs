@@ -59,8 +59,14 @@ pub struct Rotation {
 
 impl CredentialStore {
     pub fn open(data: &Path) -> io::Result<Self> {
+        Self::open_mode(data, true)
+    }
+
+    pub fn open_existing(data: &Path) -> io::Result<Self> { Self::open_mode(data, false) }
+
+    fn open_mode(data: &Path, create: bool) -> io::Result<Self> {
         let directory = fs::canonicalize(data)?.join("credentials");
-        let anchor = platform::prepare_directory(&directory)?;
+        let anchor = platform::prepare_directory(&directory, create)?;
         Ok(Self { directory, anchor })
     }
 
@@ -161,6 +167,13 @@ mod tests {
         drop(file);
         assert!(store.load(CredentialKind::Mcp).is_err());
         assert_eq!(fs::metadata(path).unwrap().len(), 4096);
+    }
+
+    #[test]
+    fn read_only_attachment_never_creates_missing_storage() {
+        let fixture = Fixture::new();
+        assert!(CredentialStore::open_existing(&fixture.0).is_err());
+        assert!(!fixture.0.join("credentials").exists());
     }
 
     #[test]

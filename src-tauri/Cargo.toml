@@ -54,6 +54,10 @@ dirs = "6"
 getrandom = "0.4"
 subtle = "2.6"
 zeroize = "1"
+# Loopback application API; protocol-specific MCP handlers remain separate.
+axum = { version = "=0.8.9", default-features = false, features = ["http1", "json", "tokio"] }
+hyper = { version = "1", features = ["server", "http1"] }
+hyper-util = { version = "0.1", features = ["tokio", "service"] }
 # non-poisoning locks: with std, one panic while holding a lock poisons it and
 # every later .unwrap() panics forever — the app survives as a zombie window.
 parking_lot = "0.12"
