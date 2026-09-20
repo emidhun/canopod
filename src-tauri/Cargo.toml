@@ -50,6 +50,10 @@ fix-path-env = { git = "https://github.com/tauri-apps/fix-path-env-rs", rev = "c
 sysinfo = "0.39.3"
 # Match Tauri's platform paths without linking a desktop runtime.
 dirs = "6"
+# OS entropy and audited constant-time bearer comparison.
+getrandom = "0.4"
+subtle = "2.6"
+zeroize = "1"
 # non-poisoning locks: with std, one panic while holding a lock poisons it and
 # every later .unwrap() panics forever — the app survives as a zombie window.
 parking_lot = "0.12"
@@ -80,6 +84,8 @@ libc = "0.2"
 windows = { version = "0.62", features = [
     "Win32_Foundation",
     "Win32_Security",
+    "Win32_Security_Authorization",
+    "Win32_Storage_FileSystem",
     "Win32_System_JobObjects",
     "Win32_System_Threading",
     "Win32_System_Diagnostics_ToolHelp",

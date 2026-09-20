@@ -1,0 +1,144 @@
+use super::{denied, File, Path};
+use std::{ffi::CString, fs::{self, OpenOptions}, io, os::{fd::{AsRawFd, FromRawFd}, unix::{ffi::OsStrExt, fs::{DirBuilderExt, MetadataExt, OpenOptionsExt}}}};
+
+pub(super) type Directory = File;
+
+pub(super) fn prepare_directory(path: &Path) -> io::Result<Directory> {
+    match fs::DirBuilder::new().mode(0o700).create(path) {
+        Ok(()) => {},
+        Err(error) if error.kind() == io::ErrorKind::AlreadyExists => {},
+        Err(error) => return Err(error),
+    }
+    validate_directory(path)
+}
+
+fn validate_directory(path: &Path) -> io::Result<Directory> {
+    let file = OpenOptions::new().read(true).custom_flags(libc::O_NOFOLLOW | libc::O_DIRECTORY | libc::O_CLOEXEC).open(path)?;
+    check_directory(&file)?;
+    Ok(file)
+}
+pub(super) fn check_directory(directory: &Directory) -> io::Result<()> {
+    let meta = directory.metadata()?;
+    if !meta.is_dir() || meta.uid() != unsafe { libc::geteuid() } || meta.mode() & 0o077 != 0 {
+        return Err(denied("credential directory must be owned by the current user with mode 0700"));
+    }
+    Ok(())
+}
+fn name(path: &Path) -> io::Result<CString> {
+    CString::new(path.file_name().ok_or_else(|| denied("credential filename missing"))?.as_bytes())
+        .map_err(|_| denied("credential filename contains NUL"))
+}
+fn relative_open(directory: &Directory, path: &Path, flags: i32) -> io::Result<File> {
+    let name = name(path)?;
+    let fd = unsafe { libc::openat(directory.as_raw_fd(), name.as_ptr(), flags | libc::O_NOFOLLOW | libc::O_CLOEXEC | libc::O_NONBLOCK, 0o600 as libc::c_uint) };
+    if fd < 0 { return Err(io::Error::last_os_error()) }
+    validate(unsafe { File::from_raw_fd(fd) })
+}
+
+fn validate(file: File) -> io::Result<File> {
+    let meta = file.metadata()?;
+    if !meta.is_file() || meta.nlink() != 1 || meta.uid() != unsafe { libc::geteuid() } || meta.mode() & 0o077 != 0 {
+        return Err(denied("credential must be a private regular file owned by the current user, without hard links"));
+    }
+    Ok(file)
+}
+
+pub(super) fn create(directory: &Directory, path: &Path) -> io::Result<File> {
+    relative_open(directory, path, libc::O_RDWR | libc::O_CREAT | libc::O_EXCL)
+}
+pub(super) fn open(directory: &Directory, path: &Path) -> io::Result<File> {
+    relative_open(directory, path, libc::O_RDONLY)
+}
+pub(super) fn sync_directory(directory: &Directory) -> io::Result<()> { directory.sync_all() }
+pub(super) fn sync_file(file: &File) -> io::Result<()> {
+    file.sync_all()?;
+    #[cfg(target_os = "macos")]
+    {
+        if unsafe { libc::fcntl(file.as_raw_fd(), libc::F_FULLFSYNC) } == -1 {
+            return Err(io::Error::last_os_error());
+        }
+    }
+    Ok(())
+}
+pub(super) fn replace(directory: &Directory, from: &Path, to: &Path) -> io::Result<()> {
+    let (from, to) = (name(from)?, name(to)?);
+    let fd = directory.as_raw_fd();
+    if unsafe { libc::renameat(fd, from.as_ptr(), fd, to.as_ptr()) } < 0 { return Err(io::Error::last_os_error()) }
+    Ok(())
+}
+pub(super) fn remove(directory: &Directory, path: &Path) -> io::Result<()> {
+    if unsafe { libc::unlinkat(directory.as_raw_fd(), name(path)?.as_ptr(), 0) } < 0 { return Err(io::Error::last_os_error()) }
+    Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::credentials::{tests::Fixture, CredentialKind, CredentialStore};
+    use std::os::unix::fs::{PermissionsExt, symlink};
+
+    #[test]
+    fn refuses_public_modes_links_and_non_regular_files() {
+        let fixture = Fixture::new();
+        let store = CredentialStore::open(&fixture.0).unwrap();
+        let path = store.directory.join("mcp.token");
+        store.rotate(CredentialKind::Mcp).unwrap();
+        assert_eq!(fs::metadata(&path).unwrap().mode() & 0o777, 0o600);
+        fs::set_permissions(&path, fs::Permissions::from_mode(0o644)).unwrap();
+        assert!(store.load(CredentialKind::Mcp).is_err());
+        assert!(store.rotate(CredentialKind::Mcp).is_err());
+        fs::remove_file(&path).unwrap();
+        let target = fixture.0.join("target");
+        fs::write(&target, "preserve").unwrap();
+        symlink(&target, &path).unwrap();
+        assert!(store.load(CredentialKind::Mcp).is_err());
+        assert!(store.rotate(CredentialKind::Mcp).is_err());
+        assert_eq!(fs::read_to_string(target).unwrap(), "preserve");
+        fs::remove_file(&path).unwrap();
+        fs::create_dir(&path).unwrap();
+        assert!(store.load(CredentialKind::Mcp).is_err());
+    }
+
+    #[test]
+    fn directory_permissions_and_symlinks_fail_closed() {
+        let fixture = Fixture::new();
+        let store = CredentialStore::open(&fixture.0).unwrap();
+        fs::set_permissions(&store.directory, fs::Permissions::from_mode(0o755)).unwrap();
+        assert!(CredentialStore::open(&fixture.0).is_err());
+        fs::remove_dir(&store.directory).unwrap();
+        let elsewhere = fixture.0.join("elsewhere");
+        fs::DirBuilder::new().mode(0o700).create(&elsewhere).unwrap();
+        symlink(&elsewhere, &store.directory).unwrap();
+        assert!(CredentialStore::open(&fixture.0).is_err());
+        assert!(fs::read_dir(elsewhere).unwrap().next().is_none());
+    }
+
+    #[test]
+    fn failed_rotation_preserves_the_previous_credential() {
+        if unsafe { libc::geteuid() } == 0 { return } // root bypasses mode checks
+        let fixture = Fixture::new();
+        let store = CredentialStore::open(&fixture.0).unwrap();
+        let old = store.rotate(CredentialKind::Mcp).unwrap().bearer;
+        fs::set_permissions(&store.directory, fs::Permissions::from_mode(0o500)).unwrap();
+        let failed = store.rotate(CredentialKind::Mcp).is_err();
+        fs::set_permissions(&store.directory, fs::Permissions::from_mode(0o700)).unwrap();
+        assert!(failed);
+        assert!(store.load(CredentialKind::Mcp).unwrap().unwrap().matches(old.expose()));
+        assert_eq!(fs::read_dir(&store.directory).unwrap().count(), 1);
+    }
+
+    #[test]
+    fn directory_replacement_cannot_redirect_an_open_store() {
+        let fixture = Fixture::new();
+        let store = CredentialStore::open(&fixture.0).unwrap();
+        let original = store.rotate(CredentialKind::Mcp).unwrap().bearer;
+        let moved = fixture.0.join("original");
+        fs::rename(&store.directory, &moved).unwrap();
+        let replacement = CredentialStore::open(&fixture.0).unwrap();
+        let other = replacement.rotate(CredentialKind::Mcp).unwrap().bearer;
+        assert!(store.load(CredentialKind::Mcp).unwrap().unwrap().matches(original.expose()));
+        let rotated = store.rotate(CredentialKind::Mcp).unwrap().bearer;
+        assert!(store.load(CredentialKind::Mcp).unwrap().unwrap().matches(rotated.expose()));
+        assert!(replacement.load(CredentialKind::Mcp).unwrap().unwrap().matches(other.expose()));
+    }
+}

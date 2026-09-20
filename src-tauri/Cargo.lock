@@ -436,6 +436,7 @@ dependencies = [
  "base64 0.23.1",
  "dirs",
  "fix-path-env",
+ "getrandom 0.4.2",
  "libc",
  "log",
  "parking_lot",
@@ -443,6 +444,7 @@ dependencies = [
  "reqwest",
  "serde",
  "serde_json",
+ "subtle",
  "sysinfo",
  "tauri",
  "tauri-build",
@@ -455,6 +457,7 @@ dependencies = [
  "tauri-plugin-single-instance",
  "tokio",
  "windows 0.62.2",
+ "zeroize",
 ]
 
 [[package]]

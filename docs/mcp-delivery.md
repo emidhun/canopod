@@ -143,3 +143,33 @@ launch and SIGTERM. Windows console-signal runtime testing remains pending.
 Application authentication, versioned status/stop/bootstrap, MCP transport,
 service installation and moving the desktop to client-only operation remain
 acceptance gates for #156; the foreground binary alone does not complete it.
+
+## Private credential storage
+
+The credential primitive keeps application and MCP secrets in separate files
+under the data directory's `credentials` directory. Each token has 32 bytes of
+OS entropy, encoded as exactly 64 lowercase hexadecimal bytes. Bearer checks
+use `subtle` constant-time comparison; secret types have no Debug/Serialize
+implementation and zeroize their owned buffers on drop. Export is explicitly
+named `expose()` for the later private client-config flow.
+
+Unix creation uses directory mode 0700 and file mode 0600, refusing foreign
+ownership, public permissions, symlinks, hard links and non-regular files.
+Operations use openat/renameat/unlinkat against the retained directory handle,
+so replacing its pathname cannot redirect an existing store. Windows installs
+a protected, current-user-only DACL at creation and checks owner/ACL/reparse
+attributes through opened handles. It pins directory path components without
+delete sharing to prevent replacement between validation and later operations.
+Administrators/root remain inside the OS trust boundary.
+
+Rotation writes a random sibling file, flushes it, and atomically replaces the
+selected token. A pre-commit failure preserves the previous token. Unix flushes
+the directory after rename (macOS also uses F_FULLFSYNC on the written file);
+Windows uses write-through replacement. A post-rename directory-flush error is
+returned alongside the committed new token as a durability warning, so callers
+cannot accidentally retain an old in-memory token after committing a new file.
+Single runtime ownership and serialized rotation are caller requirements.
+
+This slice does not create an HTTP listener, enable MCP, generate credentials
+at startup, or change permission profiles. Wire authentication, revocation and
+session invalidation through the later application/MCP transport layers.
