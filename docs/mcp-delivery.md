@@ -197,6 +197,15 @@ versions fail explicitly. Host must match the exact IPv4 endpoint, and any Origi
 must match its origin. Native clients without Origin still require the bearer.
 MCP credentials are rejected on application routes. No wildcard CORS is enabled.
 
+This loopback HTTP mode is for trusted-user workstations, not shared or
+multi-tenant hosts with mutually hostile local users/processes. Private credential
+files protect stored secrets, but TCP loopback does not authenticate the process
+owning a port: an impostor can bind the configured port while the backend is
+stopped and capture a bearer from an attaching client. Proxy/redirect blocking,
+Host/Origin checks and file ACLs do not prevent that attack. Supporting hostile
+co-resident users requires an authenticated peer transport or TLS with client
+pinning; this implementation does not claim that isolation.
+
 `GET /api/v1/status` returns only cached aggregate counts, API/backend versions,
 pid and uptime. It does not spawn subprocesses, claim services are ready, or
 return repository settings/secrets. Initial cached worktree counts can be zero
