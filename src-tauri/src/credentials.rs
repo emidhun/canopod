@@ -1,6 +1,9 @@
 //! Private credentials for distinct application and MCP trust boundaries.
 //! No token implements Debug or Serialize. Callers must hold runtime ownership
 //! and serialize rotations; this module never grants or changes permissions.
+//! Root/Administrators and other processes running as this same user are trusted.
+//! File permissions protect against other unprivileged local users, not those
+//! trusted identities or processes that can read this process's memory.
 use std::{fs::{self, File}, io::{self, Read, Write}, path::{Path, PathBuf}};
 use subtle::ConstantTimeEq;
 use zeroize::{Zeroize, Zeroizing};
@@ -99,6 +102,14 @@ impl CredentialStore {
             file.write_all(&bearer.0)?;
             platform::sync_file(&file)?;
             drop(file);
+            // Narrow the same-user check/replace window after slow disk work.
+            // This is not an inode-CAS: same-user writers remain trusted and
+            // callers serialize rotations under sole runtime ownership.
+            match platform::open(&self.anchor, &self.directory.join(kind.filename())) {
+                Ok(_) => {},
+                Err(error) if error.kind() == io::ErrorKind::NotFound => {},
+                Err(error) => return Err(error),
+            }
             platform::replace(&self.anchor, &temporary, &self.directory.join(kind.filename()))?;
             Ok(Rotation { bearer, durability_warning: platform::sync_directory(&self.anchor).err() })
         })();

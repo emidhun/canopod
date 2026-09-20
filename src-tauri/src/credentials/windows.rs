@@ -75,7 +75,9 @@ pub(super) fn prepare_directory(path: &Path) -> io::Result<Directory> {
 fn open_handle(path: &Path, create: bool, directory: bool, private: bool) -> io::Result<File> {
     let path_w = wide(path)?;
     let sd = descriptor()?;
-    let access = if directory { READ_CONTROL.0 | FILE_READ_ATTRIBUTES.0 }
+    // Attribute-only handles do not participate in Windows sharing checks;
+    // FILE_LIST_DIRECTORY (via GENERIC_READ) is necessary to pin a directory.
+    let access = if directory { GENERIC_READ.0 }
         else if create { GENERIC_READ.0 | GENERIC_WRITE.0 } else { GENERIC_READ.0 };
     let flags = FILE_FLAG_OPEN_REPARSE_POINT | if directory { FILE_FLAG_BACKUP_SEMANTICS } else { FILE_ATTRIBUTE_NORMAL };
     let handle = unsafe { CreateFileW(PCWSTR(path_w.as_ptr()), access,
@@ -140,6 +142,8 @@ pub(super) fn check_directory(directory: &Directory) -> io::Result<()> {
 }
 pub(super) fn create(_: &Directory, path: &Path) -> io::Result<File> { open_handle(path, true, false, true) }
 pub(super) fn open(_: &Directory, path: &Path) -> io::Result<File> { open_handle(path, false, false, true) }
+// MoveFileExW below uses MOVEFILE_WRITE_THROUGH; no separate directory
+// flush is required/supported by this Win32 strategy.
 pub(super) fn sync_directory(_: &Directory) -> io::Result<()> { Ok(()) }
 pub(super) fn sync_file(file: &File) -> io::Result<()> { file.sync_all() }
 pub(super) fn replace(_: &Directory, from: &Path, to: &Path) -> io::Result<()> {
@@ -147,7 +151,12 @@ pub(super) fn replace(_: &Directory, from: &Path, to: &Path) -> io::Result<()> {
     let to = wide(to)?;
     unsafe { win(MoveFileExW(PCWSTR(from.as_ptr()), PCWSTR(to.as_ptr()), MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH)) }
 }
-pub(super) fn remove(_: &Directory, path: &Path) -> io::Result<()> { std::fs::remove_file(path) }
+pub(super) fn remove(_: &Directory, path: &Path) -> io::Result<()> {
+    // Only cleanup of our random rotation temporary; refuse a replaced alias.
+    let file = open_handle(path, false, false, true)?;
+    drop(file);
+    std::fs::remove_file(path)
+}
 
 #[cfg(test)]
 mod tests {

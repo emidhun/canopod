@@ -160,7 +160,13 @@ so replacing its pathname cannot redirect an existing store. Windows installs
 a protected, current-user-only DACL at creation and checks owner/ACL/reparse
 attributes through opened handles. It pins directory path components without
 delete sharing to prevent replacement between validation and later operations.
-Administrators/root remain inside the OS trust boundary.
+Root/Administrators and processes using this same user identity are trusted;
+confidentiality against them is not claimed. The protection is against other
+unprivileged local users. On Windows the pinned ancestor handles prevent rename
+or deletion of that path chain while the store is open (ordinary read/write
+access is unaffected). Stop the backend before relocating the data directory or
+its ancestors. This conservative tradeoff closes redirection even for an
+explicitly supplied data path; it is not narrowed to a presumed safe ancestor.
 
 Rotation writes a random sibling file, flushes it, and atomically replaces the
 selected token. A pre-commit failure preserves the previous token. Unix flushes
