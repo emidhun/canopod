@@ -1,7 +1,7 @@
 use canopy_lib::{app_api, backend, credentials::{CredentialKind, CredentialStore}};
 use std::path::PathBuf;
 
-const USAGE: &str = "canopy-backend <serve|status|stop> [--config-dir PATH] [--data-dir PATH] [--log-dir PATH]\ncanopy-backend serve [--port PORT]\n\nServe runs in the foreground; use a supervisor for persistence. Status/stop attach\nto the authenticated loopback backend without launching a GUI. MCP is disabled.";
+const USAGE: &str = "canopy-backend <serve|status|stop|mcp> [--config-dir PATH] [--data-dir PATH] [--log-dir PATH]\ncanopy-backend serve [--port PORT]\n\nServe runs in the foreground; use a supervisor for persistence. Status/stop attach\nto the authenticated loopback backend without launching a GUI. MCP defaults to disabled.\ncanopy-backend mcp <status|enable|disable|rotate-token> [--repo ID]...\nEnable requires explicit registered repository IDs on first use. Re-enable without\n--repo preserves the allowlist. Credentials remain in private files; commands never print them.";
 
 fn main() {
     if let Err(error) = run() {
@@ -18,14 +18,29 @@ fn run() -> Result<(), String> {
         Some("serve") => "serve",
         Some("status") => "status",
         Some("stop") => "stop",
+        Some("mcp") => match args.next().as_deref().and_then(|arg| arg.to_str()) {
+            Some("status") => "mcp/status",
+            Some("enable") => "mcp/enable",
+            Some("disable") => "mcp/disable",
+            Some("rotate-token") => "mcp/rotate-token",
+            _ => return Err(USAGE.into()),
+        },
         _ => return Err(USAGE.into()),
     };
     let mut paths = backend::default_paths()?;
     let mut port = None;
+    let mut repo_ids = Vec::new();
     let mut seen = std::collections::HashSet::new();
     while let Some(flag) = args.next() {
         let name = flag.to_str().ok_or("directory option must be UTF-8")?;
         if name == "--help" { println!("{USAGE}"); return Ok(()) }
+        if name == "--repo" {
+            if action != "mcp/enable" { return Err("--repo is accepted only with mcp enable".into()) }
+            let value = args.next().ok_or("missing repository ID")?.into_string().map_err(|_| "repository ID must be UTF-8")?;
+            if value.is_empty() || value.len() > 256 || repo_ids.len() >= 256 { return Err("invalid repository allowlist".into()) }
+            repo_ids.push(value);
+            continue;
+        }
         if name == "--port" {
             if action != "serve" || port.is_some() { return Err("--port is accepted once, only with serve".into()) }
             let value = args.next().ok_or("missing port")?;
@@ -46,7 +61,7 @@ fn run() -> Result<(), String> {
     }
     let runtime = tokio::runtime::Runtime::new().map_err(|e| format!("start executor: {e}"))?;
     let result = runtime.block_on(async {
-        if action != "serve" { return attach(&paths, action).await }
+        if action != "serve" { return attach(&paths, action, repo_ids).await }
         let signal = backend::shutdown_signal()?;
         let app = backend::open(paths)?;
         let mut config = app_api::Config::load(&app.path().config)?;
@@ -54,7 +69,7 @@ fn run() -> Result<(), String> {
         let (shutdown, _) = tokio::sync::watch::channel(false);
         let server = app_api::Server::bind(app.clone(), config.port, shutdown).await?;
         config.save(&app.path().config)?;
-        eprintln!("canopy-backend {} running in foreground (pid {}) at http://127.0.0.1:{}; MCP disabled", env!("CARGO_PKG_VERSION"), std::process::id(), config.port);
+        eprintln!("canopy-backend {} running in foreground (pid {}) at http://127.0.0.1:{}", env!("CARGO_PKG_VERSION"), std::process::id(), config.port);
         app_api::serve(app, server, signal).await
     });
     // Detached process waiters may briefly retain the context/owner lock. Give
@@ -63,7 +78,7 @@ fn run() -> Result<(), String> {
     result
 }
 
-async fn attach(paths: &canopy_lib::runtime::RuntimePaths, action: &str) -> Result<(), String> {
+async fn attach(paths: &canopy_lib::runtime::RuntimePaths, action: &str, repo_ids: Vec<String>) -> Result<(), String> {
     let config = app_api::Config::load(&paths.config)?;
     let store = CredentialStore::open_existing(&paths.data).map_err(|e| format!("read backend credentials: {e}; start canopy-backend serve first"))?;
     let bearer = store.load(CredentialKind::Application).map_err(|e| e.to_string())?
@@ -74,7 +89,10 @@ async fn attach(paths: &canopy_lib::runtime::RuntimePaths, action: &str) -> Resu
     let url = format!("http://127.0.0.1:{}/api/v1/{action}", config.port);
     let mut authorization = reqwest::header::HeaderValue::from_str(&format!("Bearer {}", bearer.expose())).map_err(|_| "invalid credential")?;
     authorization.set_sensitive(true);
-    let request = if action == "stop" { client.post(url) } else { client.get(url) };
+    let request = if action == "status" || action == "mcp/status" { client.get(url) } else { client.post(url) };
+    let request = if action == "mcp/enable" {
+        request.json(&serde_json::json!({"repoIds": if repo_ids.is_empty() { None } else { Some(repo_ids) }}))
+    } else { request };
     let mut response = request.header("authorization", authorization).header("x-canopy-api-version", app_api::API_VERSION)
         .send().await.map_err(|e| format!("backend unavailable: {e}; run canopy-backend serve"))?;
     if !response.status().is_success() { return Err(format!("backend rejected {action}: HTTP {}", response.status())) }

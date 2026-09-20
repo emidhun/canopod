@@ -186,7 +186,7 @@ revocation and session invalidation belong to its later transport layer.
 `serve --port <nonzero-port>` selects and persists an explicit port in
 `backend.json` in the config directory. A bind failure never chooses another
 port. The application token is loaded or created in private storage after
-binding succeeds; it is never printed. MCP remains disabled and `/mcp` is absent.
+binding succeeds; it is never printed. MCP defaults to disabled; its route returns 404 until explicitly enabled.
 This application listener is independent of future MCP enablement.
 
 `canopy-backend status` and `canopy-backend stop` read the existing private
@@ -221,5 +221,58 @@ connections two seconds to flush while child cleanup proceeds independently.
 The core remains owned until its runtime and connection contexts are released.
 
 These are native application control endpoints, not browser pairing or general
-RPC. Snapshot reconciliation, browser sessions/CSRF, desktop attachment, MCP
-transport and live token-rotation/session invalidation remain later slices.
+RPC. Snapshot reconciliation, browser sessions/CSRF and desktop attachment remain
+later slices. MCP transport is implemented below.
+
+
+## Opt-in MCP transport and cached probe
+
+The independent backend mounts official `rmcp = 3.4.0` Streamable HTTP at `/mcp`
+on the same IPv4 listener. The SDK requires Rust 1.88; Canopy's owner locking
+already requires a newer standard library. Protocol negotiation and metadata
+validation belong to the SDK. Tests exercise legacy `2025-03-26` and current
+`2026-07-28` calls. Stateless JSON responses retain zero sessions. Each bounded
+request gets its own SDK service, including its tool-schema cache: rmcp caches
+unknown tool names, so a process-long service would otherwise grow that cache.
+
+Native controls (also available under the application-authenticated
+`/api/v1/mcp/` routes):
+
+```sh
+canopy-backend mcp status
+canopy-backend mcp enable --repo <registered-repo-id>
+canopy-backend mcp rotate-token
+canopy-backend mcp disable
+canopy-backend mcp enable
+```
+
+Repeating `enable` with `--repo` replaces the allowlist; omitting it preserves the
+previous list. Enable requires a nonempty list of registered IDs. The policy is
+stored separately in `mcp.json`, never in a legacy desktop whole-object save.
+Malformed or externally changed policy is preserved and requires restart before
+another edit. Policy writes commit before becoming live. Credentials remain in
+the private MCP token file; no control command prints them. Ordinary restart and
+re-enable preserve the token and endpoint. Rotation requires updating the client
+credential. Missing credentials for an enabled policy fail startup explicitly.
+
+MCP authorization runs before body collection/SDK dispatch. It rejects app
+credentials, foreign/duplicate Host or Origin, and invalid bearer values; native
+clients may omit Origin. MCP credentials cannot configure their own permissions.
+Eight MCP requests are admitted independently of the eight application requests,
+with 64 KiB bodies, five-second body reads, ten-second dispatch deadlines and the
+shared 32-connection/60-second connection limits. Rotating, disabling or changing
+the allowlist cancels the old authorization generation, including stalled bodies;
+each tool call checks live policy again. Request cancellation cleans up its SDK
+workers. Disabling leaves the application listener and domain runtime running.
+
+`canopy_status` currently requires `repoId` and returns only small cached
+aggregate service/worktree counts, plus `cacheAvailable`. It launches no
+subprocesses and returns no paths, branch names, env values or command text.
+It does not claim readiness or refreshed data. This is the transport acceptance
+probe, not completion of the richer #141 read-tools requirements.
+
+Still required by the epic: desktop/browser controls, read/write/destructive
+permission profiles, private client configuration export, roots inference,
+remaining read tools, jobs, human approvals, packaged client validation on every
+platform, and measured performance budgets. Local debug client checks do not
+substitute for the packaged cross-platform acceptance matrix.

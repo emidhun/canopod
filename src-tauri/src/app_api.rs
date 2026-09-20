@@ -1,6 +1,6 @@
 //! Versioned application control API, separate from MCP permissions/tokens.
 use crate::{credentials::{Bearer, CredentialKind, CredentialStore}, runtime::RuntimeContext, state::AppState};
-use axum::{body::{to_bytes, Body}, extract::{Request, State}, http::{HeaderMap, StatusCode}, middleware::{self, Next}, response::{IntoResponse, Response}, routing::{get, post}, Json, Router};
+use axum::{body::{to_bytes, Body}, extract::{Request, State}, http::{HeaderMap, StatusCode}, middleware::{self, Next}, response::{IntoResponse, Response}, routing::{any, get, post}, Json, Router};
 use hyper_util::{rt::{TokioIo, TokioTimer}, service::TowerToHyperService};
 use serde::{Deserialize, Serialize};
 use std::{future::Future, io::Write, path::Path, sync::Arc, time::{Duration, Instant}};
@@ -49,6 +49,7 @@ struct ApiState {
     app: RuntimeContext,
     bearer: Arc<Bearer>,
     _credentials: Arc<CredentialStore>,
+    mcp: Arc<crate::mcp::Controller>,
     authority: String,
     origin: String,
     requests: Arc<Semaphore>,
@@ -60,7 +61,7 @@ fn error(status: StatusCode, code: &'static str) -> Response {
     (status, [("cache-control", "no-store")], Json(serde_json::json!({"code": code}))).into_response()
 }
 
-fn single_header<'a>(headers: &'a HeaderMap, name: &str) -> Option<&'a str> {
+pub(crate) fn single_header<'a>(headers: &'a HeaderMap, name: &str) -> Option<&'a str> {
     let mut values = headers.get_all(name).iter();
     let first = values.next()?.to_str().ok()?;
     if values.next().is_some() { return None }
@@ -119,8 +120,28 @@ async fn status(State(state): State<ApiState>) -> Json<serde_json::Value> {
         "repositories": repositories,
         "cachedWorktrees": worktrees,
         "trackedServices": services,
-        "mcpEnabled": false,
+        "mcpEnabled": state.mcp.enabled(),
     }))
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct McpEnable { repo_ids: Option<Vec<String>> }
+async fn mcp_status(State(state): State<ApiState>) -> Json<serde_json::Value> { Json(state.mcp.status()) }
+fn mcp_control_result(state: &ApiState, result: Result<(), String>) -> Response {
+    match result {
+        Ok(()) => Json(state.mcp.status()).into_response(),
+        Err(message) => (StatusCode::CONFLICT, Json(serde_json::json!({"code":"mcp_configuration_failed","message":message}))).into_response(),
+    }
+}
+async fn mcp_enable(State(state): State<ApiState>, Json(input): Json<McpEnable>) -> Response {
+    mcp_control_result(&state, state.mcp.configure(true, input.repo_ids))
+}
+async fn mcp_disable(State(state): State<ApiState>) -> Response { mcp_control_result(&state, state.mcp.configure(false, None)) }
+async fn mcp_rotate(State(state): State<ApiState>) -> Response { mcp_control_result(&state, state.mcp.rotate()) }
+async fn mcp_request(State(state): State<ApiState>, request: Request) -> Response {
+    if *state.stop.borrow() { return error(StatusCode::SERVICE_UNAVAILABLE, "stopping") }
+    state.mcp.handle(request).await
 }
 
 async fn stop(State(state): State<ApiState>) -> impl IntoResponse {
@@ -151,8 +172,10 @@ impl Server {
                 created.bearer
             }
         };
+        let credentials = Arc::new(credentials);
+        let mcp = crate::mcp::Controller::open(app.clone(), credentials.clone(), port)?;
         Ok(Self { listener, connections: Arc::new(Semaphore::new(MAX_CONNECTIONS)), state: ApiState {
-            app, bearer: Arc::new(bearer), _credentials: Arc::new(credentials),
+            app, bearer: Arc::new(bearer), _credentials: credentials, mcp,
             authority: format!("127.0.0.1:{port}"), origin: format!("http://127.0.0.1:{port}"),
             requests: Arc::new(Semaphore::new(MAX_REQUESTS)), stop, started: Instant::now(),
         } })
@@ -160,7 +183,13 @@ impl Server {
 
     async fn run(self) -> Result<(), String> {
         let router = Router::new().route("/api/v1/status", get(status)).route("/api/v1/stop", post(stop))
-            .layer(middleware::from_fn_with_state(self.state.clone(), authorize)).with_state(self.state.clone());
+            .route("/api/v1/mcp/status", get(mcp_status))
+            .route("/api/v1/mcp/enable", post(mcp_enable))
+            .route("/api/v1/mcp/disable", post(mcp_disable))
+            .route("/api/v1/mcp/rotate-token", post(mcp_rotate))
+            .layer(middleware::from_fn_with_state(self.state.clone(), authorize))
+            // MCP has its own credential/admission layer, independent of app auth.
+            .route("/mcp", any(mcp_request)).with_state(self.state.clone());
         let slots = self.connections;
         let shutdown = self.state.stop.subscribe();
         let mut connections = JoinSet::new();
@@ -197,6 +226,7 @@ impl Server {
         // Join every accepted connection before releasing the runtime clone.
         // Each gets at most two seconds to flush its shutdown response.
         self.state.stop.send_replace(true);
+        self.state.mcp.shutdown();
         while connections.join_next().await.is_some() {}
         outcome
     }
@@ -251,6 +281,8 @@ mod tests {
 
     struct Running {
         directory: Directory,
+        app: RuntimeContext,
+        mcp: Arc<crate::mcp::Controller>,
         shutdown: watch::Sender<bool>,
         task: tokio::task::JoinHandle<Result<(), String>>,
         port: u16,
@@ -268,8 +300,10 @@ mod tests {
             let server = Server::bind(directory.context(), port, shutdown.clone()).await.unwrap();
             let bearer = CredentialStore::open_existing(&directory.0).unwrap().load(CredentialKind::Application).unwrap().unwrap();
             let connections = server.connections.clone();
+            let app = server.state.app.clone();
+            let mcp = server.state.mcp.clone();
             let task = tokio::spawn(server.run());
-            Self { directory, shutdown, task, port, bearer, connections,
+            Self { directory, app, mcp, shutdown, task, port, bearer, connections,
                 client: reqwest::Client::builder().no_proxy().timeout(Duration::from_secs(10)).build().unwrap() }
         }
         fn request(&self, method: reqwest::Method, path: &str) -> reqwest::RequestBuilder {
@@ -404,4 +438,151 @@ mod tests {
         assert_eq!(std::fs::read_to_string(path).unwrap(), "{invalid");
         assert!(Config { port: 0 }.save(&directory.0).is_err());
     }
+    impl Running {
+        async fn enable_mcp(&self) -> Bearer {
+            self.app.state::<AppState>().settings.write().repos.push(crate::settings::RepoCfg { id: "allowed".into(), ..Default::default() });
+            let response = self.request(reqwest::Method::POST, "mcp/enable").json(&serde_json::json!({"repoIds":["allowed"]})).send().await.unwrap();
+            assert_eq!(response.status(), StatusCode::OK);
+            self.mcp_bearer()
+        }
+        fn mcp_bearer(&self) -> Bearer { CredentialStore::open_existing(&self.directory.0).unwrap().load(CredentialKind::Mcp).unwrap().unwrap() }
+        fn rpc(&self, bearer: &Bearer, method: &str, params: serde_json::Value) -> reqwest::RequestBuilder {
+            self.client.post(format!("http://127.0.0.1:{}/mcp", self.port)).bearer_auth(bearer.expose())
+                .header("accept", "application/json, text/event-stream").header("mcp-protocol-version", "2025-03-26")
+                .json(&serde_json::json!({"jsonrpc":"2.0","id":1,"method":method,"params":params}))
+        }
+    }
+    #[tokio::test]
+    async fn mcp_off_by_default_and_app_credentials_cannot_access_tools() {
+        let running = Running::start().await;
+        assert_eq!(running.rpc(&running.bearer, "tools/list", serde_json::json!({})).send().await.unwrap().status(), StatusCode::NOT_FOUND);
+        assert!(!running.directory.0.join("credentials/mcp.token").exists());
+        let bearer = running.enable_mcp().await;
+        assert_eq!(running.rpc(&running.bearer, "tools/list", serde_json::json!({})).send().await.unwrap().status(), StatusCode::UNAUTHORIZED);
+        for (header, value) in [("host", "evil.example"), ("origin", "https://evil.example"), ("origin", "null")] {
+            assert_eq!(running.rpc(&bearer, "tools/list", serde_json::json!({})).header(header,value).send().await.unwrap().status(), StatusCode::FORBIDDEN);
+        }
+        let mut request = running.request(reqwest::Method::POST, "mcp/disable").build().unwrap();
+        request.headers_mut().insert("authorization", format!("Bearer {}", bearer.expose()).parse().unwrap());
+        assert_eq!(running.client.execute(request).await.unwrap().status(), StatusCode::UNAUTHORIZED);
+        assert!(running.mcp.enabled());
+        running.finish().await;
+    }
+    #[tokio::test]
+    async fn mcp_official_stateless_protocol_lists_and_calls_only_allowed_cached_status() {
+        let running = Running::start().await;
+        let bearer = running.enable_mcp().await;
+        let response = running.rpc(&bearer, "initialize", serde_json::json!({"protocolVersion":"2025-03-26","capabilities":{},"clientInfo":{"name":"canopy-test","version":"1"}})).send().await.unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+        assert!(response.headers().get("mcp-session-id").is_none());
+        let body: serde_json::Value = response.json().await.unwrap();
+        assert!(body["result"]["capabilities"]["tools"].is_object(), "{body}");
+        let response = running.rpc(&bearer, "tools/list", serde_json::json!({})).send().await.unwrap();
+        let body: serde_json::Value = response.json().await.unwrap();
+        assert_eq!(body["result"]["tools"].as_array().unwrap().len(), 1, "{body}");
+        assert_eq!(body["result"]["tools"][0]["name"], "canopy_status");
+        assert_eq!(body["result"]["ttlMs"], 0);
+        assert_eq!(body["result"]["cacheScope"], "private");
+        for repo in ["allowed", "forbidden"] {
+            let response = running.rpc(&bearer, "tools/call", serde_json::json!({"name":"canopy_status","arguments":{"repoId":repo}})).send().await.unwrap();
+            let bytes = response.bytes().await.unwrap();
+            assert!(bytes.len() <= 32 * 1024);
+            let body: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
+            if repo == "allowed" {
+                assert_ne!(body["result"]["isError"], true, "{body}");
+                let result: serde_json::Value = serde_json::from_str(body["result"]["content"][0]["text"].as_str().unwrap()).unwrap();
+                assert_eq!(result["repoId"], "allowed");
+                assert_eq!(result["cacheAvailable"], false);
+                assert_eq!(result["source"], "cache");
+            } else { assert_eq!(body["result"]["isError"], true, "{body}"); }
+        }
+        // A distinct connection has no session to recover and gets the same tool.
+        let response = running.rpc(&bearer, "tools/list", serde_json::json!({})).header("connection","close").send().await.unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+        assert!(response.headers().get("mcp-session-id").is_none());
+        running.finish().await;
+    }
+    #[tokio::test]
+    async fn mcp_rotation_disable_and_allowlist_changes_revoke_without_stopping_app() {
+        let running = Running::start().await;
+        let bearer = running.enable_mcp().await;
+        assert_eq!(running.request(reqwest::Method::POST,"mcp/rotate-token").send().await.unwrap().status(), StatusCode::OK);
+        assert_eq!(running.rpc(&bearer,"tools/list",serde_json::json!({})).send().await.unwrap().status(), StatusCode::UNAUTHORIZED);
+        let rotated = running.mcp_bearer();
+        assert!(!rotated.matches(bearer.expose()));
+        assert_eq!(running.rpc(&rotated,"tools/list",serde_json::json!({})).send().await.unwrap().status(), StatusCode::OK);
+        assert_eq!(running.request(reqwest::Method::POST,"mcp/disable").send().await.unwrap().status(), StatusCode::OK);
+        assert_eq!(running.rpc(&rotated,"tools/list",serde_json::json!({})).send().await.unwrap().status(), StatusCode::NOT_FOUND);
+        assert_eq!(running.request(reqwest::Method::GET,"status").send().await.unwrap().status(), StatusCode::OK);
+        assert!(!*running.shutdown.borrow());
+        assert_eq!(running.request(reqwest::Method::POST,"mcp/enable").json(&serde_json::json!({})).send().await.unwrap().status(), StatusCode::OK);
+        assert!(running.mcp_bearer().matches(rotated.expose()));
+        let original = std::fs::read(running.directory.0.join("mcp.json")).unwrap();
+        assert_eq!(running.request(reqwest::Method::POST,"mcp/enable").json(&serde_json::json!({"repoIds":["unregistered"]})).send().await.unwrap().status(), StatusCode::CONFLICT);
+        assert_eq!(std::fs::read(running.directory.0.join("mcp.json")).unwrap(), original);
+        std::fs::write(running.directory.0.join("mcp.json"), "{broken").unwrap();
+        assert_eq!(running.request(reqwest::Method::POST,"mcp/disable").send().await.unwrap().status(), StatusCode::CONFLICT);
+        assert_eq!(std::fs::read_to_string(running.directory.0.join("mcp.json")).unwrap(), "{broken");
+        running.finish().await;
+    }
+
+    #[tokio::test]
+    async fn mcp_current_protocol_validates_metadata_and_bounded_bodies() {
+        let running = Running::start().await;
+        let bearer = running.enable_mcp().await;
+        let mut request = running.rpc(&bearer, "tools/call", serde_json::json!({
+            "name":"canopy_status","arguments":{"repoId":"allowed"},
+            "_meta":{"io.modelcontextprotocol/protocolVersion":"2026-07-28",
+                "io.modelcontextprotocol/clientInfo":{"name":"canopy-test","version":"1"},
+                "io.modelcontextprotocol/clientCapabilities":{}}
+        })).build().unwrap();
+        request.headers_mut().insert("mcp-protocol-version", "2026-07-28".parse().unwrap());
+        request.headers_mut().insert("mcp-method", "tools/call".parse().unwrap());
+        request.headers_mut().insert("mcp-name", "canopy_status".parse().unwrap());
+        let response = running.client.execute(request).await.unwrap();
+        let body: serde_json::Value = response.json().await.unwrap();
+        assert_eq!(body["result"]["resultType"], "complete", "{body}");
+        assert_ne!(body["result"]["isError"], true, "{body}");
+        let response = running.rpc(&bearer,"tools/list",serde_json::json!({})).body(vec![0; BODY_LIMIT + 1]).send().await.unwrap();
+        assert_eq!(response.status(), StatusCode::PAYLOAD_TOO_LARGE);
+        for _ in 0..3 {
+            let body: serde_json::Value = running.rpc(&bearer,"tools/call",serde_json::json!({"name":"unknown","arguments":{}})).send().await.unwrap().json().await.unwrap();
+            assert!(body["error"].is_object(), "{body}");
+        }
+        // A fresh controller sees the committed policy and credential on restart.
+        let reloaded = crate::mcp::Controller::open(running.app.clone(), Arc::new(CredentialStore::open_existing(&running.directory.0).unwrap()), running.port).unwrap();
+        assert_eq!(reloaded.status(), running.mcp.status());
+        drop(reloaded);
+        running.finish().await;
+    }
+    #[tokio::test]
+    async fn mcp_stalled_requests_are_bounded_and_rotation_cancels_them() {
+        use tokio::io::{AsyncReadExt, AsyncWriteExt};
+        let running = Running::start().await;
+        let bearer = running.enable_mcp().await;
+        let mut stalled = Vec::new();
+        for _ in 0..8 {
+            let mut stream = tokio::net::TcpStream::connect((std::net::Ipv4Addr::LOCALHOST, running.port)).await.unwrap();
+            stream.write_all(format!("POST /mcp HTTP/1.1\r\nHost: 127.0.0.1:{}\r\nAuthorization: Bearer {}\r\nContent-Type: application/json\r\nContent-Length: 1\r\n\r\n", running.port, bearer.expose()).as_bytes()).await.unwrap();
+            stalled.push(stream);
+        }
+        let deadline = Instant::now() + Duration::from_secs(2);
+        while running.mcp.available_requests() != 0 {
+            assert!(Instant::now() < deadline);
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+        assert_eq!(running.rpc(&bearer,"tools/list",serde_json::json!({})).send().await.unwrap().status(), StatusCode::SERVICE_UNAVAILABLE);
+        // The independent application control plane can still revoke a full
+        // MCP admission queue, and all old requests must release their slots.
+        assert_eq!(running.request(reqwest::Method::POST,"mcp/rotate-token").send().await.unwrap().status(), StatusCode::OK);
+        for mut stream in stalled {
+            let mut bytes = [0u8; 4096];
+            let count = tokio::time::timeout(Duration::from_secs(2), stream.read(&mut bytes)).await.unwrap().unwrap();
+            assert!(String::from_utf8_lossy(&bytes[..count]).contains("401 Unauthorized"));
+        }
+        let rotated = running.mcp_bearer();
+        assert_eq!(running.rpc(&rotated,"tools/list",serde_json::json!({})).send().await.unwrap().status(), StatusCode::OK);
+        running.finish().await;
+    }
+
 }

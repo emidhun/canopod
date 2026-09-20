@@ -4,6 +4,7 @@ mod commands;
 mod desktop_host;
 pub mod backend;
 pub mod app_api;
+pub mod mcp;
 pub mod credentials;
 pub mod operations;
 pub mod runtime;
