@@ -276,3 +276,57 @@ permission profiles, private client configuration export, roots inference,
 remaining read tools, jobs, human approvals, packaged client validation on every
 platform, and measured performance budgets. Local debug client checks do not
 substitute for the packaged cross-platform acceptance matrix.
+
+## Durable job journal foundation
+
+`jobs::Registry` is additive and is not yet wired into production operations.
+The next slice owns execution and migrates the seven awaited UI operations;
+this journal does not change an accepted job into a completed UI command.
+
+A registry retains at most 128 jobs, with four queued/running jobs and eight
+owned journal transactions at once. Busy responses include a 500 ms retry hint.
+Retry identity includes operation, repository, target and client request key;
+canonical payload hashes reject reuse with different arguments. Raw request keys
+and operation payloads are not persisted. Matching retries return the retained
+job even when active admission is full. Deduplication ends when the job expires
+or is evicted; clients must not treat it as permanent exactly-once execution.
+
+Each job uses one of 128 fixed private snapshot slots. A snapshot contains
+metadata and up to 256 KiB of encoded output; the entire file is capped at
+288 KiB. Main and temporary files therefore occupy at most 72 MiB of managed
+snapshot data. Unix directory/file modes are 0700/0600 and Windows uses the same
+owner ACL/retained-handle implementation as credentials. Startup visits only the
+known slots, removes validated leftover temporary files, preserves malformed
+snapshots with an explicit error, and marks queued/running jobs interrupted.
+It never replays work. The runtime owner must outlive all journal transactions.
+
+Terminal jobs expire after seven days, checked on access and cleaned at startup.
+Capacity reclaims the oldest durable terminal slot; queued/running or uncommitted
+terminal state is never evicted. The single writer lock is acquired before slot
+selection or snapshot capture. A pending write for an old job ID cannot overwrite
+a reused slot. Accepted transactions own their tasks through both disk commit
+and memory publication, even if the requesting client disconnects.
+
+Output is filtered before entering the bounded memory ring. Known secrets are
+matched simultaneously; credential-shaped assignments, JSON log fields, URL
+passwords and bearer strings receive conservative additional filtering. This is
+best-effort filtering, not a guarantee against arbitrary secret-printing programs.
+Lines are capped at 4 KiB after filtering; inputs over 64 KiB are omitted wholesale.
+Truncation and rotation clear `outputComplete`; an expired cursor returns an
+explicit error. Pages contain at most 500 lines and fit a 32 KiB wire budget.
+Outcome details are bounded too, with an explicit `detailsTruncated` indicator.
+
+Appending performs no disk I/O. The execution integration must flush on its
+250 ms timer and before completion; only `persistedSequence` is crash-durable.
+An interrupted job cannot claim its final in-memory output survived a crash.
+A failed final write retains the truthful live operation outcome with
+`persistencePending` and `durabilityError`; restart may instead recover the last
+committed running state as interrupted. A checkpoint records a created worktree
+path before provisioning so later failure does not erase that partial result.
+`close()` stops admission and joins owned transactions; the execution owner must
+stop operations and flush/finish jobs before calling it.
+
+Next: backend-owned task supervision, panic/process cleanup, full output capture
+before the current UI throttle, shared progress recording, seven-operation
+integration, and the authenticated `canopy_job` read surface. The journal alone
+does not complete #139.

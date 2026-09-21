@@ -5,6 +5,7 @@ mod desktop_host;
 pub mod backend;
 pub mod app_api;
 pub mod mcp;
+pub mod jobs;
 pub mod credentials;
 pub mod operations;
 pub mod runtime;
