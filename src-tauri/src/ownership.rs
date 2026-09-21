@@ -4,6 +4,11 @@
 //! deliberately never removed: unlinking a locked file would let another
 //! process lock a different inode at the same path. Closing the file releases
 //! the OS lock, including when the process crashes.
+//!
+//! The symlink refusal below is `O_NOFOLLOW`, so it is Unix-only: on Windows a
+//! reparse point at this path is still followed. Nothing is ever written or
+//! truncated through the handle, so the worst case is a lock held on the
+//! wrong file. Handle-level reparse rejection lands with the credential store.
 use std::fs::{self, File, OpenOptions};
 use std::path::Path;
 

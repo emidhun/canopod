@@ -99,7 +99,14 @@ pub fn run() {
             // orphan sweep. The desktop single-instance plugin alone cannot
             // exclude a headless host using the same data directory.
             let owner = ownership::RuntimeOwner::acquire(&handle.path().app_data_dir()?)
-                .map_err(std::io::Error::other)?;
+                .map_err(|e| {
+                    // A setup error only reaches a packaged bundle as a panic
+                    // on stderr, which the OS discards, and the crash-report
+                    // hook below is not installed yet. Log first, so the
+                    // rolling log file states why the app refused to start.
+                    log::error!("{e}");
+                    std::io::Error::other(e)
+                })?;
             app.manage(owner);
             tray::init(&handle)?;
             let loaded = settings::load_settings(&handle);

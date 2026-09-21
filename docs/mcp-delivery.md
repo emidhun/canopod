@@ -46,8 +46,9 @@ participating host must acquire the same OS lock before reading runtime state,
 sweeping child processes, or writing state. Keep the open file for the owner's
 entire lifetime; never unlink it. An occupied lock currently gives a clear
 startup error in the backend log. Packaged desktop presentation of that error
-still needs a visible recovery dialog before concurrent hosts ship. Future attach support must validate the backend handshake
-without constructing a second runtime.
+still needs a visible recovery dialog before concurrent hosts ship. Future
+attach support must validate the backend handshake without constructing a
+second runtime.
 
 This guard coordinates upgraded hosts only. Old versions do not acquire it.
 Before shipping concurrent headless/desktop startup, the takeover path must
