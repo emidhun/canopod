@@ -15,6 +15,7 @@ pub const LOG_CAP: usize = 160;
 // machines during a webpack burst, imperceptible as log-tail latency.
 const LOG_FLUSH_MS: u64 = 200;
 const MAX_LOG_TEXT: usize = 8 * 1024;
+const _: () = assert!(MAX_LOG_TEXT * 6 + 1024 < crate::events::MAX_EVENT_BYTES);
 const LOG_BATCH_BYTES: usize = 32 * 1024;
 const TRUNCATED_LOG: &str = " [line truncated]";
 
@@ -632,7 +633,7 @@ pub async fn start_service(app: &RuntimeContext, key: &str) -> Result<(), String
                         let line = LogLine::now(lv, text);
                         let size = serde_json::to_vec(&line).expect("log line serializes").len() + 1;
                         if batch_bytes + size > LOG_BATCH_BYTES && !batch.is_empty() {
-                            flush_batch(&app, &key, &mut batch); batch_bytes = 0;
+                            flush_batch(&app, &key, &mut batch); batch_bytes = 0; last_flush = Instant::now();
                         }
                         batch.push(line); batch_bytes += size;
                         if batch_bytes >= LOG_BATCH_BYTES || last_flush.elapsed().as_millis() as u64 >= LOG_FLUSH_MS {
@@ -1283,7 +1284,7 @@ mod bounded_log_tests {
         assert!(lines.is_empty());
         let mut received = 0;
         while received < 1000 {
-            let frame = client.recv().await.unwrap();
+            let frame = tokio::time::timeout(Duration::from_secs(2), client.recv()).await.unwrap().unwrap();
             assert!(frame.json.len() <= crate::events::MAX_EVENT_BYTES);
             let value: serde_json::Value = serde_json::from_str(&frame.json).unwrap();
             received += value["payload"]["lines"].as_array().unwrap().len();
