@@ -271,13 +271,28 @@ mod tests {
         let hub = EventHub::default();
         let mut app = hub.subscribe(SubscriptionKind::Application).unwrap();
         let mut term = hub.subscribe(SubscriptionKind::Terminal).unwrap();
-        hub.publish(Audience::All, "terminal:state", &serde_json::Value::Null).unwrap();
-        term.recv().await.unwrap(); app.recv().await.unwrap();
-        hub.publish(Audience::All, "tree:changed", &serde_json::Value::Null).unwrap();
-        app.recv().await.unwrap(); assert!(term.receiver.is_empty());
-        assert_eq!(hub.publish(Audience::Terminals, "terminal:data", &serde_json::json!("x".repeat(MAX_EVENT_BYTES))), Err(EventError::Oversized));
-        assert_eq!(term.recv().await.unwrap_err(), EventError::ResnapshotRequired);
-        hub.publish(Audience::All, "tree:changed", &serde_json::Value::Null).unwrap();
+        hub.publish(Audience::All, "terminal:state", &serde_json::Value::Null)
+            .unwrap();
+        term.recv().await.unwrap();
+        app.recv().await.unwrap();
+        hub.publish(Audience::All, "tree:changed", &serde_json::Value::Null)
+            .unwrap();
+        app.recv().await.unwrap();
+        assert!(term.receiver.is_empty());
+        assert_eq!(
+            hub.publish(
+                Audience::Terminals,
+                "terminal:data",
+                &serde_json::json!("x".repeat(MAX_EVENT_BYTES))
+            ),
+            Err(EventError::Oversized)
+        );
+        assert_eq!(
+            term.recv().await.unwrap_err(),
+            EventError::ResnapshotRequired
+        );
+        hub.publish(Audience::All, "tree:changed", &serde_json::Value::Null)
+            .unwrap();
         app.recv().await.unwrap();
     }
 
