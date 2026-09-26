@@ -16,6 +16,8 @@ export type PageProps = {
   setCards: (c: FileCardT[]) => void;
   setup: SetupTask[];
   setSetup: (s: SetupTask[]) => void;
+  extras: { teardown: string[]; migrate: string[] };
+  setExtras: (next: { teardown: string[]; migrate: string[] }) => void;
   policy: SetupPolicy;
   setPolicy: (p: SetupPolicy) => void;
   onRemoveRepo: () => void;

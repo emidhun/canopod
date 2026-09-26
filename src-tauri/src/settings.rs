@@ -186,10 +186,8 @@ pub struct UpdatesCfg {
 
 impl Default for UpdatesCfg {
     fn default() -> Self {
-        // Checking is a single small request a few times a day and is the only
-        // way someone learns a fix shipped, so it is on by default. Anything
-        // that *installs* would not be.
-        Self { auto_check: true }
+        // Opt in until the background result has a visible update notice.
+        Self { auto_check: false }
     }
 }
 

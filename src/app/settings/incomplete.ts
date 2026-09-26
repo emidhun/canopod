@@ -47,6 +47,7 @@ function rowsOf(r: RepoCfg): { kind: RowKind; index: number; fields: Spec[]; lab
         { label: "name", value: s.name },
         { label: "command", value: s.command, required: "a command" },
         { label: "directory", value: s.cwd },
+        { label: "environment", value: Object.keys(s.env || {}).length ? "configured" : "" },
         { label: "base port", value: s.basePort == null ? "" : String(s.basePort) },
       ],
       label: s.name?.trim() || s.id?.trim() || "Untitled service",
@@ -56,6 +57,7 @@ function rowsOf(r: RepoCfg): { kind: RowKind; index: number; fields: Spec[]; lab
       fields: [
         { label: "label", value: c.label, required: "a label" },
         { label: "command", value: c.command, required: "a command" },
+        { label: "group", value: c.group },
       ],
       label: c.label?.trim() || "Untitled command",
     })),
@@ -63,6 +65,7 @@ function rowsOf(r: RepoCfg): { kind: RowKind; index: number; fields: Spec[]; lab
       kind: "agent" as const, index,
       // the id is generated, never typed — it does not count as "touched"
       fields: [
+        { label: "waiting patterns", value: a.waitingPatterns },
         { label: "name", value: a.name, required: "a name" },
         { label: "command", value: a.command, required: "a command" },
       ],
