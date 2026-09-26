@@ -255,6 +255,7 @@ fn provision_to_json(provision: &[ProvisionFile]) -> serde_json::Value {
 /// setup commands. Preserves other top-level keys (teardown/migrate) and drops
 /// the legacy `env` block, which is now folded into `provision`. An existing but
 /// malformed file is an ERROR — rewriting it would silently drop those keys.
+#[cfg(test)]
 pub fn write_repo_config(
     repo_path: &str,
     provision: &[ProvisionFile],
