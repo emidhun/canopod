@@ -941,6 +941,7 @@ async fn run_tasks_parallel(
     for (i, (cmd, cwd)) in prepared.into_iter().enumerate() {
         let (wt, repo, vars, tx) = (wt_path.to_string(), repo_path.to_string(), vars.clone(), tx.clone());
         let timeout = policy.timeout_secs;
+        // The engine has no host context; its async caller already runs on Tokio.
         handles.push(tokio::spawn(async move {
             let step = i + 1;
             let prefix = format!("setup [{step}/{n}]");

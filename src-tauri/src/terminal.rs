@@ -279,7 +279,7 @@ fn looks_like_prompt(tail: &str, extra: &[String]) -> bool {
 /// of already-resident scrollback per agent session and allocates only for
 /// sessions that are quiet.
 pub fn poll_states(app: &RuntimeContext) {
-    let Some(table) = app.try_state::<TermTable>() else { return };
+    let table = app.state::<TermTable>();
     let mut changes: Vec<(String, Activity)> = Vec::new();
     {
         let mut sessions = table.sessions.lock();
@@ -332,7 +332,7 @@ pub fn waiting_count(table: &TermTable) -> usize {
 /// new argument through the whole terminal-open call chain.
 fn patterns_for(app: &RuntimeContext, cwd: &str, command: Option<&str>) -> Vec<String> {
     let Some(command) = command.map(str::trim).filter(|c| !c.is_empty()) else { return Vec::new() };
-    let Some(state) = app.try_state::<AppState>() else { return Vec::new() };
+    let state = app.state::<AppState>();
     let Some(ctx) = state.wt_context(cwd) else { return Vec::new() };
     let settings = state.settings.read();
     let Some(repo) = settings.repos.iter().find(|r| r.id == ctx.repo_id) else { return Vec::new() };
@@ -365,8 +365,8 @@ pub fn open(
     // settings→sessions ordering to deadlock against.
     let waiting_patterns =
         if kind_of(id) == "agent" { patterns_for(app, cwd, command.as_deref()) } else { Vec::new() };
-    let (term_cfg, provisioned_vars) = match app.try_state::<AppState>() {
-        Some(state) => {
+    let (term_cfg, provisioned_vars) = {
+            let state = app.state::<AppState>();
             let cfg = state.settings.read().embedded_terminal.clone();
             let vars = if cfg.inherit_env {
                 state
@@ -377,8 +377,6 @@ pub fn open(
                 HashMap::new()
             };
             (cfg, vars)
-        }
-        None => (crate::settings::TermCfg::default(), HashMap::new()),
     };
 
     let mut sessions = table.sessions.lock();
@@ -509,7 +507,8 @@ pub fn open(
                     // the emitted seq always matches a chunk boundary.
                     let mut seq = 0;
                     let mut ours = false;
-                    if let Some(table) = app.try_state::<TermTable>() {
+                    {
+        let table = app.state::<TermTable>();
                         if let Some(sess) = table.sessions.lock().get_mut(&id) {
                             // Same generation guard the exit path uses: a restart
                             // reopens this id, and bytes this (now stale) reader
@@ -544,7 +543,8 @@ pub fn open(
         // session ended: drop it and tell the UI — but only if a newer session
         // hasn't already replaced this id (fast reopen), else we'd delete the
         // replacement and emit a false exit.
-        let removed = if let Some(table) = app.try_state::<TermTable>() {
+        let removed = {
+        let table = app.state::<TermTable>();
             let mut sessions = table.sessions.lock();
             match sessions.get(&id) {
                 Some(s) if s.generation == generation => {
@@ -566,8 +566,6 @@ pub fn open(
                 }
                 _ => false,
             }
-        } else {
-            false
         };
         if removed {
             crate::notify::refresh_badge(&app);
@@ -738,9 +736,8 @@ pub fn sweep_idle(app: &RuntimeContext, table: &TermTable) {
     // Per-repo agent timeout, keyed by the repo's worktree paths. Resolved
     // once per sweep rather than per session — the sweep runs every 5 minutes
     // and this is two lock acquisitions instead of one per open terminal.
-    let agent_limits: HashMap<String, Duration> = app
-        .try_state::<AppState>()
-        .map(|state| {
+    let agent_limits: HashMap<String, Duration> = {
+            let state = app.state::<AppState>();
             let settings = state.settings.read();
             let tree = state.tree.read();
             tree.iter()
@@ -755,8 +752,7 @@ pub fn sweep_idle(app: &RuntimeContext, table: &TermTable) {
                 })
                 .flatten()
                 .collect()
-        })
-        .unwrap_or_default();
+        };
 
     let mut sessions = table.sessions.lock();
     for (id, sess) in sessions.iter_mut() {

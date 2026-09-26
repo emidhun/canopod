@@ -1,12 +1,12 @@
 // Thin Tauri adapters. All domain execution lives in operations.rs.
 use crate::error::CanopyError;
-use crate::{git, terminal};
-use crate::services::{self, LogLine, ProcTable};
-use crate::terminal::TermTable;
 use crate::operations::*;
+use crate::runtime::RuntimeContext;
+use crate::services::{self, LogLine, ProcTable};
 use crate::settings::{RepoCfg, Settings};
 use crate::state::{AppState, RepoNode};
-use crate::runtime::RuntimeContext;
+use crate::terminal::TermTable;
+use crate::{git, terminal};
 use tauri::{AppHandle, Manager};
 
 fn runtime(app: &AppHandle) -> RuntimeContext {
@@ -61,25 +61,41 @@ pub async fn git_pull(app: AppHandle, wt_key: String) -> Result<String, CanopyEr
 }
 
 #[tauri::command]
-pub async fn submodule_status(app: AppHandle, wt_key: String) -> Result<Vec<git::SubmoduleStatus>, CanopyError> {
+pub async fn submodule_status(
+    app: AppHandle,
+    wt_key: String,
+) -> Result<Vec<git::SubmoduleStatus>, CanopyError> {
     let context = runtime(&app);
     crate::operations::submodule_status(context, wt_key).await
 }
 
 #[tauri::command]
-pub async fn pull_submodule(app: AppHandle, wt_key: String, path: String) -> Result<String, CanopyError> {
+pub async fn pull_submodule(
+    app: AppHandle,
+    wt_key: String,
+    path: String,
+) -> Result<String, CanopyError> {
     let context = runtime(&app);
     crate::operations::pull_submodule(context, wt_key, path).await
 }
 
 #[tauri::command]
-pub async fn switch_submodule_branch(app: AppHandle, wt_key: String, path: String, branch: String) -> Result<(), CanopyError> {
+pub async fn switch_submodule_branch(
+    app: AppHandle,
+    wt_key: String,
+    path: String,
+    branch: String,
+) -> Result<(), CanopyError> {
     let context = runtime(&app);
     crate::operations::switch_submodule_branch(context, wt_key, path, branch).await
 }
 
 #[tauri::command]
-pub async fn list_submodule_branches(app: AppHandle, wt_key: String, path: String) -> Result<git::Branches, CanopyError> {
+pub async fn list_submodule_branches(
+    app: AppHandle,
+    wt_key: String,
+    path: String,
+) -> Result<git::Branches, CanopyError> {
     let context = runtime(&app);
     crate::operations::list_submodule_branches(context, wt_key, path).await
 }
@@ -97,7 +113,13 @@ pub async fn sync_submodules(app: AppHandle, wt_key: String) -> Result<String, C
 }
 
 #[tauri::command]
-pub async fn switch_worktree_branch(app: AppHandle, wt_key: String, branch: String, create: bool, base: Option<String>) -> Result<(), CanopyError> {
+pub async fn switch_worktree_branch(
+    app: AppHandle,
+    wt_key: String,
+    branch: String,
+    create: bool,
+    base: Option<String>,
+) -> Result<(), CanopyError> {
     let context = runtime(&app);
     crate::operations::switch_worktree_branch(context, wt_key, branch, create, base).await
 }
@@ -110,9 +132,25 @@ pub fn get_logs(app: AppHandle, svc_key: String) -> Vec<LogLine> {
 
 // Keep PTY adapters async: writes and scrollback reads must not block the UI thread.
 #[tauri::command]
-pub async fn terminal_open(app: AppHandle, id: String, cwd: String, cols: u16, rows: u16, command: Option<String>) -> Result<(), CanopyError> {
+pub async fn terminal_open(
+    app: AppHandle,
+    id: String,
+    cwd: String,
+    cols: u16,
+    rows: u16,
+    command: Option<String>,
+) -> Result<(), CanopyError> {
     let context = runtime(&app);
-    crate::operations::terminal_open(context.clone(), context.state::<TermTable>(), id, cwd, cols, rows, command).await
+    crate::operations::terminal_open(
+        context.clone(),
+        context.state::<TermTable>(),
+        id,
+        cwd,
+        cols,
+        rows,
+        command,
+    )
+    .await
 }
 
 #[tauri::command]
@@ -122,13 +160,21 @@ pub async fn terminal_write(app: AppHandle, id: String, data: String) -> Result<
 }
 
 #[tauri::command]
-pub async fn terminal_resize(app: AppHandle, id: String, cols: u16, rows: u16) -> Result<(), CanopyError> {
+pub async fn terminal_resize(
+    app: AppHandle,
+    id: String,
+    cols: u16,
+    rows: u16,
+) -> Result<(), CanopyError> {
     let context = runtime(&app);
     crate::operations::terminal_resize(context.state::<TermTable>(), id, cols, rows).await
 }
 
 #[tauri::command]
-pub async fn terminal_get_buffer(app: AppHandle, id: String) -> Result<Option<terminal::BufferSnapshot>, CanopyError> {
+pub async fn terminal_get_buffer(
+    app: AppHandle,
+    id: String,
+) -> Result<Option<terminal::BufferSnapshot>, CanopyError> {
     let context = runtime(&app);
     crate::operations::terminal_get_buffer(context.state::<TermTable>(), id).await
 }
@@ -140,7 +186,11 @@ pub async fn terminal_close(app: AppHandle, id: String) -> Result<(), CanopyErro
 }
 
 #[tauri::command]
-pub fn write_worktree_context(app: AppHandle, wt_path: String, contents: String) -> Result<(), CanopyError> {
+pub fn write_worktree_context(
+    app: AppHandle,
+    wt_path: String,
+    contents: String,
+) -> Result<(), CanopyError> {
     let context = runtime(&app);
     crate::operations::write_worktree_context(context, wt_path, contents)
 }
@@ -152,7 +202,10 @@ pub fn resolve_agent_command(app: AppHandle, wt_key: String) -> String {
 }
 
 #[tauri::command]
-pub fn service_env(app: AppHandle, svc_key: String) -> Result<Vec<services::EnvEntry>, CanopyError> {
+pub fn service_env(
+    app: AppHandle,
+    svc_key: String,
+) -> Result<Vec<services::EnvEntry>, CanopyError> {
     let context = runtime(&app);
     crate::operations::service_env(context, svc_key)
 }
@@ -200,7 +253,11 @@ pub async fn run_migration(app: AppHandle, wt_key: String) -> Result<(), CanopyE
 }
 
 #[tauri::command]
-pub async fn run_custom_command(app: AppHandle, wt_key: String, command: String) -> Result<(), CanopyError> {
+pub async fn run_custom_command(
+    app: AppHandle,
+    wt_key: String,
+    command: String,
+) -> Result<(), CanopyError> {
     let context = runtime(&app);
     crate::operations::run_custom_command(context, wt_key, command).await
 }
@@ -213,8 +270,13 @@ pub async fn open_in_editor(app: AppHandle, wt_key: String) -> Result<(), Canopy
         let s = state.settings.read();
         s.editor.command.clone()
     };
-    let editor = if editor.trim().is_empty() { "code".to_string() } else { editor };
-    let (shell, shargs) = crate::toolchain::shell_argv(&format!("{editor} {}", crate::toolchain::sh_quote(&wt_key)));
+    let editor = if editor.trim().is_empty() {
+        "code".to_string()
+    } else {
+        editor
+    };
+    let (shell, shargs) =
+        crate::toolchain::shell_argv(&format!("{editor} {}", crate::toolchain::sh_quote(&wt_key)));
     tokio::process::Command::new(shell)
         .args(&shargs)
         .spawn()
@@ -223,21 +285,37 @@ pub async fn open_in_editor(app: AppHandle, wt_key: String) -> Result<(), Canopy
 }
 
 #[tauri::command]
-pub async fn open_file_in_editor(app: AppHandle, wt_key: String, path: String) -> Result<(), CanopyError> {
+pub async fn open_file_in_editor(
+    app: AppHandle,
+    wt_key: String,
+    path: String,
+) -> Result<(), CanopyError> {
     let context = runtime(&app);
-    let root = std::fs::canonicalize(&wt_key).map_err(|e| CanopyError::invalid_input(format!("worktree path: {e}")))?;
+    let root = std::fs::canonicalize(&wt_key)
+        .map_err(|e| CanopyError::invalid_input(format!("worktree path: {e}")))?;
     let requested = std::path::PathBuf::from(&path);
-    let candidate = if requested.is_absolute() { requested } else { root.join(requested) };
-    let file = std::fs::canonicalize(&candidate).map_err(|e| CanopyError::invalid_input(format!("file path: {e}")))?;
+    let candidate = if requested.is_absolute() {
+        requested
+    } else {
+        root.join(requested)
+    };
+    let file = std::fs::canonicalize(&candidate)
+        .map_err(|e| CanopyError::invalid_input(format!("file path: {e}")))?;
     if !file.starts_with(&root) {
-        return Err(CanopyError::invalid_input("File must be inside the selected worktree"));
+        return Err(CanopyError::invalid_input(
+            "File must be inside the selected worktree",
+        ));
     }
     let editor = {
         let state = context.state::<AppState>();
         let s = state.settings.read();
         s.editor.command.clone()
     };
-    let editor = if editor.trim().is_empty() { "code".to_string() } else { editor };
+    let editor = if editor.trim().is_empty() {
+        "code".to_string()
+    } else {
+        editor
+    };
     let file = crate::toolchain::sh_quote(&file.to_string_lossy());
     let (shell, shargs) = crate::toolchain::shell_argv(&format!("{editor} {file}"));
     tokio::process::Command::new(shell)
@@ -272,7 +350,8 @@ pub fn reveal_in_finder(wt_key: String) -> Result<(), CanopyError> {
         c.arg(dir);
         c
     };
-    cmd.spawn().map_err(|e| CanopyError::process(e.to_string()))?;
+    cmd.spawn()
+        .map_err(|e| CanopyError::process(e.to_string()))?;
     Ok(())
 }
 
@@ -295,7 +374,11 @@ pub fn open_terminal(app: AppHandle, wt_key: String) -> Result<(), CanopyError> 
 
     #[cfg(target_os = "macos")]
     {
-        let term = if term.trim().is_empty() { "Terminal".to_string() } else { term };
+        let term = if term.trim().is_empty() {
+            "Terminal".to_string()
+        } else {
+            term
+        };
         std::process::Command::new("open")
             .args(["-a", &term, &wt_key])
             .spawn()
@@ -313,9 +396,17 @@ pub fn open_terminal(app: AppHandle, wt_key: String) -> Result<(), CanopyError> 
             candidates.push(term.trim().to_string());
         }
         candidates.extend(
-            ["x-terminal-emulator", "gnome-terminal", "konsole", "xfce4-terminal", "alacritty", "kitty", "xterm"]
-                .iter()
-                .map(|s| s.to_string()),
+            [
+                "x-terminal-emulator",
+                "gnome-terminal",
+                "konsole",
+                "xfce4-terminal",
+                "alacritty",
+                "kitty",
+                "xterm",
+            ]
+            .iter()
+            .map(|s| s.to_string()),
         );
         for bin in candidates {
             let mut cmd = std::process::Command::new(&bin);
@@ -327,7 +418,9 @@ pub fn open_terminal(app: AppHandle, wt_key: String) -> Result<(), CanopyError> 
                 return Ok(());
             }
         }
-        return Err(CanopyError::process("No terminal emulator found — set one in Settings"));
+        return Err(CanopyError::process(
+            "No terminal emulator found — set one in Settings",
+        ));
     }
 
     #[cfg(target_os = "windows")]
@@ -374,67 +467,115 @@ pub async fn quit_app(app: AppHandle) -> Result<(), CanopyError> {
 }
 
 #[tauri::command]
-pub async fn set_worktree_pinned(app: AppHandle, wt_key: String, pinned: bool) -> Result<(), CanopyError> {
+pub async fn set_worktree_pinned(
+    app: AppHandle,
+    wt_key: String,
+    pinned: bool,
+) -> Result<(), CanopyError> {
     let context = runtime(&app);
     crate::operations::set_worktree_pinned(context, wt_key, pinned).await
 }
 
 #[tauri::command]
-pub fn preview_worktree(app: AppHandle, repo_id: String, branch: String) -> Result<WorktreePreview, CanopyError> {
+pub fn preview_worktree(
+    app: AppHandle,
+    repo_id: String,
+    branch: String,
+) -> Result<WorktreePreview, CanopyError> {
     let context = runtime(&app);
     crate::operations::preview_worktree(context, repo_id, branch)
 }
 
 #[tauri::command]
-pub async fn create_worktree(app: AppHandle, repo_id: String, branch: String, base: Option<String>, create_branch: bool) -> Result<String, CanopyError> {
+pub async fn create_worktree(
+    app: AppHandle,
+    repo_id: String,
+    branch: String,
+    base: Option<String>,
+    create_branch: bool,
+) -> Result<String, CanopyError> {
     let context = runtime(&app);
     crate::operations::create_worktree(context, repo_id, branch, base, create_branch).await
 }
 
 #[tauri::command]
-pub async fn run_worktree_setup(app: AppHandle, wt_key: String, dry_run: bool) -> Result<(), CanopyError> {
+pub async fn run_worktree_setup(
+    app: AppHandle,
+    wt_key: String,
+    dry_run: bool,
+) -> Result<(), CanopyError> {
     let context = runtime(&app);
     crate::operations::run_worktree_setup(context, wt_key, dry_run).await
 }
 
 #[tauri::command]
-pub async fn worktree_dirty_report(app: AppHandle, wt_key: String) -> Result<git::DirtyReport, CanopyError> {
+pub async fn worktree_dirty_report(
+    app: AppHandle,
+    wt_key: String,
+) -> Result<git::DirtyReport, CanopyError> {
     let context = runtime(&app);
     crate::operations::worktree_dirty_report(context, wt_key).await
 }
 
 #[tauri::command]
-pub async fn worktree_status(app: AppHandle, wt_key: String) -> Result<Vec<git::StatusEntry>, CanopyError> {
+pub async fn worktree_status(
+    app: AppHandle,
+    wt_key: String,
+) -> Result<Vec<git::StatusEntry>, CanopyError> {
     let context = runtime(&app);
     crate::operations::worktree_status(context, wt_key).await
 }
 
 #[tauri::command]
-pub async fn worktree_commit(app: AppHandle, wt_key: String, message: String, add_untracked: bool) -> Result<(), CanopyError> {
+pub async fn worktree_commit(
+    app: AppHandle,
+    wt_key: String,
+    message: String,
+    add_untracked: bool,
+) -> Result<(), CanopyError> {
     let context = runtime(&app);
     crate::operations::worktree_commit(context, wt_key, message, add_untracked).await
 }
 
 #[tauri::command]
-pub async fn worktree_stash(app: AppHandle, wt_key: String, name: Option<String>, include_untracked: bool) -> Result<String, CanopyError> {
+pub async fn worktree_stash(
+    app: AppHandle,
+    wt_key: String,
+    name: Option<String>,
+    include_untracked: bool,
+) -> Result<String, CanopyError> {
     let context = runtime(&app);
     crate::operations::worktree_stash(context, wt_key, name, include_untracked).await
 }
 
 #[tauri::command]
-pub async fn worktree_discard(app: AppHandle, wt_key: String, clean_untracked: bool) -> Result<(), CanopyError> {
+pub async fn worktree_discard(
+    app: AppHandle,
+    wt_key: String,
+    clean_untracked: bool,
+) -> Result<(), CanopyError> {
     let context = runtime(&app);
     crate::operations::worktree_discard(context, wt_key, clean_untracked).await
 }
 
 #[tauri::command]
-pub async fn remove_worktree(app: AppHandle, wt_key: String, delete_branch: bool, drop_db: bool) -> Result<(), CanopyError> {
+pub async fn remove_worktree(
+    app: AppHandle,
+    wt_key: String,
+    delete_branch: bool,
+    drop_db: bool,
+) -> Result<(), CanopyError> {
     let context = runtime(&app);
     crate::operations::remove_worktree(context, wt_key, delete_branch, drop_db).await
 }
 
 #[tauri::command]
-pub async fn remove_worktrees(app: AppHandle, wt_keys: Vec<String>, delete_branch: bool, drop_db: bool) -> Result<(), CanopyError> {
+pub async fn remove_worktrees(
+    app: AppHandle,
+    wt_keys: Vec<String>,
+    delete_branch: bool,
+    drop_db: bool,
+) -> Result<(), CanopyError> {
     let context = runtime(&app);
     crate::operations::remove_worktrees(context, wt_keys, delete_branch, drop_db).await
 }
@@ -464,31 +605,51 @@ pub fn current_database(app: AppHandle, wt_key: String) -> Result<Option<String>
 }
 
 #[tauri::command]
-pub async fn snapshot_database(app: AppHandle, wt_key: String, name: String) -> Result<(), CanopyError> {
+pub async fn snapshot_database(
+    app: AppHandle,
+    wt_key: String,
+    name: String,
+) -> Result<(), CanopyError> {
     let context = runtime(&app);
     crate::operations::snapshot_database(context, wt_key, name).await
 }
 
 #[tauri::command]
-pub async fn export_database(app: AppHandle, wt_key: String, file_path: String) -> Result<(), CanopyError> {
+pub async fn export_database(
+    app: AppHandle,
+    wt_key: String,
+    file_path: String,
+) -> Result<(), CanopyError> {
     let context = runtime(&app);
     crate::operations::export_database(context, wt_key, file_path).await
 }
 
 #[tauri::command]
-pub async fn restore_database(app: AppHandle, wt_key: String, file_path: String) -> Result<(), CanopyError> {
+pub async fn restore_database(
+    app: AppHandle,
+    wt_key: String,
+    file_path: String,
+) -> Result<(), CanopyError> {
     let context = runtime(&app);
     crate::operations::restore_database(context, wt_key, file_path).await
 }
 
 #[tauri::command]
-pub async fn switch_database(app: AppHandle, wt_key: String, db_name: String) -> Result<(), CanopyError> {
+pub async fn switch_database(
+    app: AppHandle,
+    wt_key: String,
+    db_name: String,
+) -> Result<(), CanopyError> {
     let context = runtime(&app);
     crate::operations::switch_database(context, wt_key, db_name).await
 }
 
 #[tauri::command]
-pub async fn set_service_port(app: AppHandle, svc_key: String, port: u32) -> Result<(), CanopyError> {
+pub async fn set_service_port(
+    app: AppHandle,
+    svc_key: String,
+    port: u32,
+) -> Result<(), CanopyError> {
     let context = runtime(&app);
     crate::operations::set_service_port(context, svc_key, port).await
 }
@@ -511,9 +672,25 @@ pub fn save_text_file(path: String, contents: String) -> Result<(), CanopyError>
 }
 
 #[tauri::command]
-pub fn save_repo_config(app: AppHandle, repo_id: String, provision: Vec<ProvisionEntry>, setup: Vec<SetupTaskEntry>, setup_policy: Option<SetupPolicyEntry>, teardown: Option<Vec<String>>, migrate: Option<Vec<String>>) -> Result<(), CanopyError> {
+pub fn save_repo_config(
+    app: AppHandle,
+    repo_id: String,
+    provision: Vec<ProvisionEntry>,
+    setup: Vec<SetupTaskEntry>,
+    setup_policy: Option<SetupPolicyEntry>,
+    teardown: Option<Vec<String>>,
+    migrate: Option<Vec<String>>,
+) -> Result<(), CanopyError> {
     let context = runtime(&app);
-    crate::operations::save_repo_config(context, repo_id, provision, setup, setup_policy, teardown, migrate)
+    crate::operations::save_repo_config(
+        context,
+        repo_id,
+        provision,
+        setup,
+        setup_policy,
+        teardown,
+        migrate,
+    )
 }
 
 #[tauri::command]
@@ -523,7 +700,11 @@ pub fn get_disk_usage(app: AppHandle) -> std::collections::HashMap<String, crate
 }
 
 #[tauri::command]
-pub fn scan_disk_usage(app: AppHandle, wt_keys: Vec<String>, force: bool) -> Result<(), CanopyError> {
+pub fn scan_disk_usage(
+    app: AppHandle,
+    wt_keys: Vec<String>,
+    force: bool,
+) -> Result<(), CanopyError> {
     let context = runtime(&app);
     crate::operations::scan_disk_usage(context, wt_keys, force)
 }
@@ -575,7 +756,8 @@ pub fn crash_report_count(app: AppHandle) -> usize {
 
 #[tauri::command]
 pub fn open_crash_reports(app: AppHandle) -> Result<(), CanopyError> {
-    let dir = crate::updates::crash_dir(&runtime(&app)).ok_or_else(|| CanopyError::not_found("no log directory"))?;
+    let dir = crate::updates::crash_dir(&runtime(&app))
+        .ok_or_else(|| CanopyError::not_found("no log directory"))?;
     reveal_in_finder(dir.to_string_lossy().into_owned())
 }
 

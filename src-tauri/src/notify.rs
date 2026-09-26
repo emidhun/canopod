@@ -38,7 +38,7 @@ pub enum Kind {
 }
 
 fn enabled(app: &RuntimeContext, kind: Kind) -> (bool, bool) {
-    let Some(state) = app.try_state::<crate::state::AppState>() else { return (false, false) };
+    let state = app.state::<crate::state::AppState>();
     let cfg = state.settings.read().notifications.clone();
     let on = match kind {
         Kind::ServiceCrash => cfg.service_crash,
@@ -60,10 +60,11 @@ pub fn notify(app: &RuntimeContext, kind: Kind, subject: &str, title: &str, body
         return;
     }
     // Someone looking at Canopy has already been told, twice.
-    if app.interested(crate::runtime::Audience::Main) {
+    if app.host().interested(crate::runtime::Audience::Main) {
         return;
     }
-    if let Some(state) = app.try_state::<NotifyState>() {
+    {
+        let state = app.state::<NotifyState>();
         let mut last = state.last.lock();
         if last.get(subject).is_some_and(|t| t.elapsed() < COOLDOWN) {
             return;
@@ -78,6 +79,7 @@ pub fn notify(app: &RuntimeContext, kind: Kind, subject: &str, title: &str, body
     }
 
     if let Err(e) = app.host().notify(title, body, sound) {
+        // A refused OS notification is not an app failure: the in-app queue still has it.
         log::debug!("notification not shown: {e}");
     }
 }
@@ -89,7 +91,7 @@ pub fn notify(app: &RuntimeContext, kind: Kind, subject: &str, title: &str, body
 /// correct while no window is open — which is precisely when a badge is the
 /// only thing communicating it.
 pub fn refresh_badge(app: &RuntimeContext) {
-    let Some(state) = app.try_state::<crate::state::AppState>() else { return };
+    let state = app.state::<crate::state::AppState>();
     let mode = state.settings.read().notifications.badge.clone();
 
     let crashed = {
@@ -100,8 +102,7 @@ pub fn refresh_badge(app: &RuntimeContext) {
             .filter(|s| s.status == crate::state::SvcStatus::Error)
             .count()
     };
-    let waiting = app.try_state::<crate::terminal::TermTable>()
-        .map(|table| crate::terminal::waiting_count(&table)).unwrap_or(0);
+    let waiting = crate::terminal::waiting_count(app.state::<crate::terminal::TermTable>());
     let total = (crashed + waiting) as i64;
 
     app.host().badge(&mode, total);

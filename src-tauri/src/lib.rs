@@ -128,8 +128,6 @@ pub fn run() {
                 }
             };
             app.manage(owner);
-<<<<<<< HEAD
-            tray::init(&handle)?;
             let paths = runtime::RuntimePaths {
                 config: handle.path().app_config_dir()?,
                 data: handle.path().app_data_dir()?,
@@ -146,35 +144,23 @@ pub fn run() {
                 std::sync::Arc::new(desktop_host::DesktopHost(handle.clone())),
             );
             app.manage(context.clone());
-            let desktop = handle;
-            let handle = context;
-=======
-            let loaded = settings::load_settings(&handle);
-            // git credentials are process-wide (see git.rs) — publish them
-            // before anything can run a git command
-            git::apply_credentials(&loaded.security.ssh_key, &loaded.security.credential_helper);
-            app.manage(AppState::new(loaded, settings::load_runtime(&handle)));
-            app.manage(ProcTable::default());
-            app.manage(TermTable::default());
-            app.manage(disk::DiskCache::default());
-            app.manage(notify::NotifyState::default());
-            // Configured webviews are deferred until ownership and state exist.
             for config in &app.config().app.windows {
                 tauri::WebviewWindowBuilder::from_config(app, config)?.build()?;
             }
             tray::init(&handle)?;
->>>>>>> feat/mcp-runtime-context
+            let desktop = handle;
+
 
             // crash reports + the update check need AppState for their
             // preferences, so both are installed after it is managed
-            updates::install_panic_hook(handle.clone());
-            updates::spawn_check_task(handle.clone());
+            updates::install_panic_hook(context.clone());
+            updates::spawn_check_task(context.clone());
 
             // kill process groups left over from a crashed previous run
-            services::sweep_orphans(&handle);
-            terminal::sweep_orphans(&handle);
+            services::sweep_orphans(&context);
+            terminal::sweep_orphans(&context);
 
-            stats::spawn_stats_task(handle.clone());
+            stats::spawn_stats_task(context.clone());
 
             // 1s visibility poll feeding the WINDOWS_VISIBLE cache, plus the
             // agent-activity sweep. Both are cheap and want the same cadence:
@@ -185,7 +171,7 @@ pub fn run() {
             // are exactly what someone checks when the app isn't on screen —
             // and it emits only on a transition, never on the tick.
             {
-                let handle = handle.clone();
+                let context = context.clone();
                 tauri::async_runtime::spawn(async move {
                     loop {
                         tokio::time::sleep(std::time::Duration::from_secs(1)).await;
@@ -193,7 +179,7 @@ pub fn run() {
                             any_window_visible(&desktop),
                             std::sync::atomic::Ordering::Relaxed,
                         );
-                        terminal::poll_states(&handle);
+                        terminal::poll_states(&context);
                     }
                 });
             }
@@ -207,12 +193,13 @@ pub fn run() {
 
             // periodically sweep idle shell terminals (bounds long-run memory)
             {
-                let handle = handle.clone();
+                let context = context.clone();
                 tauri::async_runtime::spawn(async move {
                     loop {
                         tokio::time::sleep(std::time::Duration::from_secs(5 * 60)).await;
-                        if let Some(table) = handle.try_state::<TermTable>() {
-                            terminal::sweep_idle(&handle, table);
+                        {
+        let table = context.state::<TermTable>();
+                            terminal::sweep_idle(&context, table);
                         }
                     }
                 });
@@ -223,13 +210,13 @@ pub fn run() {
             // the periodic tick is skipped (show_main_window / the popover
             // toggle kick an immediate refresh when a window comes back).
             tauri::async_runtime::spawn(async move {
-                state::refresh_all(&handle).await;
+                state::refresh_all(&context).await;
                 loop {
                     tokio::time::sleep(std::time::Duration::from_secs(60)).await;
                     if !windows_visible() {
                         continue;
                     }
-                    state::refresh_all(&handle).await;
+                    state::refresh_all(&context).await;
                 }
             });
 
@@ -428,7 +415,8 @@ pub fn run() {
                     return;
                 }
                 // kill embedded terminal shells before their host process dies
-                let handle = app.state::<runtime::RuntimeContext>().inner().clone();
+                let Some(context) = app.try_state::<runtime::RuntimeContext>() else { return };
+                let handle = context.inner().clone();
                 terminal::close_all(handle.state::<TermTable>());
                 tauri::async_runtime::block_on(async move {
                     services::stop_all(&handle).await;

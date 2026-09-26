@@ -1,10 +1,10 @@
 use crate::error::CanopyError;
 use crate::git;
+use crate::runtime::RuntimeContext;
 use crate::services::{self, LogLine, ProcTable};
 use crate::settings::{self, RepoCfg, Settings};
 use crate::state::{refresh_all_git_meta, refresh_git_meta, refresh_tree, AppState, RepoNode};
 use crate::terminal::{self, TermTable};
-use crate::runtime::RuntimeContext;
 
 /// Uniform containment: commands that act on a `wt_key` only accept keys the
 /// tree actually knows. Without this, a compromised webview could point
@@ -52,7 +52,10 @@ pub async fn save_settings(app: RuntimeContext, new_settings: Settings) -> Resul
     }
     // re-publish git credentials before the rescan, so the refresh it triggers
     // already uses the key the user just chose
-    git::apply_credentials(&new_settings.security.ssh_key, &new_settings.security.credential_helper);
+    git::apply_credentials(
+        &new_settings.security.ssh_key,
+        &new_settings.security.credential_helper,
+    );
     settings::save_settings(&app, &new_settings).map_err(CanopyError::config)?;
     // await only the structural rebuild (the tree must reflect the new
     // services/repos when this resolves); git meta is 2 spawns per worktree
@@ -60,7 +63,8 @@ pub async fn save_settings(app: RuntimeContext, new_settings: Settings) -> Resul
     // meant seconds of spinner for a millisecond write
     refresh_tree(&app).await.map_err(CanopyError::internal)?;
     let app2 = app.clone();
-    app.executor().spawn(async move { refresh_all_git_meta(&app2).await });
+    app.executor()
+        .spawn(async move { refresh_all_git_meta(&app2).await });
     Ok(())
 }
 
@@ -118,7 +122,8 @@ pub async fn add_repo(app: RuntimeContext, path: String) -> Result<RepoCfg, Cano
     refresh_tree(&app).await.map_err(CanopyError::internal)?;
     // meta arrives via worktree:git events — same reasoning as save_settings
     let app2 = app.clone();
-    app.executor().spawn(async move { refresh_all_git_meta(&app2).await });
+    app.executor()
+        .spawn(async move { refresh_all_git_meta(&app2).await });
     Ok(repo)
 }
 
@@ -159,12 +164,21 @@ pub async fn detect_repo(path: String) -> Result<RepoDetection, CanopyError> {
         .unwrap_or_default();
     let origin = git::run_git(&top, &["remote", "get-url", "origin"])
         .await
-        .map(|s| s.trim().trim_end_matches(".git").replace("git@github.com:", "github.com/").replace("https://", ""))
+        .map(|s| {
+            s.trim()
+                .trim_end_matches(".git")
+                .replace("git@github.com:", "github.com/")
+                .replace("https://", "")
+        })
         .unwrap_or_default();
 
     let has = |f: &str| std::path::Path::new(&top).join(f).exists();
     let has_glob = |stem: &str| {
-        ["js", "ts", "mjs", "cjs"].iter().any(|ext| std::path::Path::new(&top).join(format!("{stem}.{ext}")).exists())
+        ["js", "ts", "mjs", "cjs"].iter().any(|ext| {
+            std::path::Path::new(&top)
+                .join(format!("{stem}.{ext}"))
+                .exists()
+        })
     };
     let stack = if has_glob("next.config") {
         "next"
@@ -192,14 +206,24 @@ pub async fn detect_repo(path: String) -> Result<RepoDetection, CanopyError> {
             if let Some(obj) = v.get("scripts").and_then(|s| s.as_object()) {
                 for (name, cmd) in obj {
                     if let Some(c) = cmd.as_str() {
-                        scripts.push(ScriptEntry { name: name.clone(), command: c.to_string() });
+                        scripts.push(ScriptEntry {
+                            name: name.clone(),
+                            command: c.to_string(),
+                        });
                     }
                 }
             }
         }
     }
 
-    Ok(RepoDetection { top, name, branch, origin, stack, scripts })
+    Ok(RepoDetection {
+        top,
+        name,
+        branch,
+        origin,
+        stack,
+        scripts,
+    })
 }
 
 pub async fn remove_repo(app: RuntimeContext, repo_id: String) -> Result<(), CanopyError> {
@@ -254,28 +278,50 @@ pub async fn git_pull(app: RuntimeContext, wt_key: String) -> Result<String, Can
 
 // ── submodules ──
 
-pub async fn submodule_status(app: RuntimeContext, wt_key: String) -> Result<Vec<git::SubmoduleStatus>, CanopyError> {
+pub async fn submodule_status(
+    app: RuntimeContext,
+    wt_key: String,
+) -> Result<Vec<git::SubmoduleStatus>, CanopyError> {
     ensure_known_worktree(&app, &wt_key)?;
     Ok(git::submodule_status(&wt_key).await)
 }
 
-pub async fn pull_submodule(app: RuntimeContext, wt_key: String, path: String) -> Result<String, CanopyError> {
+pub async fn pull_submodule(
+    app: RuntimeContext,
+    wt_key: String,
+    path: String,
+) -> Result<String, CanopyError> {
     ensure_known_worktree(&app, &wt_key)?;
-    let summary = git::pull_submodule(&wt_key, &path).await.map_err(CanopyError::git)?;
+    let summary = git::pull_submodule(&wt_key, &path)
+        .await
+        .map_err(CanopyError::git)?;
     refresh_git_meta(&app, &wt_key).await;
     Ok(summary)
 }
 
-pub async fn switch_submodule_branch(app: RuntimeContext, wt_key: String, path: String, branch: String) -> Result<(), CanopyError> {
+pub async fn switch_submodule_branch(
+    app: RuntimeContext,
+    wt_key: String,
+    path: String,
+    branch: String,
+) -> Result<(), CanopyError> {
     ensure_known_worktree(&app, &wt_key)?;
-    git::switch_submodule_branch(&wt_key, &path, &branch).await.map_err(CanopyError::git)?;
+    git::switch_submodule_branch(&wt_key, &path, &branch)
+        .await
+        .map_err(CanopyError::git)?;
     refresh_git_meta(&app, &wt_key).await;
     Ok(())
 }
 
-pub async fn list_submodule_branches(app: RuntimeContext, wt_key: String, path: String) -> Result<git::Branches, CanopyError> {
+pub async fn list_submodule_branches(
+    app: RuntimeContext,
+    wt_key: String,
+    path: String,
+) -> Result<git::Branches, CanopyError> {
     ensure_known_worktree(&app, &wt_key)?;
-    git::list_submodule_branches(&wt_key, &path).await.map_err(CanopyError::git)
+    git::list_submodule_branches(&wt_key, &path)
+        .await
+        .map_err(CanopyError::git)
 }
 
 pub async fn fetch_submodules(app: RuntimeContext, wt_key: String) -> Result<usize, CanopyError> {
@@ -289,7 +335,9 @@ pub async fn sync_submodules(app: RuntimeContext, wt_key: String) -> Result<Stri
     // shares the worktree lease with pull/setup: a sync rewriting submodule
     // checkouts under a running `pnpm install` is exactly the collision leases exist for
     let _lease = crate::state::try_lease(&app, &wt_key, "sync submodules")?;
-    let n = git::sync_submodules(&wt_key).await.map_err(CanopyError::git)?;
+    let n = git::sync_submodules(&wt_key)
+        .await
+        .map_err(CanopyError::git)?;
     refresh_git_meta(&app, &wt_key).await;
     Ok(match n {
         0 => "No submodules to sync".to_string(),
@@ -307,7 +355,9 @@ pub async fn switch_worktree_branch(
     base: Option<String>,
 ) -> Result<(), CanopyError> {
     ensure_known_worktree(&app, &wt_key)?;
-    git::switch_branch(&wt_key, &branch, create, base.as_deref()).await.map_err(CanopyError::git)?;
+    git::switch_branch(&wt_key, &branch, create, base.as_deref())
+        .await
+        .map_err(CanopyError::git)?;
     let _ = refresh_tree(&app).await;
     refresh_git_meta(&app, &wt_key).await;
     Ok(())
@@ -343,35 +393,59 @@ pub async fn terminal_open(
     terminal::open(&app, table, &id, &cwd, cols, rows, command).map_err(CanopyError::terminal)
 }
 
-pub async fn terminal_write(app: RuntimeContext, table: &TermTable, id: String, data: String) -> Result<(), CanopyError> {
+pub async fn terminal_write(
+    app: RuntimeContext,
+    table: &TermTable,
+    id: String,
+    data: String,
+) -> Result<(), CanopyError> {
     terminal::write(&app, table, &id, &data).map_err(CanopyError::terminal)
 }
 
-pub async fn terminal_resize(table: &TermTable, id: String, cols: u16, rows: u16) -> Result<(), CanopyError> {
+pub async fn terminal_resize(
+    table: &TermTable,
+    id: String,
+    cols: u16,
+    rows: u16,
+) -> Result<(), CanopyError> {
     terminal::resize(table, &id, cols, rows).map_err(CanopyError::terminal)
 }
 
-pub async fn terminal_get_buffer(table: &TermTable, id: String) -> Result<Option<terminal::BufferSnapshot>, CanopyError> {
+pub async fn terminal_get_buffer(
+    table: &TermTable,
+    id: String,
+) -> Result<Option<terminal::BufferSnapshot>, CanopyError> {
     Ok(terminal::get_buffer(table, &id))
 }
 
-pub async fn terminal_close(app: RuntimeContext, table: &TermTable, id: String) -> Result<(), CanopyError> {
+pub async fn terminal_close(
+    app: RuntimeContext,
+    table: &TermTable,
+    id: String,
+) -> Result<(), CanopyError> {
     terminal::close_and_persist(&app, table, &id);
     Ok(())
 }
 
 /// Ensure a worktree's `.canopy/` exists with a self-ignoring `.gitignore`, then
 /// write `context.md`. Never truncates an existing `.gitignore`.
-pub fn write_worktree_context(app: RuntimeContext, wt_path: String, contents: String) -> Result<(), CanopyError> {
+pub fn write_worktree_context(
+    app: RuntimeContext,
+    wt_path: String,
+    contents: String,
+) -> Result<(), CanopyError> {
     ensure_known_worktree(&app, &wt_path)?;
     let dir = std::path::Path::new(&wt_path).join(".canopy");
-    std::fs::create_dir_all(&dir).map_err(|e| CanopyError::setup(format!("mkdir {}: {e}", dir.display())))?;
+    std::fs::create_dir_all(&dir)
+        .map_err(|e| CanopyError::setup(format!("mkdir {}: {e}", dir.display())))?;
     let ignore = dir.join(".gitignore");
     if !ignore.exists() {
-        std::fs::write(&ignore, "*\n").map_err(|e| CanopyError::setup(format!("write {}: {e}", ignore.display())))?;
+        std::fs::write(&ignore, "*\n")
+            .map_err(|e| CanopyError::setup(format!("write {}: {e}", ignore.display())))?;
     }
     let file = dir.join("context.md");
-    std::fs::write(&file, contents).map_err(|e| CanopyError::setup(format!("write {}: {e}", file.display())))
+    std::fs::write(&file, contents)
+        .map_err(|e| CanopyError::setup(format!("write {}: {e}", file.display())))
 }
 
 /// The agent CLI to run for a worktree: the repo's configured `agentCommand`,
@@ -396,20 +470,29 @@ pub fn resolve_agent_command(state: &AppState, wt_key: String) -> String {
 /// Every environment variable a service runs with, with its source, masked.
 /// Answers "why is this talking to the wrong database?" without printing the
 /// repo's secrets into a modal.
-pub fn service_env(app: RuntimeContext, svc_key: String) -> Result<Vec<services::EnvEntry>, CanopyError> {
+pub fn service_env(
+    app: RuntimeContext,
+    svc_key: String,
+) -> Result<Vec<services::EnvEntry>, CanopyError> {
     services::resolved_env(&app, &svc_key).map_err(CanopyError::not_found)
 }
 
 pub async fn service_start(app: RuntimeContext, svc_key: String) -> Result<(), CanopyError> {
-    services::start_service(&app, &svc_key).await.map_err(CanopyError::process)
+    services::start_service(&app, &svc_key)
+        .await
+        .map_err(CanopyError::process)
 }
 
 pub async fn service_stop(app: RuntimeContext, svc_key: String) -> Result<(), CanopyError> {
-    services::stop_service(&app, &svc_key).await.map_err(CanopyError::process)
+    services::stop_service(&app, &svc_key)
+        .await
+        .map_err(CanopyError::process)
 }
 
 pub async fn service_restart(app: RuntimeContext, svc_key: String) -> Result<(), CanopyError> {
-    services::restart_service(&app, &svc_key).await.map_err(CanopyError::process)
+    services::restart_service(&app, &svc_key)
+        .await
+        .map_err(CanopyError::process)
 }
 
 pub async fn worktree_start_all(app: RuntimeContext, wt_key: String) -> Result<(), CanopyError> {
@@ -424,7 +507,10 @@ pub async fn worktree_start_all(app: RuntimeContext, wt_key: String) -> Result<(
     if errors.is_empty() {
         Ok(())
     } else {
-        Err(CanopyError::process(format!("some services failed to start — {}", errors.join("; "))))
+        Err(CanopyError::process(format!(
+            "some services failed to start — {}",
+            errors.join("; ")
+        )))
     }
 }
 
@@ -438,13 +524,18 @@ pub async fn worktree_stop_all(app: RuntimeContext, wt_key: String) -> Result<()
     if errors.is_empty() {
         Ok(())
     } else {
-        Err(CanopyError::process(format!("some services failed to stop — {}", errors.join("; "))))
+        Err(CanopyError::process(format!(
+            "some services failed to stop — {}",
+            errors.join("; ")
+        )))
     }
 }
 
 pub async fn reset_db(app: RuntimeContext, wt_key: String) -> Result<(), CanopyError> {
     let _lease = crate::state::try_lease(&app, &wt_key, "reset db")?;
-    services::reset_db(&app, &wt_key).await.map_err(CanopyError::db)
+    services::reset_db(&app, &wt_key)
+        .await
+        .map_err(CanopyError::db)
 }
 
 /// Run the worktree's configured DB migration (`migrate` in .worktreemanager.json).
@@ -455,7 +546,11 @@ pub async fn run_migration(app: RuntimeContext, wt_key: String) -> Result<(), Ca
     let settings_cmd = {
         let state = app.state::<AppState>();
         let s = state.settings.read();
-        s.repos.iter().find(|r| r.id == repo_id).map(|r| r.migrate_db.clone()).unwrap_or_default()
+        s.repos
+            .iter()
+            .find(|r| r.id == repo_id)
+            .map(|r| r.migrate_db.clone())
+            .unwrap_or_default()
     };
     let vars = crate::state::worktree_vars(&app, &repo_id, &wt_key, false);
     let app2 = app.clone();
@@ -486,7 +581,11 @@ pub async fn run_migration(app: RuntimeContext, wt_key: String) -> Result<(), Ca
 
 /// Run a repo-defined custom command in the worktree root, on the pinned Node,
 /// streaming progress via `worktree:op` (op="custom") — same model as migrate.
-pub async fn run_custom_command(app: RuntimeContext, wt_key: String, command: String) -> Result<(), CanopyError> {
+pub async fn run_custom_command(
+    app: RuntimeContext,
+    wt_key: String,
+    command: String,
+) -> Result<(), CanopyError> {
     if command.trim().is_empty() {
         return Err(CanopyError::invalid_input("Empty command"));
     }
@@ -495,7 +594,13 @@ pub async fn run_custom_command(app: RuntimeContext, wt_key: String, command: St
     let vars = crate::state::worktree_vars(&app, &repo_id, &wt_key, false);
     let app2 = app.clone();
     let wt2 = wt_key.clone();
-    emit_op(&app, &wt_key, "custom", "progress", format!("running: {command}"));
+    emit_op(
+        &app,
+        &wt_key,
+        "custom",
+        "progress",
+        format!("running: {command}"),
+    );
     match crate::setup::run_custom_command(&wt_key, &repo_path, &command, &vars, move |p| {
         emit_progress(&app2, &wt2, "custom", p)
     })
@@ -514,7 +619,11 @@ pub async fn run_custom_command(app: RuntimeContext, wt_key: String, command: St
 
 /// Pin or unpin a worktree in the sidebar. Persists to `Settings` and
 /// republishes the tree, which is what carries the flag to every window.
-pub async fn set_worktree_pinned(app: RuntimeContext, wt_key: String, pinned: bool) -> Result<(), CanopyError> {
+pub async fn set_worktree_pinned(
+    app: RuntimeContext,
+    wt_key: String,
+    pinned: bool,
+) -> Result<(), CanopyError> {
     ensure_known_worktree(&app, &wt_key)?;
     let updated = {
         let state = app.state::<AppState>();
@@ -555,23 +664,55 @@ struct WorktreeOpEvent {
     result: Option<String>,
 }
 
-fn emit_op(app: &RuntimeContext, wt_key: &str, op: &'static str, state: &'static str, detail: impl Into<String>) {
+fn emit_op(
+    app: &RuntimeContext,
+    wt_key: &str,
+    op: &'static str,
+    state: &'static str,
+    detail: impl Into<String>,
+) {
+    emit_op_with_notification(app, wt_key, op, state, detail, true);
+}
+
+fn emit_op_with_notification(
+    app: &RuntimeContext,
+    wt_key: &str,
+    op: &'static str,
+    state: &'static str,
+    detail: impl Into<String>,
+    notify: bool,
+) {
     let detail = detail.into();
     // A provisioning run that finished is the one "op" worth telling someone
     // about who isn't watching — it is the gate on the worktree being usable.
-    if matches!(op, "create") && matches!(state, "done" | "error") {
-        let branch = app.state::<AppState>().wt_context(wt_key).map(|c| c.branch).unwrap_or_else(|| wt_key.to_string());
+    if notify && matches!(op, "create") && matches!(state, "done" | "error") {
+        let branch = app
+            .state::<AppState>()
+            .wt_context(wt_key)
+            .map(|c| c.branch)
+            .unwrap_or_else(|| wt_key.to_string());
         crate::notify::notify(
             app,
             crate::notify::Kind::SetupDone,
             wt_key,
-            if state == "error" { "Setup failed" } else { "Setup finished" },
+            if state == "error" {
+                "Setup failed"
+            } else {
+                "Setup finished"
+            },
             &format!("{branch} — {detail}"),
         );
     }
     let _ = app.emit(
         "worktree:op",
-        &WorktreeOpEvent { wt_key: wt_key.to_string(), op, state, detail, step: None, result: None },
+        &WorktreeOpEvent {
+            wt_key: wt_key.to_string(),
+            op,
+            state,
+            detail,
+            step: None,
+            result: None,
+        },
     );
 }
 
@@ -579,12 +720,26 @@ fn emit_op(app: &RuntimeContext, wt_key: &str, op: &'static str, state: &'static
 /// and `preview_worktree` both call it, so the path the modal promises is the
 /// path creation uses.
 pub(crate) fn derive_worktree_path(repo: &RepoCfg, branch: &str) -> String {
-    let wt_dir = if repo.worktree_dir.trim().is_empty() {
-        format!("{}-worktrees", repo.path)
+    std::path::Path::new(&derive_worktree_root(repo))
+        .join(sanitize_branch(branch))
+        .to_string_lossy()
+        .into_owned()
+}
+
+fn derive_worktree_root(repo: &RepoCfg) -> String {
+    let configured = repo.worktree_dir.trim();
+    let root = std::path::Path::new(if configured.is_empty() {
+        ".worktrees"
     } else {
-        repo.worktree_dir.clone()
-    };
-    format!("{wt_dir}/{}", sanitize_branch(branch))
+        configured
+    });
+    if root.is_absolute() {
+        root.to_path_buf()
+    } else {
+        std::path::Path::new(&repo.path).join(root)
+    }
+    .to_string_lossy()
+    .into_owned()
 }
 
 /// Forward one `setup::Progress` as a `worktree:op` event: output lines keep
@@ -611,7 +766,13 @@ fn emit_progress(app: &RuntimeContext, wt_key: &str, op: &'static str, p: crate:
 pub(crate) fn sanitize_branch(branch: &str) -> String {
     branch
         .chars()
-        .map(|c| if c.is_alphanumeric() || c == '-' || c == '.' { c } else { '_' })
+        .map(|c| {
+            if c.is_alphanumeric() || c == '-' || c == '.' {
+                c
+            } else {
+                '_'
+            }
+        })
         .collect()
 }
 
@@ -667,11 +828,19 @@ pub struct WorktreePreview {
 /// `${WT_DB_NAME}`. The panel's entire value is that it matches what you
 /// actually get; a parallel implementation that drifts would be worse than no
 /// panel at all.
-pub fn preview_worktree(app: RuntimeContext, repo_id: String, branch: String) -> Result<WorktreePreview, CanopyError> {
+pub fn preview_worktree(
+    app: RuntimeContext,
+    repo_id: String,
+    branch: String,
+) -> Result<WorktreePreview, CanopyError> {
     let repo = {
         let state = app.state::<AppState>();
         let s = state.settings.read();
-        s.repos.iter().find(|r| r.id == repo_id).cloned().ok_or_else(|| CanopyError::not_found("unknown repo"))?
+        s.repos
+            .iter()
+            .find(|r| r.id == repo_id)
+            .cloned()
+            .ok_or_else(|| CanopyError::not_found("unknown repo"))?
     };
     let path = derive_worktree_path(&repo, &branch);
 
@@ -689,7 +858,11 @@ pub fn preview_worktree(app: RuntimeContext, repo_id: String, branch: String) ->
         let tree = state.tree.read();
         tree.iter()
             .flat_map(|r| r.worktrees.iter())
-            .flat_map(|w| w.services.iter().filter_map(|s| s.port.map(|p| (p, w.branch.clone()))))
+            .flat_map(|w| {
+                w.services
+                    .iter()
+                    .filter_map(|s| s.port.map(|p| (p, w.branch.clone())))
+            })
             .collect()
     };
 
@@ -746,19 +919,12 @@ pub async fn create_worktree(
     // relative dir (e.g. ".worktrees") is taken relative to the repo — so it
     // lands inside the repo instead of wherever the process CWD happens to be —
     // and an absolute dir is used verbatim.
-    let wt_dir = {
-        let d = repo.worktree_dir.trim();
-        if d.is_empty() {
-            format!("{}/.worktrees", repo.path)
-        } else if std::path::Path::new(d).is_absolute() {
-            d.to_string()
-        } else {
-            format!("{}/{}", repo.path, d)
-        }
-    };
+    let wt_dir = derive_worktree_root(&repo);
     let wt_path = derive_worktree_path(&repo, &branch);
     if std::path::Path::new(&wt_path).exists() {
-        return Err(CanopyError::conflict(format!("Path already exists: {wt_path}")));
+        return Err(CanopyError::conflict(format!(
+            "Path already exists: {wt_path}"
+        )));
     }
 
     // Keep a worktree root that sits inside the repo from polluting the parent
@@ -766,13 +932,25 @@ pub async fn create_worktree(
     // report, not a reason to abort before we've even tried to create.
     if std::path::Path::new(&wt_dir).starts_with(&repo.path) {
         if let Err(e) = ensure_dir_self_ignored(&wt_dir) {
-            emit_op(&app, &wt_path, "create", "progress", format!("gitignore skipped — {e}"));
+            emit_op(
+                &app,
+                &wt_path,
+                "create",
+                "progress",
+                format!("gitignore skipped — {e}"),
+            );
         }
     }
 
     let _lease = crate::state::try_lease(&app, &wt_path, "create")?;
 
-    emit_op(&app, &wt_path, "create", "progress", format!("creating worktree for {branch}…"));
+    emit_op(
+        &app,
+        &wt_path,
+        "create",
+        "progress",
+        format!("creating worktree for {branch}…"),
+    );
 
     // Refresh remote-tracking refs (and submodule objects) BEFORE `git worktree
     // add`, so a worktree made from an origin branch — and the submodule commits
@@ -780,7 +958,13 @@ pub async fn create_worktree(
     // an offline or remote-less repo still creates from whatever it has locally.
     emit_op(&app, &wt_path, "create", "progress", "fetching origin…");
     if let Err(e) = git::fetch_all(&repo.path).await {
-        emit_op(&app, &wt_path, "create", "progress", format!("fetch skipped — {e}"));
+        emit_op(
+            &app,
+            &wt_path,
+            "create",
+            "progress",
+            format!("fetch skipped — {e}"),
+        );
     }
 
     let app2 = app.clone();
@@ -815,7 +999,13 @@ pub async fn create_worktree(
     } else {
         // Skipping is a choice, not a silent no-op: the worktree exists but is
         // not provisioned, and the runner is one click away.
-        emit_op(&app, &wt_path, "create", "progress", "setup skipped — Run setup when you're ready");
+        emit_op(
+            &app,
+            &wt_path,
+            "create",
+            "progress",
+            "setup skipped — Run setup when you're ready",
+        );
         Ok(())
     };
 
@@ -823,7 +1013,6 @@ pub async fn create_worktree(
     // already carries the marker rather than reading as unprovisioned until
     // the next 60s refresh.
     crate::setup::write_setup_marker(&wt_path, setup_result.is_ok());
-
 
     refresh_tree(&app).await.map_err(CanopyError::internal)?;
     refresh_git_meta(&app, &wt_path).await;
@@ -840,7 +1029,13 @@ pub async fn create_worktree(
                 emit_op(&app, &wt_path, "create", "progress", "starting services…");
                 for key in services::worktree_svc_keys(&app, &wt_path) {
                     if let Err(e) = services::start_service(&app, &key).await {
-                        emit_op(&app, &wt_path, "create", "progress", format!("{key} did not start: {e}"));
+                        emit_op(
+                            &app,
+                            &wt_path,
+                            "create",
+                            "progress",
+                            format!("{key} did not start: {e}"),
+                        );
                     }
                 }
             }
@@ -848,15 +1043,27 @@ pub async fn create_worktree(
             Ok(wt_path)
         }
         Err(e) => {
-            emit_op(&app, &wt_path, "create", "error", format!("worktree created, but {e}"));
-            Err(CanopyError::setup(format!("Worktree created, but setup failed:\n{e}")))
+            emit_op(
+                &app,
+                &wt_path,
+                "create",
+                "error",
+                format!("worktree created, but {e}"),
+            );
+            Err(CanopyError::setup(format!(
+                "Worktree created, but setup failed:\n{e}"
+            )))
         }
     }
 }
 
 /// Manually (re)run a worktree's setup commands — for worktrees created before
 /// setup was configured, or to retry after a failure.
-pub async fn run_worktree_setup(app: RuntimeContext, wt_key: String, dry_run: bool) -> Result<(), CanopyError> {
+pub async fn run_worktree_setup(
+    app: RuntimeContext,
+    wt_key: String,
+    dry_run: bool,
+) -> Result<(), CanopyError> {
     let ctx = app
         .state::<AppState>()
         .wt_context(&wt_key)
@@ -871,7 +1078,17 @@ pub async fn run_worktree_setup(app: RuntimeContext, wt_key: String, dry_run: bo
     let vars = crate::state::worktree_vars(&app, &repo_id, &wt_key, is_main);
     let app3 = app.clone();
     let wt3 = wt_key.clone();
-    emit_op(&app, &wt_key, "create", "progress", if dry_run { "dry run — nothing will be executed" } else { "running setup…" });
+    emit_op(
+        &app,
+        &wt_key,
+        "create",
+        "progress",
+        if dry_run {
+            "dry run — nothing will be executed"
+        } else {
+            "running setup…"
+        },
+    );
     let parallel = crate::diagnostics::experiment_enabled(&app, "parallel-setup");
     let result = crate::setup::run_setup(&wt_key, &repo_path, &vars, dry_run, parallel, move |p| {
         emit_progress(&app3, &wt3, "create", p)
@@ -894,45 +1111,82 @@ pub async fn run_worktree_setup(app: RuntimeContext, wt_key: String, dry_run: bo
             if !dry_run {
                 crate::disk::request(&app, vec![wt_key.clone()], true);
             }
-            emit_op(&app, &wt_key, "create", "done", if dry_run { "dry run complete — nothing was executed" } else { "setup complete" });
+            emit_op_with_notification(
+                &app,
+                &wt_key,
+                "create",
+                "done",
+                if dry_run {
+                    "dry run complete — nothing was executed"
+                } else {
+                    "setup complete"
+                },
+                !dry_run,
+            );
             Ok(())
         }
         Err(e) => {
-            emit_op(&app, &wt_key, "create", "error", e.clone());
+            emit_op_with_notification(&app, &wt_key, "create", "error", e.clone(), !dry_run);
             Err(CanopyError::setup(e))
         }
     }
 }
 
-pub async fn worktree_dirty_report(app: RuntimeContext, wt_key: String) -> Result<git::DirtyReport, CanopyError> {
+pub async fn worktree_dirty_report(
+    app: RuntimeContext,
+    wt_key: String,
+) -> Result<git::DirtyReport, CanopyError> {
     ensure_known_worktree(&app, &wt_key)?;
     git::dirty_report(&wt_key).await.map_err(CanopyError::git)
 }
 
 /// Full working-tree status for the Uncommitted changes modal (every entry, not
 /// the capped dirty_report).
-pub async fn worktree_status(app: RuntimeContext, wt_key: String) -> Result<Vec<git::StatusEntry>, CanopyError> {
+pub async fn worktree_status(
+    app: RuntimeContext,
+    wt_key: String,
+) -> Result<Vec<git::StatusEntry>, CanopyError> {
     ensure_known_worktree(&app, &wt_key)?;
     git::status(&wt_key).await.map_err(CanopyError::git)
 }
 
-pub async fn worktree_commit(app: RuntimeContext, wt_key: String, message: String, add_untracked: bool) -> Result<(), CanopyError> {
+pub async fn worktree_commit(
+    app: RuntimeContext,
+    wt_key: String,
+    message: String,
+    add_untracked: bool,
+) -> Result<(), CanopyError> {
     ensure_known_worktree(&app, &wt_key)?;
-    git::commit(&wt_key, &message, add_untracked).await.map_err(CanopyError::git)?;
+    git::commit(&wt_key, &message, add_untracked)
+        .await
+        .map_err(CanopyError::git)?;
     refresh_git_meta(&app, &wt_key).await;
     Ok(())
 }
 
-pub async fn worktree_stash(app: RuntimeContext, wt_key: String, name: Option<String>, include_untracked: bool) -> Result<String, CanopyError> {
+pub async fn worktree_stash(
+    app: RuntimeContext,
+    wt_key: String,
+    name: Option<String>,
+    include_untracked: bool,
+) -> Result<String, CanopyError> {
     ensure_known_worktree(&app, &wt_key)?;
-    let summary = git::stash(&wt_key, name.as_deref(), include_untracked).await.map_err(CanopyError::git)?;
+    let summary = git::stash(&wt_key, name.as_deref(), include_untracked)
+        .await
+        .map_err(CanopyError::git)?;
     refresh_git_meta(&app, &wt_key).await;
     Ok(summary)
 }
 
-pub async fn worktree_discard(app: RuntimeContext, wt_key: String, clean_untracked: bool) -> Result<(), CanopyError> {
+pub async fn worktree_discard(
+    app: RuntimeContext,
+    wt_key: String,
+    clean_untracked: bool,
+) -> Result<(), CanopyError> {
     ensure_known_worktree(&app, &wt_key)?;
-    git::discard(&wt_key, clean_untracked).await.map_err(CanopyError::git)?;
+    git::discard(&wt_key, clean_untracked)
+        .await
+        .map_err(CanopyError::git)?;
     refresh_git_meta(&app, &wt_key).await;
     Ok(())
 }
@@ -940,14 +1194,22 @@ pub async fn worktree_discard(app: RuntimeContext, wt_key: String, clean_untrack
 /// Remove one worktree — everything except the final tree refresh, so a batch
 /// can remove many and refresh once. Guards the main checkout, stops services,
 /// closes terminals, drops the db (best-effort), then removes the git worktree.
-async fn remove_worktree_inner(app: &RuntimeContext, wt_key: &str, delete_branch: bool, drop_db: bool) -> Result<(), CanopyError> {
+async fn remove_worktree_inner(
+    app: &RuntimeContext,
+    wt_key: &str,
+    delete_branch: bool,
+    drop_db: bool,
+) -> Result<(), CanopyError> {
     let ctx = app
         .state::<AppState>()
         .wt_context(wt_key)
         .ok_or_else(|| CanopyError::not_found("unknown worktree"))?;
-    let (repo_path, repo_id, branch, is_main) = (ctx.repo_path, ctx.repo_id, ctx.branch, ctx.is_main);
+    let (repo_path, repo_id, branch, is_main) =
+        (ctx.repo_path, ctx.repo_id, ctx.branch, ctx.is_main);
     if is_main {
-        return Err(CanopyError::invalid_input("Refusing to remove the main checkout"));
+        return Err(CanopyError::invalid_input(
+            "Refusing to remove the main checkout",
+        ));
     }
     let _lease = crate::state::try_lease(app, wt_key, "remove")?;
 
@@ -961,7 +1223,13 @@ async fn remove_worktree_inner(app: &RuntimeContext, wt_key: &str, delete_branch
     // run teardown (e.g. drop the worktree's database) while the worktree still
     // exists. Best-effort: a teardown failure shouldn't block removal.
     if drop_db && crate::setup::has_teardown(wt_key, &repo_path) {
-        emit_op(app, wt_key, "remove", "progress", "running teardown (dropping database)…");
+        emit_op(
+            app,
+            wt_key,
+            "remove",
+            "progress",
+            "running teardown (dropping database)…",
+        );
         let vars = crate::state::worktree_vars(app, &repo_id, wt_key, false);
         let app_t = app.clone();
         let wt_t = wt_key.to_string();
@@ -970,7 +1238,13 @@ async fn remove_worktree_inner(app: &RuntimeContext, wt_key: &str, delete_branch
         })
         .await
         {
-            emit_op(app, wt_key, "remove", "progress", format!("teardown warning: {e}"));
+            emit_op(
+                app,
+                wt_key,
+                "remove",
+                "progress",
+                format!("teardown warning: {e}"),
+            );
         }
     }
 
@@ -991,7 +1265,12 @@ async fn remove_worktree_inner(app: &RuntimeContext, wt_key: &str, delete_branch
     }
 }
 
-pub async fn remove_worktree(app: RuntimeContext, wt_key: String, delete_branch: bool, drop_db: bool) -> Result<(), CanopyError> {
+pub async fn remove_worktree(
+    app: RuntimeContext,
+    wt_key: String,
+    delete_branch: bool,
+    drop_db: bool,
+) -> Result<(), CanopyError> {
     remove_worktree_inner(&app, &wt_key, delete_branch, drop_db).await?;
     refresh_tree(&app).await.map_err(CanopyError::internal)?;
     Ok(())
@@ -1000,11 +1279,19 @@ pub async fn remove_worktree(app: RuntimeContext, wt_key: String, delete_branch:
 /// Remove several worktrees in one action, refreshing the tree once at the end.
 /// Best-effort per item: a failure on one is collected and reported but does not
 /// stop the rest (each is independent).
-pub async fn remove_worktrees(app: RuntimeContext, wt_keys: Vec<String>, delete_branch: bool, drop_db: bool) -> Result<(), CanopyError> {
+pub async fn remove_worktrees(
+    app: RuntimeContext,
+    wt_keys: Vec<String>,
+    delete_branch: bool,
+    drop_db: bool,
+) -> Result<(), CanopyError> {
     let mut failures: Vec<String> = Vec::new();
     for wt_key in &wt_keys {
         if let Err(e) = remove_worktree_inner(&app, wt_key, delete_branch, drop_db).await {
-            let name = std::path::Path::new(wt_key).file_name().map(|s| s.to_string_lossy().into_owned()).unwrap_or_else(|| wt_key.clone());
+            let name = std::path::Path::new(wt_key)
+                .file_name()
+                .map(|s| s.to_string_lossy().into_owned())
+                .unwrap_or_else(|| wt_key.clone());
             failures.push(format!("{name}: {}", e.message));
         }
     }
@@ -1012,7 +1299,12 @@ pub async fn remove_worktrees(app: RuntimeContext, wt_keys: Vec<String>, delete_
     if failures.is_empty() {
         Ok(())
     } else {
-        Err(CanopyError::internal(format!("{} of {} could not be removed — {}", failures.len(), wt_keys.len(), failures.join("; "))))
+        Err(CanopyError::internal(format!(
+            "{} of {} could not be removed — {}",
+            failures.len(),
+            wt_keys.len(),
+            failures.join("; ")
+        )))
     }
 }
 
@@ -1027,17 +1319,26 @@ pub struct PrunableWorktree {
 
 /// Worktrees whose folder was deleted outside Canopy (git marks them prunable),
 /// across every registered repo. Drives the Sync-prune prompt.
-pub async fn list_prunable_worktrees(app: RuntimeContext) -> Result<Vec<PrunableWorktree>, CanopyError> {
+pub async fn list_prunable_worktrees(
+    app: RuntimeContext,
+) -> Result<Vec<PrunableWorktree>, CanopyError> {
     let repos: Vec<(String, String, String)> = {
         let state = app.state::<AppState>();
         let tree = state.tree.read();
-        tree.iter().map(|r| (r.repo_id.clone(), r.name.clone(), r.path.clone())).collect()
+        tree.iter()
+            .map(|r| (r.repo_id.clone(), r.name.clone(), r.path.clone()))
+            .collect()
     };
     let mut out = Vec::new();
     for (repo_id, repo_name, repo_path) in repos {
         if let Ok(list) = git::list_prunable(&repo_path).await {
             for w in list {
-                out.push(PrunableWorktree { repo_id: repo_id.clone(), repo_name: repo_name.clone(), path: w.path, branch: w.branch });
+                out.push(PrunableWorktree {
+                    repo_id: repo_id.clone(),
+                    repo_name: repo_name.clone(),
+                    path: w.path,
+                    branch: w.branch,
+                });
             }
         }
     }
@@ -1059,17 +1360,24 @@ pub struct PruneItem {
 /// Reconcile worktrees whose folders were deleted externally: optionally delete
 /// each one's branch and drop its database, then `git worktree prune` each
 /// affected repo (repo-wide by git's design) and refresh once.
-pub async fn prune_worktrees(app: RuntimeContext, items: Vec<PruneItem>) -> Result<(), CanopyError> {
+pub async fn prune_worktrees(
+    app: RuntimeContext,
+    items: Vec<PruneItem>,
+) -> Result<(), CanopyError> {
     let repo_paths: std::collections::HashMap<String, String> = {
         let state = app.state::<AppState>();
         let tree = state.tree.read();
-        tree.iter().map(|r| (r.repo_id.clone(), r.path.clone())).collect()
+        tree.iter()
+            .map(|r| (r.repo_id.clone(), r.path.clone()))
+            .collect()
     };
     let mut failures: Vec<String> = Vec::new();
     // Prune the stale git registrations FIRST: git refuses `branch -D` for a
     // branch it still believes is checked out in a (now-missing) worktree.
-    let affected: std::collections::HashSet<&String> =
-        items.iter().filter_map(|i| repo_paths.get(&i.repo_id)).collect();
+    let affected: std::collections::HashSet<&String> = items
+        .iter()
+        .filter_map(|i| repo_paths.get(&i.repo_id))
+        .collect();
     for repo_path in &affected {
         let _ = git::prune_worktrees(repo_path).await;
     }
@@ -1096,7 +1404,11 @@ pub async fn prune_worktrees(app: RuntimeContext, items: Vec<PruneItem>) -> Resu
     if failures.is_empty() {
         Ok(())
     } else {
-        Err(CanopyError::internal(format!("pruned with {} issue(s): {}", failures.len(), failures.join("; "))))
+        Err(CanopyError::internal(format!(
+            "pruned with {} issue(s): {}",
+            failures.len(),
+            failures.join("; ")
+        )))
     }
 }
 
@@ -1116,17 +1428,29 @@ fn repo_for_wt(app: &RuntimeContext, wt_key: &str) -> Result<(String, String), C
         .ok_or_else(|| CanopyError::not_found("unknown worktree"))
 }
 
-pub async fn list_databases(app: RuntimeContext, wt_key: String) -> Result<Vec<String>, CanopyError> {
+pub async fn list_databases(
+    app: RuntimeContext,
+    wt_key: String,
+) -> Result<Vec<String>, CanopyError> {
     ensure_known_worktree(&app, &wt_key)?;
-    crate::db::list_databases(&wt_key).await.map_err(CanopyError::db)
+    crate::db::list_databases(&wt_key)
+        .await
+        .map_err(CanopyError::db)
 }
 
-pub fn current_database(app: RuntimeContext, wt_key: String) -> Result<Option<String>, CanopyError> {
+pub fn current_database(
+    app: RuntimeContext,
+    wt_key: String,
+) -> Result<Option<String>, CanopyError> {
     ensure_known_worktree(&app, &wt_key)?;
     Ok(crate::db::current_db(&wt_key))
 }
 
-pub async fn snapshot_database(app: RuntimeContext, wt_key: String, name: String) -> Result<(), CanopyError> {
+pub async fn snapshot_database(
+    app: RuntimeContext,
+    wt_key: String,
+    name: String,
+) -> Result<(), CanopyError> {
     let name = name.trim().to_string();
     if name.is_empty() {
         return Err(CanopyError::invalid_input("Snapshot name is required"));
@@ -1135,26 +1459,44 @@ pub async fn snapshot_database(app: RuntimeContext, wt_key: String, name: String
     let _lease = crate::state::try_lease(&app, &wt_key, "snapshot")?;
     let app2 = app.clone();
     let wt2 = wt_key.clone();
-    crate::db::clone_database(&wt_key, &name, move |line| emit_op(&app2, &wt2, "snapshot", "progress", line))
-        .await
-        .map_err(CanopyError::db)?;
-    emit_op(&app, &wt_key, "snapshot", "done", format!("snapshot '{name}' created"));
+    crate::db::clone_database(&wt_key, &name, move |line| {
+        emit_op(&app2, &wt2, "snapshot", "progress", line)
+    })
+    .await
+    .map_err(CanopyError::db)?;
+    emit_op(
+        &app,
+        &wt_key,
+        "snapshot",
+        "done",
+        format!("snapshot '{name}' created"),
+    );
     Ok(())
 }
 
-pub async fn export_database(app: RuntimeContext, wt_key: String, file_path: String) -> Result<(), CanopyError> {
+pub async fn export_database(
+    app: RuntimeContext,
+    wt_key: String,
+    file_path: String,
+) -> Result<(), CanopyError> {
     ensure_known_worktree(&app, &wt_key)?;
     let _lease = crate::state::try_lease(&app, &wt_key, "export")?;
     let app2 = app.clone();
     let wt2 = wt_key.clone();
-    crate::db::export_database(&wt_key, &file_path, move |line| emit_op(&app2, &wt2, "snapshot", "progress", line))
-        .await
-        .map_err(CanopyError::db)?;
+    crate::db::export_database(&wt_key, &file_path, move |line| {
+        emit_op(&app2, &wt2, "snapshot", "progress", line)
+    })
+    .await
+    .map_err(CanopyError::db)?;
     emit_op(&app, &wt_key, "snapshot", "done", "exported to file");
     Ok(())
 }
 
-pub async fn restore_database(app: RuntimeContext, wt_key: String, file_path: String) -> Result<(), CanopyError> {
+pub async fn restore_database(
+    app: RuntimeContext,
+    wt_key: String,
+    file_path: String,
+) -> Result<(), CanopyError> {
     ensure_known_worktree(&app, &wt_key)?;
     let _lease = crate::state::try_lease(&app, &wt_key, "restore")?;
     // quiesce: a live connection pool holds locks against --clean drops and
@@ -1195,14 +1537,19 @@ pub async fn restore_database(app: RuntimeContext, wt_key: String, file_path: St
     }
 }
 
-pub async fn switch_database(app: RuntimeContext, wt_key: String, db_name: String) -> Result<(), CanopyError> {
+pub async fn switch_database(
+    app: RuntimeContext,
+    wt_key: String,
+    db_name: String,
+) -> Result<(), CanopyError> {
     let (repo_path, _repo_id) = repo_for_wt(&app, &wt_key)?;
     let _lease = crate::state::try_lease(&app, &wt_key, "switch database")?;
     // repoint PG_DB in the worktree's root .env AND in any provisioned dotenv
     // file (e.g. server/.env) that declares it
     let pairs = [("PG_DB".to_string(), db_name.clone())];
     crate::setup::set_env_keys(&wt_key, &repo_path, &pairs).map_err(CanopyError::setup)?;
-    crate::setup::set_env_keys_in_provisioned(&wt_key, &repo_path, &pairs).map_err(CanopyError::setup)?;
+    crate::setup::set_env_keys_in_provisioned(&wt_key, &repo_path, &pairs)
+        .map_err(CanopyError::setup)?;
     refresh_tree(&app).await.map_err(CanopyError::internal)?;
     // auto-restart the server so it connects to the new DB
     let mut errors: Vec<String> = Vec::new();
@@ -1226,9 +1573,15 @@ pub async fn switch_database(app: RuntimeContext, wt_key: String, db_name: Strin
 /// Override a service's port. Validates range + cross-worktree conflict, updates
 /// the override, re-derives env (so dependent keys follow), and auto-restarts
 /// the worktree's running services so the change takes effect.
-pub async fn set_service_port(app: RuntimeContext, svc_key: String, port: u32) -> Result<(), CanopyError> {
+pub async fn set_service_port(
+    app: RuntimeContext,
+    svc_key: String,
+    port: u32,
+) -> Result<(), CanopyError> {
     if !(1024..=65535).contains(&port) {
-        return Err(CanopyError::invalid_input("Port must be between 1024 and 65535"));
+        return Err(CanopyError::invalid_input(
+            "Port must be between 1024 and 65535",
+        ));
     }
     // check cross-worktree conflicts: another service already on this port
     {
@@ -1255,7 +1608,11 @@ pub async fn set_service_port(app: RuntimeContext, svc_key: String, port: u32) -
     // record the override + persist
     {
         let state = app.state::<AppState>();
-        state.runtime.write().port_overrides.insert(svc_key.clone(), port);
+        state
+            .runtime
+            .write()
+            .port_overrides
+            .insert(svc_key.clone(), port);
         let rt = state.runtime.read().clone();
         let _ = settings::save_runtime(&app, &rt);
     }
@@ -1277,7 +1634,10 @@ pub async fn set_service_port(app: RuntimeContext, svc_key: String, port: u32) -
     if errors.is_empty() {
         Ok(())
     } else {
-        Err(CanopyError::process(format!("port set, but restart failed — {}", errors.join("; "))))
+        Err(CanopyError::process(format!(
+            "port set, but restart failed — {}",
+            errors.join("; ")
+        )))
     }
 }
 
@@ -1287,7 +1647,10 @@ pub(crate) fn repo_path(app: &RuntimeContext, repo_id: &str) -> Result<String, C
         .ok_or_else(|| CanopyError::not_found("unknown repo"))
 }
 
-pub async fn list_branches(app: RuntimeContext, repo_id: String) -> Result<git::Branches, CanopyError> {
+pub async fn list_branches(
+    app: RuntimeContext,
+    repo_id: String,
+) -> Result<git::Branches, CanopyError> {
     let path = repo_path(&app, &repo_id)?;
     git::list_branches(&path).await.map_err(CanopyError::git)
 }
@@ -1334,13 +1697,21 @@ pub struct SetupPolicyEntry {
 
 impl From<crate::setup::SetupTask> for SetupTaskEntry {
     fn from(t: crate::setup::SetupTask) -> Self {
-        SetupTaskEntry { cmd: t.cmd, cwd: t.cwd, enabled: t.enabled }
+        SetupTaskEntry {
+            cmd: t.cmd,
+            cwd: t.cwd,
+            enabled: t.enabled,
+        }
     }
 }
 
 impl From<SetupTaskEntry> for crate::setup::SetupTask {
     fn from(e: SetupTaskEntry) -> Self {
-        crate::setup::SetupTask { cmd: e.cmd, cwd: e.cwd, enabled: e.enabled }
+        crate::setup::SetupTask {
+            cmd: e.cmd,
+            cwd: e.cwd,
+            enabled: e.enabled,
+        }
     }
 }
 
@@ -1362,7 +1733,13 @@ pub struct RepoConfig {
 
 impl From<crate::setup::ProvisionFile> for ProvisionEntry {
     fn from(p: crate::setup::ProvisionFile) -> Self {
-        ProvisionEntry { path: p.path, format: p.format, from: p.from, interpolate: p.interpolate, keys: p.keys }
+        ProvisionEntry {
+            path: p.path,
+            format: p.format,
+            from: p.from,
+            interpolate: p.interpolate,
+            keys: p.keys,
+        }
     }
 }
 
@@ -1399,7 +1776,8 @@ pub fn get_repo_config(app: RuntimeContext, repo_id: String) -> Result<RepoConfi
 /// whose parent dir may not exist yet).
 pub fn save_text_file(path: String, contents: String) -> Result<(), CanopyError> {
     if let Some(dir) = std::path::Path::new(&path).parent() {
-        std::fs::create_dir_all(dir).map_err(|e| CanopyError::config(format!("mkdir {}: {e}", dir.display())))?;
+        std::fs::create_dir_all(dir)
+            .map_err(|e| CanopyError::config(format!("mkdir {}: {e}", dir.display())))?;
     }
     std::fs::write(&path, contents).map_err(|e| CanopyError::config(format!("write {path}: {e}")))
 }
@@ -1411,6 +1789,8 @@ pub fn save_repo_config(
     provision: Vec<ProvisionEntry>,
     setup: Vec<SetupTaskEntry>,
     setup_policy: Option<SetupPolicyEntry>,
+    teardown: Option<Vec<String>>,
+    migrate: Option<Vec<String>>,
 ) -> Result<(), CanopyError> {
     let path = repo_path(&app, &repo_id)?;
     let files: Vec<crate::setup::ProvisionFile> = provision.into_iter().map(Into::into).collect();
@@ -1419,7 +1799,15 @@ pub fn save_repo_config(
         continue_on_failure: p.continue_on_failure,
         timeout_secs: p.timeout_secs,
     });
-    crate::setup::write_repo_config(&path, &files, &tasks, policy.as_ref()).map_err(CanopyError::config)
+    crate::setup::write_repo_config_sections(
+        &path,
+        &files,
+        &tasks,
+        policy.as_ref(),
+        teardown.as_deref(),
+        migrate.as_deref(),
+    )
+    .map_err(CanopyError::config)
 }
 
 // ── disk usage ──
@@ -1427,7 +1815,9 @@ pub fn save_repo_config(
 /// Every measurement Canopy currently holds, keyed by `wt_key`. Returns
 /// instantly from cache — a window that opens the overview gets whatever
 /// earlier scans found rather than waiting on a fresh walk.
-pub fn get_disk_usage(app: RuntimeContext) -> std::collections::HashMap<String, crate::disk::DiskUsage> {
+pub fn get_disk_usage(
+    app: RuntimeContext,
+) -> std::collections::HashMap<String, crate::disk::DiskUsage> {
     crate::disk::snapshot(&app)
 }
 
@@ -1435,13 +1825,21 @@ pub fn get_disk_usage(app: RuntimeContext) -> std::collections::HashMap<String, 
 /// `worktree:disk` events. Unknown keys are dropped rather than walked — this
 /// is the one command that takes a caller-supplied path list, so it applies the
 /// same containment rule as every other `wt_key` entry point.
-pub fn scan_disk_usage(app: RuntimeContext, wt_keys: Vec<String>, force: bool) -> Result<(), CanopyError> {
+pub fn scan_disk_usage(
+    app: RuntimeContext,
+    wt_keys: Vec<String>,
+    force: bool,
+) -> Result<(), CanopyError> {
     let known: Vec<String> = {
         let state = app.state::<AppState>();
         let tree = state.tree.read();
         wt_keys
             .into_iter()
-            .filter(|k| tree.iter().flat_map(|r| r.worktrees.iter()).any(|w| &w.wt_key == k))
+            .filter(|k| {
+                tree.iter()
+                    .flat_map(|r| r.worktrees.iter())
+                    .any(|w| &w.wt_key == k)
+            })
             .collect()
     };
     crate::disk::request(&app, known, force);
@@ -1481,7 +1879,9 @@ pub async fn reset_settings(app: RuntimeContext) -> Result<Settings, CanopyError
 
 /// Check GitHub for a newer release now, regardless of the auto-check
 /// preference — pressing the button IS the consent.
-pub async fn check_for_update(app: RuntimeContext) -> Result<crate::updates::UpdateStatus, CanopyError> {
+pub async fn check_for_update(
+    app: RuntimeContext,
+) -> Result<crate::updates::UpdateStatus, CanopyError> {
     Ok(crate::updates::check_now(&app).await)
 }
 
@@ -1492,7 +1892,10 @@ pub fn crash_report_count(app: RuntimeContext) -> usize {
 }
 
 /// `git fetch --all --prune` then return the refreshed branch lists.
-pub async fn fetch_branches(app: RuntimeContext, repo_id: String) -> Result<git::Branches, CanopyError> {
+pub async fn fetch_branches(
+    app: RuntimeContext,
+    repo_id: String,
+) -> Result<git::Branches, CanopyError> {
     let path = repo_path(&app, &repo_id)?;
     git::fetch_all(&path).await.map_err(CanopyError::git)?;
     git::list_branches(&path).await.map_err(CanopyError::git)
@@ -1500,7 +1903,31 @@ pub async fn fetch_branches(app: RuntimeContext, repo_id: String) -> Result<git:
 
 #[cfg(test)]
 mod tests {
-    use super::{detect_repo, sanitize_branch};
+    use super::{derive_worktree_path, detect_repo, sanitize_branch};
+
+    #[test]
+    fn worktree_paths_resolve_against_repository() {
+        let base = std::env::temp_dir().join("canopy-repo");
+        let mut repo = crate::settings::RepoCfg {
+            path: base.to_string_lossy().into_owned(),
+            ..Default::default()
+        };
+        assert_eq!(
+            std::path::PathBuf::from(derive_worktree_path(&repo, "feature/test")),
+            base.join(".worktrees/feature_test")
+        );
+        repo.worktree_dir = "custom".into();
+        assert_eq!(
+            std::path::PathBuf::from(derive_worktree_path(&repo, "test")),
+            base.join("custom/test")
+        );
+        let absolute = std::env::temp_dir().join("elsewhere");
+        repo.worktree_dir = absolute.to_string_lossy().into_owned();
+        assert_eq!(
+            std::path::PathBuf::from(derive_worktree_path(&repo, "test")),
+            absolute.join("test")
+        );
+    }
     use crate::git::run_git;
 
     #[test]
@@ -1518,9 +1945,13 @@ mod tests {
         std::fs::create_dir_all(dir).unwrap();
         let d = dir.to_str().unwrap();
         run_git(d, &["init"]).await.unwrap();
-        run_git(d, &["config", "user.email", "t@localhost"]).await.unwrap();
+        run_git(d, &["config", "user.email", "t@localhost"])
+            .await
+            .unwrap();
         run_git(d, &["config", "user.name", "t"]).await.unwrap();
-        run_git(d, &["config", "commit.gpgsign", "false"]).await.unwrap();
+        run_git(d, &["config", "commit.gpgsign", "false"])
+            .await
+            .unwrap();
     }
 
     /// The add-repo-from-sidebar flow (#122) shows detect_repo's result — name,
@@ -1531,18 +1962,33 @@ mod tests {
         let _ = std::fs::remove_dir_all(&dir);
         init(&dir).await;
         let d = dir.to_str().unwrap();
-        std::fs::write(dir.join("package.json"), r#"{"scripts":{"dev":"vite","build":"tsc"}}"#).unwrap();
+        std::fs::write(
+            dir.join("package.json"),
+            r#"{"scripts":{"dev":"vite","build":"tsc"}}"#,
+        )
+        .unwrap();
         run_git(d, &["add", "."]).await.unwrap();
         run_git(d, &["commit", "-m", "init"]).await.unwrap();
         // an ssh remote to exercise the origin normalization
-        run_git(d, &["remote", "add", "origin", "git@github.com:acme/widgets.git"]).await.unwrap();
+        run_git(
+            d,
+            &["remote", "add", "origin", "git@github.com:acme/widgets.git"],
+        )
+        .await
+        .unwrap();
 
         let det = detect_repo(d.to_string()).await.unwrap();
         assert_eq!(det.name, dir.file_name().unwrap().to_string_lossy());
         assert_eq!(det.stack, "node");
-        assert_eq!(det.origin, "github.com/acme/widgets", "git@…:…git → github.com/…");
+        assert_eq!(
+            det.origin, "github.com/acme/widgets",
+            "git@…:…git → github.com/…"
+        );
         let names: Vec<&str> = det.scripts.iter().map(|s| s.name.as_str()).collect();
-        assert!(names.contains(&"dev") && names.contains(&"build"), "scripts parsed: {names:?}");
+        assert!(
+            names.contains(&"dev") && names.contains(&"build"),
+            "scripts parsed: {names:?}"
+        );
         assert!(!det.branch.is_empty(), "branch resolved: {:?}", det.branch);
 
         let _ = std::fs::remove_dir_all(&dir);
@@ -1557,13 +2003,23 @@ mod tests {
         init(&dir).await;
         std::fs::write(dir.join("Cargo.toml"), "[package]\nname = \"x\"\n").unwrap();
         std::fs::write(dir.join("package.json"), "{}").unwrap();
-        let det = detect_repo(dir.to_str().unwrap().to_string()).await.unwrap();
-        assert_eq!(det.stack, "rust", "Cargo.toml is checked before package.json");
+        let det = detect_repo(dir.to_str().unwrap().to_string())
+            .await
+            .unwrap();
+        assert_eq!(
+            det.stack, "rust",
+            "Cargo.toml is checked before package.json"
+        );
 
         let plain = tmp("detect-plain");
         let _ = std::fs::remove_dir_all(&plain);
         std::fs::create_dir_all(&plain).unwrap();
-        assert!(detect_repo(plain.to_str().unwrap().to_string()).await.is_err(), "a non-repo must error");
+        assert!(
+            detect_repo(plain.to_str().unwrap().to_string())
+                .await
+                .is_err(),
+            "a non-repo must error"
+        );
 
         let _ = std::fs::remove_dir_all(&dir);
         let _ = std::fs::remove_dir_all(&plain);

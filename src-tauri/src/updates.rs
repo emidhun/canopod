@@ -148,10 +148,7 @@ pub fn spawn_check_task(app: RuntimeContext) {
         // let the app finish starting before spending anything on the network
         tokio::time::sleep(std::time::Duration::from_secs(20)).await;
         loop {
-            let enabled = app
-                .try_state::<crate::state::AppState>()
-                .map(|s| s.settings.read().updates.auto_check)
-                .unwrap_or(false);
+            let enabled = app.state::<crate::state::AppState>().settings.read().updates.auto_check;
             if enabled {
                 let _ = check_now(&app).await;
             }
@@ -175,10 +172,7 @@ pub fn crash_dir(app: &RuntimeContext) -> Option<std::path::PathBuf> {
 pub fn install_panic_hook(app: RuntimeContext) {
     let previous = std::panic::take_hook();
     std::panic::set_hook(Box::new(move |info| {
-        let enabled = app
-            .try_state::<crate::state::AppState>()
-            .map(|s| s.settings.read().crash_reports.enabled)
-            .unwrap_or(false);
+        let enabled = app.state::<crate::state::AppState>().settings.read().crash_reports.enabled;
         if enabled {
             if let Err(e) = write_report(&app, info) {
                 // a failure here must never mask the panic itself

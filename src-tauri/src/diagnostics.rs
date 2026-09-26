@@ -37,9 +37,7 @@ pub fn experiment_enabled(app: &RuntimeContext, id: &str) -> bool {
     if !EXPERIMENTS.iter().any(|e| e.id == id) {
         return false;
     }
-    app.try_state::<crate::state::AppState>()
-        .map(|s| s.settings.read().experiments.get(id).copied().unwrap_or(false))
-        .unwrap_or(false)
+    app.state::<crate::state::AppState>().settings.read().experiments.get(id).copied().unwrap_or(false)
 }
 
 /// A copy-pasteable environment summary for a bug report.
@@ -78,14 +76,8 @@ pub fn gather(app: &RuntimeContext) -> Diagnostics {
             tree.iter().flat_map(|r| r.worktrees.iter()).map(|w| w.services.len()).sum(),
         )
     };
-    let running = app
-        .try_state::<crate::services::ProcTable>()
-        .map(|t| t.procs.lock().len())
-        .unwrap_or(0);
-    let terminals = app
-        .try_state::<crate::terminal::TermTable>()
-        .map(|t| t.sessions.lock().len())
-        .unwrap_or(0);
+    let running = app.state::<crate::services::ProcTable>().procs.lock().len();
+    let terminals = app.state::<crate::terminal::TermTable>().sessions.lock().len();
 
     Diagnostics {
         app_version: env!("CARGO_PKG_VERSION").to_string(),
