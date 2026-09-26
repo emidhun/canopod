@@ -14,6 +14,7 @@
     "windows": [
       {
         "label": "main",
+        "create": false,
         "title": "Canopy",
         "width": 1240,
         "height": 760,
@@ -25,6 +26,7 @@
       },
       {
         "label": "popover",
+        "create": false,
         "title": "Canopy Popover",
         "url": "popover.html",
         "width": 316,

@@ -98,17 +98,21 @@ pub fn run() {
             // Cross-executable ownership must precede every runtime read and
             // orphan sweep. The desktop single-instance plugin alone cannot
             // exclude a headless host using the same data directory.
-            let owner = ownership::RuntimeOwner::acquire(&handle.path().app_data_dir()?)
-                .map_err(|e| {
-                    // A setup error only reaches a packaged bundle as a panic
-                    // on stderr, which the OS discards, and the crash-report
-                    // hook below is not installed yet. Log first, so the
-                    // rolling log file states why the app refused to start.
-                    log::error!("{e}");
-                    std::io::Error::other(e)
-                })?;
+            let owner = match ownership::RuntimeOwner::acquire(&handle.path().app_data_dir()?) {
+                Ok(owner) => owner,
+                Err(error) => {
+                    use tauri_plugin_dialog::{DialogExt, MessageDialogKind};
+                    log::error!("{error}");
+                    // Keep the event loop alive for the native dialog. A blocking
+                    // dialog in setup deadlocks the main thread on some platforms.
+                    // No webview or runtime may operate without ownership.
+                    let exit = handle.clone();
+                    handle.dialog().message(error).title("Canopy could not start")
+                        .kind(MessageDialogKind::Error).show(move |_| exit.exit(1));
+                    return Ok(());
+                }
+            };
             app.manage(owner);
-            tray::init(&handle)?;
             let loaded = settings::load_settings(&handle);
             // git credentials are process-wide (see git.rs) — publish them
             // before anything can run a git command
@@ -118,6 +122,11 @@ pub fn run() {
             app.manage(TermTable::default());
             app.manage(disk::DiskCache::default());
             app.manage(notify::NotifyState::default());
+            // Configured webviews are deferred until ownership and state exist.
+            for config in &app.config().app.windows {
+                tauri::WebviewWindowBuilder::from_config(app, config)?.build()?;
+            }
+            tray::init(&handle)?;
 
             // crash reports + the update check need AppState for their
             // preferences, so both are installed after it is managed
@@ -376,7 +385,11 @@ pub fn run() {
         .expect("error while building tauri application")
         .run(|app, event| {
             // Cmd-Q / app exit: kill every spawned process group before dying
-            if let tauri::RunEvent::ExitRequested { .. } = event {
+            if let tauri::RunEvent::ExitRequested { code, api, .. } = event {
+                if app.try_state::<ownership::RuntimeOwner>().is_none() {
+                    if code.is_none() { api.prevent_exit(); }
+                    return;
+                }
                 // kill embedded terminal shells before their host process dies
                 if let Some(table) = app.try_state::<TermTable>() {
                     terminal::close_all(&table);
