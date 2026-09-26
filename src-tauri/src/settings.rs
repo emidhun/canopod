@@ -186,10 +186,8 @@ pub struct UpdatesCfg {
 
 impl Default for UpdatesCfg {
     fn default() -> Self {
-        // Checking is a single small request a few times a day and is the only
-        // way someone learns a fix shipped, so it is on by default. Anything
-        // that *installs* would not be.
-        Self { auto_check: true }
+        // Opt in until the background result has a visible update notice.
+        Self { auto_check: false }
     }
 }
 
@@ -405,6 +403,7 @@ pub struct OrphanProc {
     pub svc_key: String,
     pub pgid: i32,
     pub spawn_time_secs: u64,
+    pub owner: Option<ProcessOwner>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
@@ -413,7 +412,14 @@ pub struct TermOrphan {
     pub id: String,
     pub pgid: i32,
     pub spawn_time_secs: u64,
+    pub owner: Option<ProcessOwner>,
 }
+
+/// The spawning backend identity, independent of the process that later adopts
+/// its children (PID 1, systemd --user, or a container subreaper).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ProcessOwner { pub pid: u32, pub started: u64 }
 
 fn settings_path(app: &crate::runtime::RuntimePaths) -> PathBuf {
     app

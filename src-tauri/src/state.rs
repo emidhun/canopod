@@ -86,6 +86,10 @@ pub struct RepoNode {
 }
 
 pub struct AppState {
+    #[cfg(unix)]
+    pub(crate) retained_orphans: Mutex<Vec<crate::settings::OrphanProc>>,
+    #[cfg(unix)]
+    pub(crate) retained_terminal_orphans: Mutex<Vec<crate::settings::TermOrphan>>,
     /// Per-runtime, cancellation-safe admission for the periodic refresh.
     refresh: tokio::sync::Mutex<()>,
     pub settings: RwLock<Settings>,
@@ -147,7 +151,8 @@ pub fn release_worktree_runtime(app: &RuntimeContext, repo_id: &str, wt_key: &st
     if let Some(s) = settings {
         let _ = crate::settings::save_settings(app, &s);
     }
-    if let Some(table) = app.try_state::<crate::services::ProcTable>() {
+    {
+        let table = app.state::<crate::services::ProcTable>();
         table.logs.lock().retain(|k, _| !k.starts_with(&prefix));
         // close the on-disk log handles too, or a removed worktree keeps file
         // descriptors open for the rest of the run
@@ -184,6 +189,10 @@ impl AppState {
         Self {
             refresh: tokio::sync::Mutex::new(()),
             settings: RwLock::new(settings),
+            #[cfg(unix)]
+            retained_orphans: Mutex::new(runtime.orphans.clone()),
+            #[cfg(unix)]
+            retained_terminal_orphans: Mutex::new(runtime.terminal_orphans.clone()),
             runtime: RwLock::new(runtime),
             tree: RwLock::new(Vec::new()),
             statuses: RwLock::new(HashMap::new()),

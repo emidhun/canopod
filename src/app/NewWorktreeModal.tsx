@@ -92,7 +92,7 @@ export default function NewWorktreeModal({
   const [prDescription, setPrDescription] = useState("");
   const [issue, setIssue] = useState("");
   const [issueDescription, setIssueDescription] = useState("");
-  /** the repo's configured worktree dir; blank means `${repo.path}-worktrees` */
+  /** the repo's configured worktree dir; blank means `${repo.path}/.worktrees` */
   const [worktreeDir, setWorktreeDir] = useState<string | null>(null);
   /** what creating this branch would actually produce (backend-derived) */
   const [preview, setPreview] = useState<WorktreePreview | null>(null);

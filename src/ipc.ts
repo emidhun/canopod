@@ -197,7 +197,7 @@ export interface ProvisionEntry {
 }
 
 /** The repo's `.worktreemanager.json` as exchanged with Settings. `teardown` /
- * `migrate` are read-only there today — returned so preview/export match disk. */
+ * `migrate` are edited on the Files page. */
 export interface RepoConfigFile {
   provision: ProvisionEntry[];
   setup: SetupTask[];
@@ -325,8 +325,8 @@ export const ipc = {
   listBranches: (repoId: string) => invoke<Branches>("list_branches", { repoId }),
   fetchBranches: (repoId: string) => invoke<Branches>("fetch_branches", { repoId }),
   getRepoConfig: (repoId: string) => invoke<RepoConfigFile>("get_repo_config", { repoId }),
-  saveRepoConfig: (repoId: string, provision: ProvisionEntry[], setup: SetupTask[], setupPolicy?: SetupPolicy) =>
-    invoke<void>("save_repo_config", { repoId, provision, setup, setupPolicy: setupPolicy ?? null }),
+  saveRepoConfig: (repoId: string, provision: ProvisionEntry[], setup: SetupTask[], setupPolicy?: SetupPolicy, extras?: { teardown: string[]; migrate: string[] }) =>
+    invoke<void>("save_repo_config", { repoId, provision, setup, setupPolicy: setupPolicy ?? null, teardown: extras?.teardown, migrate: extras?.migrate }),
   saveTextFile: (path: string, contents: string) => invoke<void>("save_text_file", { path, contents }),
 
   getLogs: (svcKey: string) => invoke<LogLine[]>("get_logs", { svcKey }),

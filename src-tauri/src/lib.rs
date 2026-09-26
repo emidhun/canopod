@@ -1,22 +1,22 @@
 #[cfg(feature = "desktop")]
 mod commands;
-#[cfg(feature = "desktop")]
-mod desktop_host;
 pub mod backend;
 pub mod credentials;
-pub mod operations;
-pub mod runtime;
 #[cfg(test)]
 mod csp;
 pub mod db;
-pub mod disk;
+#[cfg(feature = "desktop")]
+mod desktop_host;
 pub mod diagnostics;
+pub mod disk;
 pub mod error;
 pub mod events;
 pub mod git;
 pub mod notify;
+pub mod operations;
 pub mod ownership;
 pub mod proc;
+pub mod runtime;
 pub mod services;
 pub mod settings;
 pub mod setup;
@@ -26,9 +26,9 @@ pub mod stats;
 mod suite;
 pub mod terminal;
 pub mod toolchain;
-pub mod updates;
 #[cfg(feature = "desktop")]
 mod tray;
+pub mod updates;
 
 #[cfg(all(unix, feature = "devtools", feature = "desktop"))]
 use services::ProcTable;
@@ -116,10 +116,21 @@ pub fn run() {
             // Cross-executable ownership must precede every runtime read and
             // orphan sweep. The desktop single-instance plugin alone cannot
             // exclude a headless host using the same data directory.
-            let owner = ownership::RuntimeOwner::acquire(&handle.path().app_data_dir()?)
-                .map_err(std::io::Error::other)?;
+            let owner = match ownership::RuntimeOwner::acquire(&handle.path().app_data_dir()?) {
+                Ok(owner) => owner,
+                Err(error) => {
+                    use tauri_plugin_dialog::{DialogExt, MessageDialogKind};
+                    log::error!("{error}");
+                    // Keep the event loop alive for the native dialog. A blocking
+                    // dialog in setup deadlocks the main thread on some platforms.
+                    // No webview or runtime may operate without ownership.
+                    let exit = handle.clone();
+                    handle.dialog().message(error).title("Canopy could not start")
+                        .kind(MessageDialogKind::Error).show(move |_| exit.exit(1));
+                    return Ok(());
+                }
+            };
             app.manage(owner);
-            tray::init(&handle)?;
             let paths = runtime::RuntimePaths {
                 config: handle.path().app_config_dir()?,
                 data: handle.path().app_data_dir()?,
@@ -136,19 +147,23 @@ pub fn run() {
                 std::sync::Arc::new(desktop_host::DesktopHost(handle.clone())),
             );
             app.manage(context.clone());
+            for config in &app.config().app.windows {
+                tauri::WebviewWindowBuilder::from_config(app, config)?.build()?;
+            }
+            tray::init(&handle)?;
             let desktop = handle;
-            let handle = context;
+
 
             // crash reports + the update check need AppState for their
             // preferences, so both are installed after it is managed
-            updates::install_panic_hook(handle.clone());
-            updates::spawn_check_task(handle.clone());
+            updates::install_panic_hook(context.clone());
+            updates::spawn_check_task(context.clone());
 
             // kill process groups left over from a crashed previous run
-            services::sweep_orphans(&handle);
-            terminal::sweep_orphans(&handle);
+            services::sweep_orphans(&context);
+            terminal::sweep_orphans(&context);
 
-            stats::spawn_stats_task(handle.clone());
+            stats::spawn_stats_task(context.clone());
 
             // 1s visibility poll feeding the WINDOWS_VISIBLE cache, plus the
             // agent-activity sweep. Both are cheap and want the same cadence:
@@ -159,7 +174,7 @@ pub fn run() {
             // are exactly what someone checks when the app isn't on screen —
             // and it emits only on a transition, never on the tick.
             {
-                let handle = handle.clone();
+                let context = context.clone();
                 tauri::async_runtime::spawn(async move {
                     loop {
                         tokio::time::sleep(std::time::Duration::from_secs(1)).await;
@@ -167,7 +182,7 @@ pub fn run() {
                             any_window_visible(&desktop),
                             std::sync::atomic::Ordering::Relaxed,
                         );
-                        terminal::poll_states(&handle);
+                        terminal::poll_states(&context);
                     }
                 });
             }
@@ -181,12 +196,13 @@ pub fn run() {
 
             // periodically sweep idle shell terminals (bounds long-run memory)
             {
-                let handle = handle.clone();
+                let context = context.clone();
                 tauri::async_runtime::spawn(async move {
                     loop {
                         tokio::time::sleep(std::time::Duration::from_secs(5 * 60)).await;
-                        if let Some(table) = handle.try_state::<TermTable>() {
-                            terminal::sweep_idle(&handle, table);
+                        {
+        let table = context.state::<TermTable>();
+                            terminal::sweep_idle(&context, table);
                         }
                     }
                 });
@@ -197,13 +213,13 @@ pub fn run() {
             // the periodic tick is skipped (show_main_window / the popover
             // toggle kick an immediate refresh when a window comes back).
             tauri::async_runtime::spawn(async move {
-                state::refresh_all(&handle).await;
+                state::refresh_all(&context).await;
                 loop {
                     tokio::time::sleep(std::time::Duration::from_secs(60)).await;
                     if !windows_visible() {
                         continue;
                     }
-                    state::refresh_all(&handle).await;
+                    state::refresh_all(&context).await;
                 }
             });
 
@@ -396,10 +412,15 @@ pub fn run() {
         .expect("error while building tauri application")
         .run(|app, event| {
             // Cmd-Q / app exit: kill every spawned process group before dying
-            if let tauri::RunEvent::ExitRequested { .. } = event {
+            if let tauri::RunEvent::ExitRequested { code, api, .. } = event {
+                if app.try_state::<ownership::RuntimeOwner>().is_none() {
+                    if code.is_none() { api.prevent_exit(); }
+                    return;
+                }
                 // kill embedded terminal shells before their host process dies
-                let handle = app.state::<runtime::RuntimeContext>().inner().clone();
-                terminal::close_all(handle.state::<TermTable>());
+                let Some(context) = app.try_state::<runtime::RuntimeContext>() else { return };
+                let handle = context.inner().clone();
+                terminal::close_all(&handle);
                 tauri::async_runtime::block_on(async move {
                     services::stop_all(&handle).await;
                 });

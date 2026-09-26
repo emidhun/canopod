@@ -77,6 +77,8 @@ export default function SettingsView({ onClose }: { onClose: () => void }) {
   const [setupByRepo, setSetupByRepo] = useState<Record<string, SetupTask[]>>({});
   const [policyByRepo, setPolicyByRepo] = useState<Record<string, SetupPolicy>>({});
   const [extrasByRepo, setExtrasByRepo] = useState<Record<string, { teardown: string[]; migrate: string[] }>>({});
+  const editRevision = useRef(0);
+  const repoEditRevision = useRef(new Map<string, number>());
   const dirtyRepos = useRef<Set<string>>(new Set());
   const repoMenuRef = useRef<HTMLDivElement>(null);
   const moreRef = useRef<HTMLDivElement>(null);
@@ -85,6 +87,8 @@ export default function SettingsView({ onClose }: { onClose: () => void }) {
 
   const flash = (m: string) => showToast(m);
   const markDirty = (id: PageId) => {
+    editRevision.current += 1;
+    if (repoId) repoEditRevision.current.set(repoId, editRevision.current);
     setDirty((d) => new Set(d).add(id));
     clearInvalid();
     if ((id === "files" || id === "setup") && repoId) dirtyRepos.current.add(repoId);
@@ -108,6 +112,7 @@ export default function SettingsView({ onClose }: { onClose: () => void }) {
       dirtyRepos.current = new Set();
       s.repos.forEach((r) => {
         ipc.getRepoConfig(r.id).then((c) => {
+        if (dirtyRepos.current.has(r.id)) return;
           setCardsByRepo((m) => ({ ...m, [r.id]: toCards(c.provision) }));
           setSetupByRepo((m) => ({ ...m, [r.id]: c.setup }));
           setPolicyByRepo((m) => ({ ...m, [r.id]: c.setupPolicy ?? DEFAULT_POLICY }));
@@ -129,6 +134,7 @@ export default function SettingsView({ onClose }: { onClose: () => void }) {
     settings.repos.forEach((r) => {
       if (dirtyRepos.current.has(r.id)) return;
       ipc.getRepoConfig(r.id).then((c) => {
+        if (dirtyRepos.current.has(r.id)) return;
         setCardsByRepo((m) => ({ ...m, [r.id]: toCards(c.provision) }));
         setSetupByRepo((m) => ({ ...m, [r.id]: c.setup }));
         setExtrasByRepo((m) => ({ ...m, [r.id]: { teardown: c.teardown || [], migrate: c.migrate || [] } }));
@@ -152,7 +158,7 @@ export default function SettingsView({ onClose }: { onClose: () => void }) {
     document.addEventListener("keydown", k);
     return () => document.removeEventListener("keydown", k);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [dirty, settings, repoId, page, cardsByRepo, setupByRepo]);
+  }, [dirty, settings, repoId, page, cardsByRepo, setupByRepo, policyByRepo, extrasByRepo, saving]);
 
   useEffect(() => {
     if (!repoMenu) return;
@@ -185,12 +191,16 @@ export default function SettingsView({ onClose }: { onClose: () => void }) {
   const extras = (repo && extrasByRepo[repo.id]) || { teardown: [], migrate: [] };
   const setCards = (next: FileCardT[]) => { if (repo) setCardsByRepo((m) => ({ ...m, [repo.id]: next })); };
   const setSetup = (next: SetupTask[]) => { if (repo) setSetupByRepo((m) => ({ ...m, [repo.id]: next })); };
+  const setExtras = (next: { teardown: string[]; migrate: string[] }) => { if (repo) setExtrasByRepo((m) => ({ ...m, [repo.id]: next })); };
   const setPolicy = (next: SetupPolicy) => { if (repo) setPolicyByRepo((m) => ({ ...m, [repo.id]: next })); };
   const isRepoPage = REPO_PAGE_IDS.has(page);
   const p = pageOf(page);
 
   async function save() {
-    if (!settings) return;
+    if (!settings || saving) return;
+    const revision = editRevision.current;
+    const repoRevisions = new Map(repoEditRevision.current);
+    const reposToSave = new Set(dirtyRepos.current);
 
     // A half-filled row cannot be persisted. It used to be filtered out here
     // silently, which reads as data loss (#43) — refuse the save instead, name
@@ -225,22 +235,24 @@ export default function SettingsView({ onClose }: { onClose: () => void }) {
     try {
       if (hasBackend()) {
         await ipc.saveSettings(cleaned);
+        setSettings((current) => current === settings ? cleaned : current);
         const failures: string[] = [];
         await Promise.all(
-          cleaned.repos.filter((r) => dirtyRepos.current.has(r.id)).map((r) =>
-            ipc.saveRepoConfig(r.id, fromCards(cardsByRepo[r.id] || []), (setupByRepo[r.id] || []).filter((t) => t.cmd.trim()), policyByRepo[r.id])
-              .then(() => dirtyRepos.current.delete(r.id))
+          cleaned.repos.filter((r) => reposToSave.has(r.id)).map((r) =>
+            ipc.saveRepoConfig(r.id, fromCards(cardsByRepo[r.id] || []), (setupByRepo[r.id] || []).filter((t) => t.cmd.trim()), policyByRepo[r.id], extrasByRepo[r.id])
+              .then(() => { if (repoEditRevision.current.get(r.id) === repoRevisions.get(r.id)) dirtyRepos.current.delete(r.id); })
               .catch((e) => failures.push(`${r.name}: ${e}`)),
           ),
         );
         if (failures.length) { showToast(`Saved app settings, but repo config failed — ${failures.join(" · ")}`); setSaving(false); return; }
       }
+      if (!hasBackend()) setSettings(cleaned);
       // the next terminal pane to mount must read the saved shell config
       invalidateTermCfg();
       bumpSettings();
       const n = dirty.size;
-      setDirty(new Set());
-      showToast(n <= 1 ? "Settings saved" : `Saved ${n} sections`);
+      if (editRevision.current === revision) setDirty(new Set());
+      showToast(editRevision.current !== revision ? "Saved — newer edits are still unsaved" : n <= 1 ? "Settings saved" : `Saved ${n} sections`);
     } catch (e) {
       showToast(`Save failed: ${e}`);
     } finally {
@@ -321,6 +333,15 @@ export default function SettingsView({ onClose }: { onClose: () => void }) {
         setCards(toCards(list));
         markDirty("files");
         // an imported config may use either shape — normalise on the way in
+        if (Array.isArray(parsed.teardown) || Array.isArray(parsed.migrate)) {
+          const commands = (value: unknown, fallback: string[]) => {
+            if (value === undefined) return fallback;
+            if (!Array.isArray(value) || value.some((v) => typeof v !== "string")) throw new Error("Lifecycle commands must be arrays of strings");
+            return value as string[];
+          };
+          setExtras({ teardown: commands(parsed.teardown, extras.teardown), migrate: commands(parsed.migrate, extras.migrate) });
+          markDirty("files");
+        }
         if (Array.isArray(parsed.setup)) { setSetup(parseSetup(parsed.setup)); markDirty("setup"); }
         setPage("files");
         showToast(list.length ? `Imported ${list.length} file${list.length > 1 ? "s" : ""} — review, then Save` : "No provision entries found");
@@ -348,7 +369,7 @@ export default function SettingsView({ onClose }: { onClose: () => void }) {
     } catch (e) { showToast(`Couldn't read the config file: ${e}`); }
   };
 
-  const pageProps: PageProps = { repo, patchRepo, settings, patch, markDirty, flash, cards, setCards, setup, setSetup, policy, setPolicy, onRemoveRepo: removeRepo, onExportJson: exportJson, onImportJson: triggerImport, onCopyJson: copyJson, selKey, reload: load, invalid: (repo && invalidByRepo.get(repo.id)) || NO_INVALID };
+  const pageProps: PageProps = { repo, patchRepo, settings, patch, markDirty, flash, cards, setCards, setup, setSetup, extras, setExtras, policy, setPolicy, onRemoveRepo: removeRepo, onExportJson: exportJson, onImportJson: triggerImport, onCopyJson: copyJson, selKey, reload: load, invalid: (repo && invalidByRepo.get(repo.id)) || NO_INVALID };
   const body = () => {
     if (isRepoPage && !repo) {
       return (

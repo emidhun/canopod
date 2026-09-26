@@ -9,20 +9,20 @@
 // window can rehydrate. Where a service is spawned over pipes and read *by line*
 // on the async runtime, a PTY is raw, bidirectional, byte-oriented I/O — so the
 // read loop lives on a dedicated std thread and streams `terminal:data` events.
+#[cfg(unix)]
+use crate::settings::TermOrphan;
 use base64::Engine;
 use portable_pty::{native_pty_system, Child, CommandBuilder, MasterPty, PtySize};
 use serde::Serialize;
-#[cfg(unix)]
-use crate::settings::TermOrphan;
 // read by the activity detector (agent profile lookup) and the embedded-shell
 // config lookup on every platform, and by the Unix orphan persist/sweep
+use crate::runtime::RuntimeContext;
 use crate::state::AppState;
+use parking_lot::Mutex;
 use std::collections::{HashMap, VecDeque};
 use std::io::{Read, Write};
 use std::sync::atomic::{AtomicU64, Ordering};
-use parking_lot::Mutex;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
-use crate::runtime::RuntimeContext;
 
 /// Per-session scrollback cap (bytes). Big enough for a screenful of history on
 /// rehydrate, small enough to stay cheap across many idle worktrees.
@@ -34,6 +34,8 @@ const IDLE_LIMIT: Duration = Duration::from_secs(60 * 60);
 // larger buffer coalesces bursts into fewer events — fewer base64/JSON emits
 // under heavy output, with no added latency for small writes.
 const READ_CHUNK: usize = 32 * 1024;
+// Base64 expansion plus the terminal event envelope must fit one bus frame.
+const _: () = assert!(READ_CHUNK.div_ceil(3) * 4 + 4096 < crate::events::MAX_EVENT_BYTES);
 
 /// What an agent session is doing right now.
 ///
@@ -145,10 +147,12 @@ pub struct BufferSnapshot {
     pub seq: u64,
 }
 
-
 /// The user's home directory, for "don't open in the worktree root".
 fn home_dir() -> Option<String> {
-    std::env::var("HOME").ok().or_else(|| std::env::var("USERPROFILE").ok()).filter(|h| !h.is_empty())
+    std::env::var("HOME")
+        .ok()
+        .or_else(|| std::env::var("USERPROFILE").ok())
+        .filter(|h| !h.is_empty())
 }
 
 fn b64(bytes: &[u8]) -> String {
@@ -234,7 +238,9 @@ fn looks_like_prompt(tail: &str, extra: &[String]) -> bool {
         .map(|l| l.trim_matches(|c: char| c.is_whitespace() || "│┃|╎┆>·".contains(c)))
         .filter(|l| !l.is_empty() && !l.chars().all(|c| "─━═-_ ┌┐└┘├┤┬┴┼╭╮╰╯".contains(c)))
         .collect();
-    let Some(last) = lines.last() else { return false };
+    let Some(last) = lines.last() else {
+        return false;
+    };
 
     // A user-configured snippet wins outright — it was written for this CLI.
     let lower_tail = clean.to_lowercase();
@@ -247,7 +253,9 @@ fn looks_like_prompt(tail: &str, extra: &[String]) -> bool {
 
     // The last few lines are where a question lives; a TUI often renders the
     // question above the input box, so look at more than just the final line.
-    let recent = lines[lines.len().saturating_sub(3)..].join("\n").to_lowercase();
+    let recent = lines[lines.len().saturating_sub(3)..]
+        .join("\n")
+        .to_lowercase();
     const ASKS: [&str; 9] = [
         "(y/n)",
         "[y/n]",
@@ -279,7 +287,7 @@ fn looks_like_prompt(tail: &str, extra: &[String]) -> bool {
 /// of already-resident scrollback per agent session and allocates only for
 /// sessions that are quiet.
 pub fn poll_states(app: &RuntimeContext) {
-    let Some(table) = app.try_state::<TermTable>() else { return };
+    let table = app.state::<TermTable>();
     let mut changes: Vec<(String, Activity)> = Vec::new();
     {
         let mut sessions = table.sessions.lock();
@@ -308,9 +316,31 @@ pub fn poll_states(app: &RuntimeContext) {
             }
         }
     }
+    let changed = !changes.is_empty();
     for (id, state) in changes {
+        if state == Activity::Waiting {
+            crate::notify::notify(
+                app,
+                crate::notify::Kind::AgentWaiting,
+                &id,
+                "An agent is waiting",
+                "Open Canopy to respond to the agent.",
+            );
+        }
         let _ = app.emit("terminal:state", &StateEvent { id: &id, state });
     }
+    if changed {
+        crate::notify::refresh_badge(app);
+    }
+}
+
+pub fn waiting_count(table: &TermTable) -> usize {
+    table
+        .sessions
+        .lock()
+        .values()
+        .filter(|session| session.activity == Activity::Waiting)
+        .count()
 }
 
 /// Resolve the agent profile a session was launched from, and return its
@@ -322,16 +352,28 @@ pub fn poll_states(app: &RuntimeContext) {
 /// This keeps detection per-profile — as the issue asks — without threading a
 /// new argument through the whole terminal-open call chain.
 fn patterns_for(app: &RuntimeContext, cwd: &str, command: Option<&str>) -> Vec<String> {
-    let Some(command) = command.map(str::trim).filter(|c| !c.is_empty()) else { return Vec::new() };
-    let Some(state) = app.try_state::<AppState>() else { return Vec::new() };
-    let Some(ctx) = state.wt_context(cwd) else { return Vec::new() };
+    let Some(command) = command.map(str::trim).filter(|c| !c.is_empty()) else {
+        return Vec::new();
+    };
+    let state = app.state::<AppState>();
+    let Some(ctx) = state.wt_context(cwd) else {
+        return Vec::new();
+    };
     let settings = state.settings.read();
-    let Some(repo) = settings.repos.iter().find(|r| r.id == ctx.repo_id) else { return Vec::new() };
+    let Some(repo) = settings.repos.iter().find(|r| r.id == ctx.repo_id) else {
+        return Vec::new();
+    };
     repo.agents
         .iter()
         .filter(|a| !a.command.trim().is_empty())
         .find(|a| command.starts_with(a.command.trim()))
-        .map(|a| a.waiting_patterns.lines().map(str::to_string).filter(|l| !l.trim().is_empty()).collect())
+        .map(|a| {
+            a.waiting_patterns
+                .lines()
+                .map(str::to_string)
+                .filter(|l| !l.trim().is_empty())
+                .collect()
+        })
         .unwrap_or_default()
 }
 
@@ -354,22 +396,23 @@ pub fn open(
     // Resolve everything that reads settings BEFORE taking the sessions lock:
     // keeping the two locks disjoint means no path can ever establish a
     // settings→sessions ordering to deadlock against.
-    let waiting_patterns =
-        if kind_of(id) == "agent" { patterns_for(app, cwd, command.as_deref()) } else { Vec::new() };
-    let (term_cfg, provisioned_vars) = match app.try_state::<AppState>() {
-        Some(state) => {
-            let cfg = state.settings.read().embedded_terminal.clone();
-            let vars = if cfg.inherit_env {
-                state
-                    .wt_context(cwd)
-                    .map(|ctx| crate::state::worktree_vars(app, &ctx.repo_id, cwd, ctx.is_main))
-                    .unwrap_or_default()
-            } else {
-                HashMap::new()
-            };
-            (cfg, vars)
-        }
-        None => (crate::settings::TermCfg::default(), HashMap::new()),
+    let waiting_patterns = if kind_of(id) == "agent" {
+        patterns_for(app, cwd, command.as_deref())
+    } else {
+        Vec::new()
+    };
+    let (term_cfg, provisioned_vars) = {
+        let state = app.state::<AppState>();
+        let cfg = state.settings.read().embedded_terminal.clone();
+        let vars = if cfg.inherit_env {
+            state
+                .wt_context(cwd)
+                .map(|ctx| crate::state::worktree_vars(app, &ctx.repo_id, cwd, ctx.is_main))
+                .unwrap_or_default()
+        } else {
+            HashMap::new()
+        };
+        (cfg, vars)
     };
 
     let mut sessions = table.sessions.lock();
@@ -381,7 +424,12 @@ pub fn open(
     table.exited.lock().remove(id);
 
     let pair = native_pty_system()
-        .openpty(PtySize { rows, cols, pixel_width: 0, pixel_height: 0 })
+        .openpty(PtySize {
+            rows,
+            cols,
+            pixel_width: 0,
+            pixel_height: 0,
+        })
         .map_err(|e| format!("openpty failed: {e}"))?;
 
     // An explicit program is run as given, with the user's own arguments; an
@@ -394,7 +442,10 @@ pub fn open(
     };
     let custom_program = !term_cfg.program.trim().is_empty();
     let mut cmd = CommandBuilder::new(&shell);
-    let name = std::path::Path::new(&shell).file_name().and_then(|s| s.to_str()).unwrap_or("");
+    let name = std::path::Path::new(&shell)
+        .file_name()
+        .and_then(|s| s.to_str())
+        .unwrap_or("");
     // on Windows the shell is `bash.exe`; normalize so the family checks below
     // (login flag, and the `-i` interactive flag) match as they do on Unix
     let name = name.strip_suffix(".exe").unwrap_or(name);
@@ -436,7 +487,10 @@ pub fn open(
     // Every agent profile can read the same durable handoff even when it opts
     // out of positional prompts because its CLI has a different interface.
     if kind_of(id) == "agent" {
-        cmd.env("CANOPY_CONTEXT_FILE", std::path::Path::new(cwd).join(".canopy/context.md"));
+        cmd.env(
+            "CANOPY_CONTEXT_FILE",
+            std::path::Path::new(cwd).join(".canopy/context.md"),
+        );
         cmd.env("CANOPY_WORKTREE", cwd);
     }
     if let Some(bin) = crate::toolchain::pinned_node_bin(cwd) {
@@ -451,19 +505,30 @@ pub fn open(
         }
     }
 
-    let child = pair.slave.spawn_command(cmd).map_err(|e| format!("spawn failed: {e}"))?;
+    let child = pair
+        .slave
+        .spawn_command(cmd)
+        .map_err(|e| format!("spawn failed: {e}"))?;
     // the parent doesn't need the slave handle; dropping it lets EOF propagate
     // when the shell/command exits.
     drop(pair.slave);
 
-    let mut reader = pair.master.try_clone_reader().map_err(|e| format!("reader clone failed: {e}"))?;
+    let mut reader = pair
+        .master
+        .try_clone_reader()
+        .map_err(|e| format!("reader clone failed: {e}"))?;
     let writer = std::sync::Arc::new(Mutex::new(
-        pair.master.take_writer().map_err(|e| format!("writer failed: {e}"))?,
+        pair.master
+            .take_writer()
+            .map_err(|e| format!("writer failed: {e}"))?,
     ));
 
     // the child is its own session leader (the pty setsid's it), so pid == pgid
     let pgid = child.process_id().unwrap_or(0) as i32;
-    let started_unix = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_secs();
+    let started_unix = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap()
+        .as_secs();
     let generation = table.next_gen.fetch_add(1, Ordering::Relaxed) + 1;
 
     sessions.insert(
@@ -500,7 +565,8 @@ pub fn open(
                     // the emitted seq always matches a chunk boundary.
                     let mut seq = 0;
                     let mut ours = false;
-                    if let Some(table) = app.try_state::<TermTable>() {
+                    {
+                        let table = app.state::<TermTable>();
                         if let Some(sess) = table.sessions.lock().get_mut(&id) {
                             // Same generation guard the exit path uses: a restart
                             // reopens this id, and bytes this (now stale) reader
@@ -526,7 +592,15 @@ pub fn open(
                     // seq-gap check — the same race-free cursor rehydrate
                     // mechanism it already uses on mount.
                     if ours && app.interested(crate::runtime::Audience::Terminals) {
-                        let _ = app.emit_to(crate::runtime::Audience::Terminals, "terminal:data", &DataEvent { id: &id, data: b64(chunk), seq });
+                        let _ = app.emit_to(
+                            crate::runtime::Audience::Terminals,
+                            "terminal:data",
+                            &DataEvent {
+                                id: &id,
+                                data: b64(chunk),
+                                seq,
+                            },
+                        );
                     }
                 }
                 Err(_) => break,
@@ -535,7 +609,8 @@ pub fn open(
         // session ended: drop it and tell the UI — but only if a newer session
         // hasn't already replaced this id (fast reopen), else we'd delete the
         // replacement and emit a false exit.
-        let removed = if let Some(table) = app.try_state::<TermTable>() {
+        let removed = {
+            let table = app.state::<TermTable>();
             let mut sessions = table.sessions.lock();
             match sessions.get(&id) {
                 Some(s) if s.generation == generation => {
@@ -545,24 +620,35 @@ pub fn open(
                     let sess = sessions.remove(&id).unwrap();
                     let mut exited = table.exited.lock();
                     if exited.len() >= EXITED_CAP {
-                        if let Some(oldest) = exited.iter().min_by_key(|(_, b)| b.at).map(|(k, _)| k.clone()) {
+                        if let Some(oldest) = exited
+                            .iter()
+                            .min_by_key(|(_, b)| b.at)
+                            .map(|(k, _)| k.clone())
+                        {
                             exited.remove(&oldest);
                         }
                     }
                     exited.insert(
                         id.clone(),
-                        ExitedBuffer { scrollback: sess.scrollback.into_iter().collect(), seq: sess.seq, at: Instant::now() },
+                        ExitedBuffer {
+                            scrollback: sess.scrollback.into_iter().collect(),
+                            seq: sess.seq,
+                            at: Instant::now(),
+                        },
                     );
                     true
                 }
                 _ => false,
             }
-        } else {
-            false
         };
         if removed {
+            crate::notify::refresh_badge(&app);
             persist_orphans(&app);
-            let _ = app.emit_to(crate::runtime::Audience::TerminalState, "terminal:exit", &ExitEvent { id: &id });
+            let _ = app.emit_to(
+                crate::runtime::Audience::TerminalState,
+                "terminal:exit",
+                &ExitEvent { id: &id },
+            );
         }
     });
 
@@ -589,7 +675,13 @@ pub fn write(app: &RuntimeContext, table: &TermTable, id: &str, data: &str) -> R
         (sess.writer.clone(), answered)
     };
     if answered {
-        let _ = app.emit("terminal:state", &StateEvent { id, state: Activity::Busy });
+        let _ = app.emit(
+            "terminal:state",
+            &StateEvent {
+                id,
+                state: Activity::Busy,
+            },
+        );
     }
     let mut w = writer.lock();
     w.write_all(data.as_bytes()).map_err(|e| e.to_string())?;
@@ -601,7 +693,12 @@ pub fn resize(table: &TermTable, id: &str, cols: u16, rows: u16) -> Result<(), S
     let sessions = table.sessions.lock();
     let sess = sessions.get(id).ok_or("no such terminal")?;
     sess.master
-        .resize(PtySize { rows, cols, pixel_width: 0, pixel_height: 0 })
+        .resize(PtySize {
+            rows,
+            cols,
+            pixel_width: 0,
+            pixel_height: 0,
+        })
         .map_err(|e| e.to_string())
 }
 
@@ -612,20 +709,44 @@ pub fn resize(table: &TermTable, id: &str, cols: u16, rows: u16) -> Result<(), S
 pub fn get_buffer(table: &TermTable, id: &str) -> Option<BufferSnapshot> {
     if let Some(s) = table.sessions.lock().get(id) {
         let bytes: Vec<u8> = s.scrollback.iter().copied().collect();
-        return Some(BufferSnapshot { buffer: b64(&bytes), seq: s.seq });
+        return Some(BufferSnapshot {
+            buffer: b64(&bytes),
+            seq: s.seq,
+        });
     }
-    table
-        .exited
-        .lock()
-        .get(id)
-        .map(|b| BufferSnapshot { buffer: b64(&b.scrollback), seq: b.seq })
+    table.exited.lock().get(id).map(|b| BufferSnapshot {
+        buffer: b64(&b.scrollback),
+        seq: b.seq,
+    })
+}
+
+/// A PTY shell owns a Unix session; job-control children may use other groups
+/// in that same session. Stop each group, rather than only the shell process.
+fn kill_session(sess: &mut PtySession) {
+    #[cfg(unix)]
+    if sess.pgid > 1 && unsafe { libc::getsid(sess.pgid) == sess.pgid }
+        && crate::services::proc_start_time_matches(sess.pgid as u32, sess.started_unix) {
+        use sysinfo::{System, ProcessesToUpdate, ProcessRefreshKind};
+        let mut system = System::new();
+        system.refresh_processes_specifics(ProcessesToUpdate::All, true, ProcessRefreshKind::nothing());
+        let mut groups = std::collections::HashSet::new();
+        for pid in system.processes().keys() {
+            let pid = pid.as_u32() as i32;
+            if unsafe { libc::getsid(pid) == sess.pgid } {
+                let group = unsafe { libc::getpgid(pid) };
+                if group > 1 { groups.insert(group); }
+            }
+        }
+        for group in groups { unsafe { libc::killpg(group, libc::SIGKILL); } }
+    }
+    let _ = sess.child.kill();
 }
 
 /// Kill and drop a session, including any retained output — closing a tab is the
 /// point at which the user is done with it.
 pub fn close(table: &TermTable, id: &str) {
     if let Some(mut sess) = table.sessions.lock().remove(id) {
-        let _ = sess.child.kill();
+        kill_session(&mut sess);
     }
     table.exited.lock().remove(id);
 }
@@ -633,6 +754,7 @@ pub fn close(table: &TermTable, id: &str) {
 /// Close a session and refresh the persisted orphan list (command path).
 pub fn close_and_persist(app: &RuntimeContext, table: &TermTable, id: &str) {
     close(table, id);
+    crate::notify::refresh_badge(app);
     persist_orphans(app);
 }
 
@@ -640,38 +762,59 @@ pub fn close_and_persist(app: &RuntimeContext, table: &TermTable, id: &str) {
 /// no shell/agent lingers with no UI to stop it).
 pub fn close_worktree(app: &RuntimeContext, table: &TermTable, wt_key: &str) {
     let prefix = format!("{wt_key}::");
-    let ids: Vec<String> = table.sessions.lock().keys().filter(|k| k.starts_with(&prefix)).cloned().collect();
+    let ids: Vec<String> = table
+        .sessions
+        .lock()
+        .keys()
+        .filter(|k| k.starts_with(&prefix))
+        .cloned()
+        .collect();
     for id in &ids {
         close(table, id);
     }
     table.exited.lock().retain(|k, _| !k.starts_with(&prefix));
     if !ids.is_empty() {
+        crate::notify::refresh_badge(app);
         persist_orphans(app);
     }
 }
 
 /// Kill every session (app quit).
-pub fn close_all(table: &TermTable) {
+pub fn close_all(app: &RuntimeContext) {
+    let table = app.state::<TermTable>();
     let mut sessions = table.sessions.lock();
     for (_, mut sess) in sessions.drain() {
-        let _ = sess.child.kill();
+        kill_session(&mut sess);
     }
     table.exited.lock().clear();
+    drop(sessions);
+    persist_orphans(app);
 }
 
 /// Snapshot live sessions' pgids into persisted runtime state, so a crash can be
 /// cleaned up on next launch (mirrors the service orphan sweep). Unix-only — see
 /// `sweep_orphans`.
 #[cfg(unix)]
-fn persist_orphans(app: &RuntimeContext) {
+pub(crate) fn persist_orphans(app: &RuntimeContext) {
     let table = app.state::<TermTable>();
-    let orphans: Vec<TermOrphan> = table
+    let owner = crate::ownership::current_process_owner();
+    let mut orphans: Vec<TermOrphan> = table
         .sessions
         .lock()
         .iter()
-        .map(|(id, s)| TermOrphan { id: id.clone(), pgid: s.pgid, spawn_time_secs: s.started_unix })
+        .map(|(id, s)| TermOrphan {
+            id: id.clone(),
+            pgid: s.pgid,
+            spawn_time_secs: s.started_unix,
+            owner: owner.clone(),
+        })
         .collect();
     let state = app.state::<AppState>();
+    {
+        let mut retained = state.retained_terminal_orphans.lock();
+        retained.retain(|o| o.pgid > 1 && unsafe { libc::killpg(o.pgid, 0) == 0 });
+        orphans.extend(retained.iter().cloned());
+    }
     let runtime = {
         let mut rt = state.runtime.write();
         rt.terminal_orphans = orphans;
@@ -681,7 +824,7 @@ fn persist_orphans(app: &RuntimeContext) {
 }
 
 #[cfg(windows)]
-fn persist_orphans(_app: &RuntimeContext) {}
+pub(crate) fn persist_orphans(_app: &RuntimeContext) {}
 
 /// Startup: kill terminal process groups left over from a crashed previous run
 /// (only when the group leader still exists and its start time matches). Unix-only
@@ -699,6 +842,8 @@ pub fn sweep_orphans(app: &RuntimeContext) {
     };
     let mut retained = Vec::new();
     for o in &orphans {
+        // A caller can already have started a child before entering serve.
+        if app.state::<TermTable>().sessions.lock().values().any(|p| p.pgid == o.pgid) { continue }
         if o.pgid <= 1 {
             continue;
         }
@@ -706,7 +851,7 @@ pub fn sweep_orphans(app: &RuntimeContext) {
         if alive {
             if o.spawn_time_secs == 0
                 || !crate::services::proc_start_time_matches(o.pgid as u32, o.spawn_time_secs)
-                || !crate::ownership::orphan_parent_verified(o.pgid as u32) {
+                || !crate::ownership::orphan_owner_gone(o.pgid as u32, o.owner.as_ref()) {
                 log::warn!("leaving process group {} alone: identity or orphan parent is unverified", o.pgid);
                 retained.push(o.clone());
                 continue;
@@ -715,15 +860,12 @@ pub fn sweep_orphans(app: &RuntimeContext) {
             unsafe {
                 libc::killpg(o.pgid, libc::SIGTERM);
             }
+            // Retain until a later probe proves it exited, including TERM refusal.
+            if unsafe { libc::killpg(o.pgid, 0) == 0 } { retained.push(o.clone()); }
         }
     }
-    let state = app.state::<AppState>();
-    let runtime = {
-        let mut rt = state.runtime.write();
-        rt.terminal_orphans = retained;
-        rt.clone()
-    };
-    let _ = crate::settings::save_runtime(app, &runtime);
+    *app.state::<AppState>().retained_terminal_orphans.lock() = retained;
+    persist_orphans(app);
 }
 
 /// Sweep idle SHELL sessions (bounds long-run resource growth). Killing the
@@ -734,31 +876,33 @@ pub fn sweep_idle(app: &RuntimeContext, table: &TermTable) {
     // Per-repo agent timeout, keyed by the repo's worktree paths. Resolved
     // once per sweep rather than per session — the sweep runs every 5 minutes
     // and this is two lock acquisitions instead of one per open terminal.
-    let agent_limits: HashMap<String, Duration> = app
-        .try_state::<AppState>()
-        .map(|state| {
-            let settings = state.settings.read();
-            let tree = state.tree.read();
-            tree.iter()
-                .filter_map(|r| {
-                    let mins = settings.repos.iter().find(|c| c.id == r.repo_id)?.agent_idle_timeout_min;
-                    (mins > 0).then(|| {
-                        r.worktrees
-                            .iter()
-                            .map(|w| (w.wt_key.clone(), Duration::from_secs(mins as u64 * 60)))
-                            .collect::<Vec<_>>()
-                    })
+    let agent_limits: HashMap<String, Duration> = {
+        let state = app.state::<AppState>();
+        let settings = state.settings.read();
+        let tree = state.tree.read();
+        tree.iter()
+            .filter_map(|r| {
+                let mins = settings
+                    .repos
+                    .iter()
+                    .find(|c| c.id == r.repo_id)?
+                    .agent_idle_timeout_min;
+                (mins > 0).then(|| {
+                    r.worktrees
+                        .iter()
+                        .map(|w| (w.wt_key.clone(), Duration::from_secs(mins as u64 * 60)))
+                        .collect::<Vec<_>>()
                 })
-                .flatten()
-                .collect()
-        })
-        .unwrap_or_default();
+            })
+            .flatten()
+            .collect()
+    };
 
     let mut sessions = table.sessions.lock();
     for (id, sess) in sessions.iter_mut() {
         let kind = kind_of(id);
         if kind == "shell" && sess.last_activity.elapsed() > IDLE_LIMIT {
-            let _ = sess.child.kill();
+            kill_session(sess);
             continue;
         }
         // Agents are exempt unless the repo opted in: a quiet agent may just
@@ -769,7 +913,7 @@ pub fn sweep_idle(app: &RuntimeContext, table: &TermTable) {
             if let Some(limit) = agent_limits.get(wt) {
                 if sess.last_activity.elapsed() > *limit {
                     log::info!("closing idle agent {id} after {}s", limit.as_secs());
-                    let _ = sess.child.kill();
+                    kill_session(sess);
                 }
             }
         }
@@ -783,9 +927,21 @@ mod tests {
     #[test]
     fn strip_ansi_removes_csi_and_osc() {
         assert_eq!(strip_ansi("\x1b[31mred\x1b[0m"), "red", "SGR colour codes");
-        assert_eq!(strip_ansi("\x1b[2J\x1b[1;1Hclear"), "clear", "erase + cursor move");
-        assert_eq!(strip_ansi("\x1b]0;title\x07text"), "text", "OSC terminated by BEL");
-        assert_eq!(strip_ansi("\x1b]0;title\x1b\\text"), "text", "OSC terminated by ST");
+        assert_eq!(
+            strip_ansi("\x1b[2J\x1b[1;1Hclear"),
+            "clear",
+            "erase + cursor move"
+        );
+        assert_eq!(
+            strip_ansi("\x1b]0;title\x07text"),
+            "text",
+            "OSC terminated by BEL"
+        );
+        assert_eq!(
+            strip_ansi("\x1b]0;title\x1b\\text"),
+            "text",
+            "OSC terminated by ST"
+        );
         // a CR rewrites the line in a TUI, so it must break "the last line"
         assert_eq!(strip_ansi("first\rsecond"), "first\nsecond");
     }
@@ -795,20 +951,38 @@ mod tests {
         let no_extra: [String; 0] = [];
         // explicit confirmations
         assert!(looks_like_prompt("Overwrite src/main.rs? (y/n)", &no_extra));
-        assert!(looks_like_prompt("Do you want to run this command?", &no_extra));
-        assert!(looks_like_prompt("\x1b[1mProceed?\x1b[0m", &no_extra), "through ANSI");
+        assert!(looks_like_prompt(
+            "Do you want to run this command?",
+            &no_extra
+        ));
+        assert!(
+            looks_like_prompt("\x1b[1mProceed?\x1b[0m", &no_extra),
+            "through ANSI"
+        );
         // a bare input caret inside a TUI box
-        assert!(looks_like_prompt("╭──────────╮\n│ ❯        │\n╰──────────╯", &no_extra));
+        assert!(looks_like_prompt(
+            "╭──────────╮\n│ ❯        │\n╰──────────╯",
+            &no_extra
+        ));
 
         // NOT waiting: ordinary working output, including output that merely
         // mentions a question mark mid-sentence
         assert!(!looks_like_prompt("Running tests…\n  42 passed", &no_extra));
-        assert!(!looks_like_prompt("Edited src/lib.rs (3 additions)", &no_extra));
+        assert!(!looks_like_prompt(
+            "Edited src/lib.rs (3 additions)",
+            &no_extra
+        ));
         assert!(
-            !looks_like_prompt("Checking whether the config? file exists\nnow reading it", &no_extra),
+            !looks_like_prompt(
+                "Checking whether the config? file exists\nnow reading it",
+                &no_extra
+            ),
             "a '?' that isn't at the end of the last line is not a prompt"
         );
-        assert!(!looks_like_prompt("", &no_extra), "empty tail is not a prompt");
+        assert!(
+            !looks_like_prompt("", &no_extra),
+            "empty tail is not a prompt"
+        );
         assert!(
             !looks_like_prompt("the answer is > 5 for all inputs", &no_extra),
             "a caret inside prose is not a bare input caret"
@@ -819,9 +993,15 @@ mod tests {
     fn configured_phrases_extend_the_builtin_shapes() {
         let extra = ["Approve this edit".to_string()];
         // the built-ins alone would not call this waiting
-        assert!(!looks_like_prompt("Approve this edit to continue working", &[] as &[String]));
+        assert!(!looks_like_prompt(
+            "Approve this edit to continue working",
+            &[] as &[String]
+        ));
         // with the profile's phrase it does, case-insensitively
-        assert!(looks_like_prompt("approve this edit to continue working", &extra));
+        assert!(looks_like_prompt(
+            "approve this edit to continue working",
+            &extra
+        ));
         // blank lines in the setting are ignored rather than matching everything
         let blanks = ["".to_string(), "   ".to_string()];
         assert!(!looks_like_prompt("ordinary output", &blanks));
@@ -836,7 +1016,10 @@ mod tests {
     fn b64_length_formula_matches_frontend_gap_math() {
         for n in 0..=9usize {
             let s = b64(&vec![0xAB; n]);
-            assert!(!s.contains('\n') && !s.contains('\r'), "must be unwrapped: {s:?}");
+            assert!(
+                !s.contains('\n') && !s.contains('\r'),
+                "must be unwrapped: {s:?}"
+            );
             let pad = if s.ends_with("==") {
                 2
             } else if s.ends_with('=') {

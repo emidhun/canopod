@@ -46,8 +46,9 @@ participating host must acquire the same OS lock before reading runtime state,
 sweeping child processes, or writing state. Keep the open file for the owner's
 entire lifetime; never unlink it. An occupied lock currently gives a clear
 startup error in the backend log. Packaged desktop presentation of that error
-still needs a visible recovery dialog before concurrent hosts ship. Future attach support must validate the backend handshake
-without constructing a second runtime.
+now displays a native error dialog before exiting. Future
+attach support must validate the backend handshake without constructing a
+second runtime.
 
 This guard coordinates upgraded hosts only. Old versions do not acquire it.
 Before shipping concurrent headless/desktop startup, the takeover path must
@@ -179,3 +180,9 @@ Single runtime ownership and serialized rotation are caller requirements.
 This slice does not create an HTTP listener, enable MCP, generate credentials
 at startup, or change permission profiles. Wire authentication, revocation and
 session invalidation through the later application/MCP transport layers.
+
+### Orphan recovery diagnostics
+
+The backend logs to stderr (`RUST_LOG=debug` increases detail), so supervisors can capture sweep warnings. New process records include the spawning backend PID and start identity: adopted children are recoverable after that owner dies, including under Linux subreapers. Legacy records without that identity only recover automatically under a recognized init process and with a matching group birth time. Unverified live records survive subsequent service and terminal state writes.
+
+If startup names an unverifiable `state.json` record, stop Canopy, preserve a backup of that file, inspect the named `orphans` or `terminalOrphans` entry and the running PID's identity, then remove only an entry confirmed stale. Do not kill an unrelated process merely because its PID matches an old record. Library hosts and explicitly isolated CLI data directories do not reject an unrelated default-directory desktop; the default CLI host retains the legacy-desktop exclusion check.

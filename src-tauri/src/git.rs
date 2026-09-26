@@ -43,7 +43,8 @@ async fn run_git_with_timeout(cwd: &str, args: &[&str], dur: Duration) -> Result
     // `-c` before the subcommand, so it applies to this invocation only and
     // never edits the user's repo or global config
     if !helper.is_empty() {
-        cmd.arg("-c").arg(format!("credential.helper={helper}"));
+        // Clear the inherited multi-valued helper list before selecting one.
+        cmd.args(["-c", "credential.helper="]).arg("-c").arg(format!("credential.helper={helper}"));
     }
     cmd.arg("-C").arg(cwd).args(args);
     if !ssh_key.is_empty() {

@@ -13,13 +13,13 @@
 //    overview await that would freeze it on open. So scans run on the blocking
 //    pool, one at a time, and publish `worktree:disk` when each finishes. The
 //    overview renders "—" until a result arrives and never blocks on one.
+use crate::runtime::RuntimeContext;
+use parking_lot::Mutex;
 use serde::Serialize;
 use std::collections::{HashMap, VecDeque};
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
-use parking_lot::Mutex;
-use crate::runtime::RuntimeContext;
 
 /// A completed measurement.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
@@ -67,19 +67,23 @@ struct DiskEvent<'a> {
 }
 
 fn now_secs() -> i64 {
-    SystemTime::now().duration_since(UNIX_EPOCH).map(|d| d.as_secs() as i64).unwrap_or(0)
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|d| d.as_secs() as i64)
+        .unwrap_or(0)
 }
 
 /// Every measurement Canopy currently holds. Read by `get_disk_usage` so a
 /// window that opens the overview late gets what earlier scans already found
 /// instead of waiting for a re-scan.
 pub fn snapshot(app: &RuntimeContext) -> HashMap<String, DiskUsage> {
-    app.try_state::<DiskCache>().map(|c| c.usage.lock().clone()).unwrap_or_default()
+    app.state::<DiskCache>().usage.lock().clone()
 }
 
 /// Drop a worktree's measurement (it was removed, or something invalidated it).
 pub fn forget(app: &RuntimeContext, wt_key: &str) {
-    if let Some(cache) = app.try_state::<DiskCache>() {
+    {
+        let cache = app.state::<DiskCache>();
         cache.usage.lock().remove(wt_key);
         cache.queue.lock().retain(|k| k != wt_key);
     }
@@ -88,7 +92,7 @@ pub fn forget(app: &RuntimeContext, wt_key: &str) {
 /// Queue `wt_keys` for measurement, skipping any whose cached figure is still
 /// fresh unless `force`. Returns immediately — results arrive as `worktree:disk`.
 pub fn request(app: &RuntimeContext, wt_keys: Vec<String>, force: bool) {
-    let Some(cache) = app.try_state::<DiskCache>() else { return };
+    let cache = app.state::<DiskCache>();
     let now = now_secs();
     {
         let usage = cache.usage.lock();
@@ -98,9 +102,9 @@ pub fn request(app: &RuntimeContext, wt_keys: Vec<String>, force: bool) {
                 continue; // already waiting — don't walk the same tree twice
             }
             let fresh = !force
-                && usage
-                    .get(&key)
-                    .is_some_and(|u| now.saturating_sub(u.scanned_at) < STALE_AFTER.as_secs() as i64);
+                && usage.get(&key).is_some_and(|u| {
+                    now.saturating_sub(u.scanned_at) < STALE_AFTER.as_secs() as i64
+                });
             if !fresh {
                 queue.push_back(key);
             }
@@ -117,7 +121,7 @@ pub fn request(app: &RuntimeContext, wt_keys: Vec<String>, force: bool) {
     app.executor().spawn(async move {
         loop {
             let next = {
-                let Some(cache) = app.try_state::<DiskCache>() else { break };
+                let cache = app.state::<DiskCache>();
                 let next = cache.queue.lock().pop_front();
                 match next {
                     Some(k) => k,
@@ -140,10 +144,17 @@ pub fn request(app: &RuntimeContext, wt_keys: Vec<String>, force: bool) {
             let path = next.clone();
             let measured = app.executor().spawn_blocking(move || measure(&path)).await;
             let Ok(usage) = measured else { continue };
-            if let Some(cache) = app.try_state::<DiskCache>() {
+            {
+                let cache = app.state::<DiskCache>();
                 cache.usage.lock().insert(next.clone(), usage);
             }
-            let _ = app.emit("worktree:disk", &DiskEvent { wt_key: &next, usage });
+            let _ = app.emit(
+                "worktree:disk",
+                &DiskEvent {
+                    wt_key: &next,
+                    usage,
+                },
+            );
         }
     });
 }
@@ -173,7 +184,9 @@ fn measure(root: &str) -> DiskUsage {
         };
         for entry in rd.flatten() {
             entries += 1;
-            let Ok(meta) = entry.metadata_no_follow() else { continue };
+            let Ok(meta) = entry.metadata_no_follow() else {
+                continue;
+            };
             if meta.is_dir() {
                 stack.push(entry.path());
             } else {
@@ -182,7 +195,11 @@ fn measure(root: &str) -> DiskUsage {
         }
     }
 
-    DiskUsage { bytes: total, scanned_at: now_secs(), partial }
+    DiskUsage {
+        bytes: total,
+        scanned_at: now_secs(),
+        partial,
+    }
 }
 
 /// `DirEntry::metadata` already does not follow symlinks on the platforms we
@@ -234,7 +251,11 @@ mod tests {
 
         let u = measure(inside.to_str().unwrap());
         #[cfg(unix)]
-        assert!(u.bytes < 1000, "the 50KB outside the worktree is not counted: {}", u.bytes);
+        assert!(
+            u.bytes < 1000,
+            "the 50KB outside the worktree is not counted: {}",
+            u.bytes
+        );
         assert!(u.bytes >= 100, "the real file inside still counts");
 
         let _ = std::fs::remove_dir_all(&base);
