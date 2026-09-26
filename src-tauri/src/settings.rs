@@ -177,19 +177,15 @@ impl Default for NotifyCfg {
 /// Update-check preferences. Canopy checks the project's GitHub releases for a
 /// newer tag; it never downloads or installs anything on its own (see
 /// `updates.rs` for why).
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
 #[serde(rename_all = "camelCase", default)]
+// Background checking is opt-in until its result has a visible update notice.
 pub struct UpdatesCfg {
     /// check for a newer release in the background
     pub auto_check: bool,
 }
 
-impl Default for UpdatesCfg {
-    fn default() -> Self {
-        // Opt in until the background result has a visible update notice.
-        Self { auto_check: false }
-    }
-}
+
 
 /// Crash-report preferences.
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
