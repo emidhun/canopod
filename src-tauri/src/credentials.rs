@@ -137,6 +137,12 @@ impl PrivateSnapshots {
     fn path(&self, slot: usize, temporary: bool) -> PathBuf {
         self.directory.join(format!("job-{slot:03}.{}", if temporary { "tmp" } else { "json" }))
     }
+    #[cfg(test)]
+    pub(crate) fn create_temporary_for_test(&self, slot: usize, bytes: &[u8]) -> io::Result<()> {
+        let mut file = platform::create(&self.anchor, &self.path(slot, true))?;
+        file.write_all(bytes)?;
+        platform::sync_file(&file)
+    }
     pub(crate) fn recover_temporary(&self, slot: usize) -> io::Result<()> {
         let path = self.path(slot, true);
         match platform::open(&self.anchor, &path) {

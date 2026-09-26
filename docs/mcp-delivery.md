@@ -330,3 +330,9 @@ Next: backend-owned task supervision, panic/process cleanup, full output capture
 before the current UI throttle, shared progress recording, seven-operation
 integration, and the authenticated `canopy_job` read surface. The journal alone
 does not complete #139.
+
+### Job journal recovery
+
+Startup errors identify the exact `jobs/job-NNN.json` or `.tmp` file. Stop the backend before inspecting it. Preserve a copy for diagnosis. If a damaged snapshot cannot be repaired, move only that identified snapshot outside `jobs/` and restart; this discards its retry identity, so inspect the worktree before resubmitting the operation. Never remove the entire journal to repair one record. Private crash-leftover temporary files are discarded only after validation; insecure or hard-linked files are preserved and reported.
+
+Targets and checkpoint paths are limited to 4 KiB of JSON-encoded bytes. Caller outcomes retain their 16 KiB bound; a merged checkpoint path has a separate 4 KiB allowance. Every snapshot write, including interruption recovery, enforces the same 288 KiB cap.
