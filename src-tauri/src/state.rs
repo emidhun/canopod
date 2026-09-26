@@ -86,6 +86,7 @@ pub struct RepoNode {
 }
 
 pub struct AppState {
+    refresh: tokio::sync::Mutex<()>,
     pub settings: RwLock<Settings>,
     pub runtime: RwLock<RuntimeState>,
     pub tree: RwLock<Vec<RepoNode>>,
@@ -145,7 +146,8 @@ pub fn release_worktree_runtime(app: &RuntimeContext, repo_id: &str, wt_key: &st
     if let Some(s) = settings {
         let _ = crate::settings::save_settings(app, &s);
     }
-    if let Some(table) = app.try_state::<crate::services::ProcTable>() {
+    {
+        let table = app.state::<crate::services::ProcTable>();
         table.logs.lock().retain(|k, _| !k.starts_with(&prefix));
         // close the on-disk log handles too, or a removed worktree keeps file
         // descriptors open for the rest of the run
@@ -180,6 +182,7 @@ pub struct WtContext {
 impl AppState {
     pub fn new(settings: Settings, runtime: RuntimeState) -> Self {
         Self {
+            refresh: tokio::sync::Mutex::new(()),
             settings: RwLock::new(settings),
             runtime: RwLock::new(runtime),
             tree: RwLock::new(Vec::new()),
@@ -599,14 +602,9 @@ pub async fn refresh_git_meta(app: &RuntimeContext, wt_path: &str) {
 /// once (tray click + window show is exactly that), and each full refresh is
 /// 2 git spawns per worktree — no reason to run three copies concurrently.
 pub async fn refresh_all(app: &RuntimeContext) {
-    use std::sync::atomic::{AtomicBool, Ordering};
-    static IN_FLIGHT: AtomicBool = AtomicBool::new(false);
-    if IN_FLIGHT.swap(true, Ordering::AcqRel) {
-        return; // one is already running and will pick up the same state
-    }
+    let Ok(_refresh) = app.state::<AppState>().refresh.try_lock() else { return };
     let _ = refresh_tree(app).await;
     refresh_all_git_meta(app).await;
-    IN_FLIGHT.store(false, Ordering::Release);
 }
 
 /// Refresh git meta for every worktree. Worktrees are independent, so the

@@ -10,13 +10,21 @@ import type { PageProps } from "../types";
 /* ══════════════════════════ real: Files ════════════════════════════════ */
 export const FMTS: ProvisionFormat[] = ["dotenv", "json", "yaml", "text"];
 
-/** A path inside the repo is stored RELATIVE to it — that is what provisioning
-    resolves against, and an absolute path would break the moment the repo moves
-    or the config is shared. Anything outside stays absolute. */
+/** Store only contained paths. The backend performs the final symlink-aware check. */
 export function repoRelative(picked: string, repoPath: string | undefined): string {
-  const root = (repoPath || "").replace(/\/+$/, "");
-  if (root && picked.startsWith(root + "/")) return picked.slice(root.length + 1);
-  return picked;
+  const normalize = (p: string) => p.replace(/\\/g, "/").replace(/\/+$/, "");
+  const root = normalize(repoPath || "");
+  const path = normalize(picked);
+  const windows = /^[a-z]:\//i.test(root) || root.startsWith("//");
+  const compare = (p: string) => windows ? p.toLowerCase() : p;
+  if (!root || !compare(path).startsWith(compare(root) + "/")) {
+    throw new Error("Choose a file inside the repository");
+  }
+  const relative = path.slice(root.length + 1);
+  if (relative.split("/").some((part) => part === ".." || part === ".")) {
+    throw new Error("Choose a file inside the repository");
+  }
+  return relative;
 }
 
 /** Guess the format from the file the user picked, so choosing `config.json`
@@ -29,7 +37,7 @@ export function formatOf(path: string): ProvisionFormat | null {
   return null;
 }
 
-export default function FilesPage({ repo, cards, setCards, markDirty, flash }: PageProps) {
+export default function FilesPage({ repo, cards, setCards, extras, setExtras, markDirty, flash }: PageProps) {
   const [selId, setSelId] = useState<string | null>(cards[0]?.id ?? null);
   const sel = cards.find((c) => c.id === selId) || cards[0] || null;
   const keyRef = useRef<number | null>(null);
@@ -182,6 +190,17 @@ export default function FilesPage({ repo, cards, setCards, markDirty, flash }: P
           </Adv>
         </div>
       )}
+      <div className="sec">
+        <div className="slab">Lifecycle commands</div>
+        {(["migrate", "teardown"] as const).map((kind) => (
+          <label key={kind} className="row">
+            <span className="lb">{kind === "migrate" ? "Migrate" : "Teardown"}</span>
+            <textarea className="inp mono gr" aria-label={`${kind} commands`} value={extras[kind].join("\n")}
+              placeholder="One command per line" onChange={(e) => { setExtras({ ...extras, [kind]: e.target.value.split("\n") }); markDirty("files"); }} />
+          </label>
+        ))}
+        <div className="hint">Migrate runs on request. Teardown runs when removing a worktree with database cleanup enabled.</div>
+      </div>
     </>
   );
 }

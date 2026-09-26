@@ -4,11 +4,13 @@
 //! deliberately never removed: unlinking a locked file would let another
 //! process lock a different inode at the same path. Closing the file releases
 //! the OS lock, including when the process crashes.
+//!
+//! Lock-file symlinks and Windows reparse points are refused.
 use std::fs::{self, File, OpenOptions};
 use std::path::Path;
 
 pub struct RuntimeOwner {
-    _lock: File,
+    lock: File,
 }
 
 impl RuntimeOwner {
@@ -21,21 +23,61 @@ impl RuntimeOwner {
         #[cfg(unix)]
         {
             use std::os::unix::fs::OpenOptionsExt;
-            options.mode(0o600).custom_flags(libc::O_NOFOLLOW | libc::O_CLOEXEC);
+            options
+                .mode(0o600)
+                .custom_flags(libc::O_NOFOLLOW | libc::O_CLOEXEC);
         }
-        let file = options.open(&path)
+        #[cfg(windows)]
+        {
+            use std::os::windows::fs::OpenOptionsExt;
+            use windows::Win32::Storage::FileSystem::FILE_FLAG_OPEN_REPARSE_POINT;
+            options.custom_flags(FILE_FLAG_OPEN_REPARSE_POINT.0);
+        }
+        let file = options
+            .open(&path)
             .map_err(|e| format!("open runtime lock {}: {e}", path.display()))?;
-        if !file.metadata().map_err(|e| format!("stat runtime lock {}: {e}", path.display()))?.is_file() {
-            return Err(format!("runtime lock is not a regular file: {}", path.display()));
+        #[cfg(windows)]
+        {
+            use std::os::windows::fs::MetadataExt;
+            use windows::Win32::Storage::FileSystem::FILE_ATTRIBUTE_REPARSE_POINT;
+            let metadata = file
+                .metadata()
+                .map_err(|e| format!("stat runtime lock {}: {e}", path.display()))?;
+            if metadata.file_attributes() & FILE_ATTRIBUTE_REPARSE_POINT.0 != 0 {
+                return Err(format!(
+                    "runtime lock is a reparse point: {}",
+                    path.display()
+                ));
+            }
+        }
+        if !file
+            .metadata()
+            .map_err(|e| format!("stat runtime lock {}: {e}", path.display()))?
+            .is_file()
+        {
+            return Err(format!(
+                "runtime lock is not a regular file: {}",
+                path.display()
+            ));
         }
         file.try_lock().map_err(|e| match e {
             std::fs::TryLockError::WouldBlock => format!(
                 "another Canopy backend owns {}; stop that backend before starting this one",
                 data_dir.display()
             ),
-            std::fs::TryLockError::Error(e) => format!("lock runtime directory {}: {e}", data_dir.display()),
+            std::fs::TryLockError::Error(e) => {
+                format!("lock runtime directory {}: {e}", data_dir.display())
+            }
         })?;
-        Ok(Self { _lock: file })
+        Ok(Self { lock: file })
+    }
+}
+
+impl Drop for RuntimeOwner {
+    fn drop(&mut self) {
+        // A concurrent fork can briefly inherit this open file description.
+        // Explicit unlock releases ownership without waiting for its exec.
+        let _ = self.lock.unlock();
     }
 }
 
@@ -48,7 +90,9 @@ mod tests {
     fn directory() -> PathBuf {
         static NEXT: AtomicU64 = AtomicU64::new(0);
         let path = std::env::temp_dir().join(format!(
-            "canopy-owner-{}-{}", std::process::id(), NEXT.fetch_add(1, Ordering::Relaxed)
+            "canopy-owner-{}-{}",
+            std::process::id(),
+            NEXT.fetch_add(1, Ordering::Relaxed)
         ));
         fs::create_dir_all(&path).unwrap();
         path
@@ -59,10 +103,16 @@ mod tests {
         let dir = directory();
         fs::write(dir.join("runtime.lock"), "existing metadata").unwrap();
         let first = RuntimeOwner::acquire(&dir).unwrap();
-        assert!(RuntimeOwner::acquire(&dir).err().unwrap().contains("another Canopy backend"));
+        assert!(RuntimeOwner::acquire(&dir)
+            .err()
+            .unwrap()
+            .contains("another Canopy backend"));
         drop(first);
         // Windows enforces byte-range locks on reads as well as writes.
-        assert_eq!(fs::read_to_string(dir.join("runtime.lock")).unwrap(), "existing metadata");
+        assert_eq!(
+            fs::read_to_string(dir.join("runtime.lock")).unwrap(),
+            "existing metadata"
+        );
         let next = RuntimeOwner::acquire(&dir).unwrap();
         assert!(dir.join("runtime.lock").is_file());
         drop(next);
@@ -74,12 +124,16 @@ mod tests {
     // lock release without Rust destructors, as in a backend crash.
     #[test]
     fn child_owner() {
-        let Some(dir) = std::env::var_os("CANOPY_TEST_OWNER_DIR") else { return };
+        let Some(dir) = std::env::var_os("CANOPY_TEST_OWNER_DIR") else {
+            return;
+        };
         let _owner = RuntimeOwner::acquire(Path::new(&dir)).unwrap();
         use std::io::Write;
         println!("OWNER_READY");
         std::io::stdout().flush().unwrap();
-        loop { std::thread::park(); }
+        loop {
+            std::thread::park();
+        }
     }
 
     #[test]
@@ -91,11 +145,15 @@ mod tests {
             .args(["--exact", "ownership::tests::child_owner", "--nocapture"])
             .env("CANOPY_TEST_OWNER_DIR", &dir)
             .stdout(Stdio::piped())
-            .spawn().unwrap();
+            .spawn()
+            .unwrap();
         let stdout = child.stdout.take().unwrap();
         let (tx, rx) = std::sync::mpsc::sync_channel(1);
         let reader = std::thread::spawn(move || {
-            for line in std::io::BufReader::new(stdout).lines().map_while(Result::ok) {
+            for line in std::io::BufReader::new(stdout)
+                .lines()
+                .map_while(Result::ok)
+            {
                 if line.contains("OWNER_READY") {
                     let _ = tx.send(());
                     break;

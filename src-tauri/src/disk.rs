@@ -74,12 +74,13 @@ fn now_secs() -> i64 {
 /// window that opens the overview late gets what earlier scans already found
 /// instead of waiting for a re-scan.
 pub fn snapshot(app: &RuntimeContext) -> HashMap<String, DiskUsage> {
-    app.try_state::<DiskCache>().map(|c| c.usage.lock().clone()).unwrap_or_default()
+    app.state::<DiskCache>().usage.lock().clone()
 }
 
 /// Drop a worktree's measurement (it was removed, or something invalidated it).
 pub fn forget(app: &RuntimeContext, wt_key: &str) {
-    if let Some(cache) = app.try_state::<DiskCache>() {
+    {
+        let cache = app.state::<DiskCache>();
         cache.usage.lock().remove(wt_key);
         cache.queue.lock().retain(|k| k != wt_key);
     }
@@ -88,7 +89,7 @@ pub fn forget(app: &RuntimeContext, wt_key: &str) {
 /// Queue `wt_keys` for measurement, skipping any whose cached figure is still
 /// fresh unless `force`. Returns immediately — results arrive as `worktree:disk`.
 pub fn request(app: &RuntimeContext, wt_keys: Vec<String>, force: bool) {
-    let Some(cache) = app.try_state::<DiskCache>() else { return };
+    let cache = app.state::<DiskCache>();
     let now = now_secs();
     {
         let usage = cache.usage.lock();
@@ -117,7 +118,7 @@ pub fn request(app: &RuntimeContext, wt_keys: Vec<String>, force: bool) {
     app.executor().spawn(async move {
         loop {
             let next = {
-                let Some(cache) = app.try_state::<DiskCache>() else { break };
+                let cache = app.state::<DiskCache>();
                 let next = cache.queue.lock().pop_front();
                 match next {
                     Some(k) => k,
@@ -140,7 +141,8 @@ pub fn request(app: &RuntimeContext, wt_keys: Vec<String>, force: bool) {
             let path = next.clone();
             let measured = app.executor().spawn_blocking(move || measure(&path)).await;
             let Ok(usage) = measured else { continue };
-            if let Some(cache) = app.try_state::<DiskCache>() {
+            {
+        let cache = app.state::<DiskCache>();
                 cache.usage.lock().insert(next.clone(), usage);
             }
             let _ = app.emit("worktree:disk", &DiskEvent { wt_key: &next, usage });
