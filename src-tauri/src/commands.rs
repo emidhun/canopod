@@ -763,11 +763,15 @@ struct WorktreeOpEvent {
 }
 
 fn emit_op(app: &AppHandle, wt_key: &str, op: &'static str, state: &'static str, detail: impl Into<String>) {
+    emit_op_with_notification(app, wt_key, op, state, detail, true);
+}
+
+fn emit_op_with_notification(app: &AppHandle, wt_key: &str, op: &'static str, state: &'static str, detail: impl Into<String>, notify: bool) {
     use tauri::Emitter;
     let detail = detail.into();
     // A provisioning run that finished is the one "op" worth telling someone
     // about who isn't watching — it is the gate on the worktree being usable.
-    if matches!(op, "create") && matches!(state, "done" | "error") {
+    if notify && matches!(op, "create") && matches!(state, "done" | "error") {
         let branch = app.state::<AppState>().wt_context(wt_key).map(|c| c.branch).unwrap_or_else(|| wt_key.to_string());
         crate::notify::notify(
             app,
@@ -787,12 +791,15 @@ fn emit_op(app: &AppHandle, wt_key: &str, op: &'static str, state: &'static str,
 /// and `preview_worktree` both call it, so the path the modal promises is the
 /// path creation uses.
 pub(crate) fn derive_worktree_path(repo: &RepoCfg, branch: &str) -> String {
-    let wt_dir = if repo.worktree_dir.trim().is_empty() {
-        format!("{}-worktrees", repo.path)
-    } else {
-        repo.worktree_dir.clone()
-    };
-    format!("{wt_dir}/{}", sanitize_branch(branch))
+    std::path::Path::new(&derive_worktree_root(repo))
+        .join(sanitize_branch(branch)).to_string_lossy().into_owned()
+}
+
+fn derive_worktree_root(repo: &RepoCfg) -> String {
+    let configured = repo.worktree_dir.trim();
+    let root = std::path::Path::new(if configured.is_empty() { ".worktrees" } else { configured });
+    if root.is_absolute() { root.to_path_buf() } else { std::path::Path::new(&repo.path).join(root) }
+        .to_string_lossy().into_owned()
 }
 
 /// Forward one `setup::Progress` as a `worktree:op` event: output lines keep
@@ -957,16 +964,7 @@ pub async fn create_worktree(
     // relative dir (e.g. ".worktrees") is taken relative to the repo — so it
     // lands inside the repo instead of wherever the process CWD happens to be —
     // and an absolute dir is used verbatim.
-    let wt_dir = {
-        let d = repo.worktree_dir.trim();
-        if d.is_empty() {
-            format!("{}/.worktrees", repo.path)
-        } else if std::path::Path::new(d).is_absolute() {
-            d.to_string()
-        } else {
-            format!("{}/{}", repo.path, d)
-        }
-    };
+    let wt_dir = derive_worktree_root(&repo);
     let wt_path = derive_worktree_path(&repo, &branch);
     if std::path::Path::new(&wt_path).exists() {
         return Err(CanopyError::conflict(format!("Path already exists: {wt_path}")));
@@ -1106,11 +1104,11 @@ pub async fn run_worktree_setup(app: AppHandle, wt_key: String, dry_run: bool) -
             if !dry_run {
                 crate::disk::request(&app, vec![wt_key.clone()], true);
             }
-            emit_op(&app, &wt_key, "create", "done", if dry_run { "dry run complete — nothing was executed" } else { "setup complete" });
+            emit_op_with_notification(&app, &wt_key, "create", "done", if dry_run { "dry run complete — nothing was executed" } else { "setup complete" }, !dry_run);
             Ok(())
         }
         Err(e) => {
-            emit_op(&app, &wt_key, "create", "error", e.clone());
+            emit_op_with_notification(&app, &wt_key, "create", "error", e.clone(), !dry_run);
             Err(CanopyError::setup(e))
         }
     }
@@ -1643,6 +1641,8 @@ pub fn save_repo_config(
     provision: Vec<ProvisionEntry>,
     setup: Vec<SetupTaskEntry>,
     setup_policy: Option<SetupPolicyEntry>,
+    teardown: Option<Vec<String>>,
+    migrate: Option<Vec<String>>,
 ) -> Result<(), CanopyError> {
     let path = repo_path(&app, &repo_id)?;
     let files: Vec<crate::setup::ProvisionFile> = provision.into_iter().map(Into::into).collect();
@@ -1651,7 +1651,7 @@ pub fn save_repo_config(
         continue_on_failure: p.continue_on_failure,
         timeout_secs: p.timeout_secs,
     });
-    crate::setup::write_repo_config(&path, &files, &tasks, policy.as_ref()).map_err(CanopyError::config)
+    crate::setup::write_repo_config_sections(&path, &files, &tasks, policy.as_ref(), teardown.as_deref(), migrate.as_deref()).map_err(CanopyError::config)
 }
 
 // ── disk usage ──
@@ -1760,7 +1760,19 @@ pub async fn fetch_branches(app: AppHandle, repo_id: String) -> Result<git::Bran
 
 #[cfg(test)]
 mod tests {
-    use super::{detect_repo, sanitize_branch};
+    use super::{detect_repo, sanitize_branch, derive_worktree_path};
+
+    #[test]
+    fn worktree_paths_resolve_against_repository() {
+        let base = std::env::temp_dir().join("canopy-repo");
+        let mut repo = crate::settings::RepoCfg { path: base.to_string_lossy().into_owned(), ..Default::default() };
+        assert_eq!(std::path::PathBuf::from(derive_worktree_path(&repo, "feature/test")), base.join(".worktrees/feature_test"));
+        repo.worktree_dir = "custom".into();
+        assert_eq!(std::path::PathBuf::from(derive_worktree_path(&repo, "test")), base.join("custom/test"));
+        let absolute = std::env::temp_dir().join("elsewhere");
+        repo.worktree_dir = absolute.to_string_lossy().into_owned();
+        assert_eq!(std::path::PathBuf::from(derive_worktree_path(&repo, "test")), absolute.join("test"));
+    }
     use crate::git::run_git;
 
     #[test]

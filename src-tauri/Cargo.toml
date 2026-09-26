@@ -1,6 +1,6 @@
 [package]
 name = "canopy"
-version = "0.4.7"
+version = "0.5.0"
 description = "Canopy — lightweight git worktree and dev-service manager"
 authors = ["Midhun Kumar"]
 license = "AGPL-3.0-only"

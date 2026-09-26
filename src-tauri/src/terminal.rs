@@ -315,9 +315,18 @@ pub fn poll_states(app: &AppHandle) {
             }
         }
     }
+    let changed = !changes.is_empty();
     for (id, state) in changes {
+        if state == Activity::Waiting {
+            crate::notify::notify(app, crate::notify::Kind::AgentWaiting, &id, "An agent is waiting", "Open Canopy to respond to the agent.");
+        }
         let _ = app.emit("terminal:state", &StateEvent { id: &id, state });
     }
+    if changed { crate::notify::refresh_badge(app); }
+}
+
+pub fn waiting_count(table: &TermTable) -> usize {
+    table.sessions.lock().values().filter(|session| session.activity == Activity::Waiting).count()
 }
 
 /// Resolve the agent profile a session was launched from, and return its
@@ -568,6 +577,7 @@ pub fn open(
             false
         };
         if removed {
+            crate::notify::refresh_badge(&app);
             persist_orphans(&app);
             let _ = app.emit_filter("terminal:exit", &ExitEvent { id: &id }, terminal_windows);
         }
@@ -640,6 +650,7 @@ pub fn close(table: &TermTable, id: &str) {
 /// Close a session and refresh the persisted orphan list (command path).
 pub fn close_and_persist(app: &AppHandle, table: &TermTable, id: &str) {
     close(table, id);
+    crate::notify::refresh_badge(app);
     persist_orphans(app);
 }
 
@@ -653,6 +664,7 @@ pub fn close_worktree(app: &AppHandle, table: &TermTable, wt_key: &str) {
     }
     table.exited.lock().retain(|k, _| !k.starts_with(&prefix));
     if !ids.is_empty() {
+        crate::notify::refresh_badge(app);
         persist_orphans(app);
     }
 }
