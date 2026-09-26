@@ -60,3 +60,5 @@ checks alone prevent PID-reuse mistakes; they do not prove an old owner died.
 On the starting release commit, macOS Rust tests: 80 passed; frontend tests:
 144 passed; production frontend build passed. Headless, browser, MCP client and
 performance acceptance remain unverified until their implementation slices.
+
+The declared Rust minimum is 1.95, matching the locked `sysinfo` dependency; the ownership APIs alone require 1.89.

@@ -5,7 +5,7 @@ description = "Canopy — lightweight git worktree and dev-service manager"
 authors = ["Midhun Kumar"]
 license = "AGPL-3.0-only"
 edition = "2021"
-rust-version = "1.89"
+rust-version = "1.95"
 
 [lib]
 name = "canopy_lib"
