@@ -312,10 +312,11 @@ fn persist_log_lines(app: &RuntimeContext, key: &str, lines: &[LogLine]) {
 /// on Windows the Job Object's KILL_ON_JOB_CLOSE makes the OS reap the tree when
 /// Canopy dies, so there is nothing to persist or sweep.
 #[cfg(unix)]
-fn persist_orphans(app: &RuntimeContext) {
+pub(crate) fn persist_orphans(app: &RuntimeContext) {
     use crate::settings::OrphanProc;
     let table = app.state::<ProcTable>();
-    let orphans: Vec<OrphanProc> = table
+    let owner = crate::ownership::current_process_owner();
+    let mut orphans: Vec<OrphanProc> = table
         .procs
         .lock()
         .iter()
@@ -323,9 +324,15 @@ fn persist_orphans(app: &RuntimeContext) {
             svc_key: k.clone(),
             pgid: crate::proc::group_key(&p.group) as i32,
             spawn_time_secs: p.started_unix,
+            owner: owner.clone(),
         })
         .collect();
     let state = app.state::<AppState>();
+    {
+        let mut retained = state.retained_orphans.lock();
+        retained.retain(|o| o.pgid > 1 && unsafe { libc::killpg(o.pgid, 0) == 0 });
+        orphans.extend(retained.iter().cloned());
+    }
     let runtime = {
         let mut rt = state.runtime.write();
         rt.orphans = orphans;
@@ -335,7 +342,7 @@ fn persist_orphans(app: &RuntimeContext) {
 }
 
 #[cfg(windows)]
-fn persist_orphans(_app: &RuntimeContext) {}
+pub(crate) fn persist_orphans(_app: &RuntimeContext) {}
 
 /// Resolve a service's config + worktree env (PORT etc.) from settings.
 fn resolve_service(app: &RuntimeContext, key: &str) -> Result<(ServiceCfg, String, HashMap<String, String>), String> {
@@ -934,6 +941,8 @@ pub fn sweep_orphans(app: &RuntimeContext) {
     };
     let mut retained = Vec::new();
     for o in &orphans {
+        // A caller can already have started a child before entering serve.
+        if app.state::<ProcTable>().procs.lock().values().any(|p| crate::proc::group_key(&p.group) as i32 == o.pgid) { continue }
         if o.pgid <= 1 {
             continue;
         }
@@ -941,7 +950,7 @@ pub fn sweep_orphans(app: &RuntimeContext) {
         if alive {
             if o.spawn_time_secs == 0
                 || !proc_start_time_matches(o.pgid as u32, o.spawn_time_secs)
-                || !crate::ownership::orphan_parent_verified(o.pgid as u32) {
+                || !crate::ownership::orphan_owner_gone(o.pgid as u32, o.owner.as_ref()) {
                 log::warn!("leaving process group {} alone: identity or orphan parent is unverified", o.pgid);
                 retained.push(o.clone());
                 continue;
@@ -950,15 +959,12 @@ pub fn sweep_orphans(app: &RuntimeContext) {
             unsafe {
                 libc::killpg(o.pgid, libc::SIGTERM);
             }
+            // Retain until a later probe proves it exited, including TERM refusal.
+            if unsafe { libc::killpg(o.pgid, 0) == 0 } { retained.push(o.clone()); }
         }
     }
-    let state = app.state::<AppState>();
-    let runtime = {
-        let mut rt = state.runtime.write();
-        rt.orphans = retained;
-        rt.clone()
-    };
-    let _ = crate::settings::save_runtime(app, &runtime);
+    *app.state::<AppState>().retained_orphans.lock() = retained;
+    persist_orphans(app);
 }
 
 #[cfg(windows)]

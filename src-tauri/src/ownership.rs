@@ -82,18 +82,34 @@ impl Drop for RuntimeOwner {
 }
 
 /// Legacy desktops predate runtime.lock. Refuse a second engine while one is
-/// visible in the process table, even if it might use another data directory.
-/// A false positive is recoverable; allowing it to mutate shared state is not.
+/// visible in the process table for the default-directory CLI host. Library
+/// hosts and explicitly isolated directories do not run this global check.
 pub fn refuse_legacy_desktop() -> Result<(), String> {
     use sysinfo::{Pid, ProcessRefreshKind, ProcessesToUpdate, System};
     let own = Pid::from_u32(std::process::id());
     let mut system = System::new();
-    system.refresh_processes_specifics(ProcessesToUpdate::All, true, ProcessRefreshKind::nothing());
+    system.refresh_processes_specifics(
+        ProcessesToUpdate::All,
+        true,
+        ProcessRefreshKind::nothing().with_exe(sysinfo::UpdateKind::Always),
+    );
     if system.process(own).is_none() {
         return Err("cannot inspect the process table; refusing backend takeover".into());
     }
     for (pid, process) in system.processes() {
         if *pid != own && legacy_name(&process.name().to_string_lossy()) {
+            if let Some(exe) = process.exe() {
+                let sibling = std::env::current_exe()
+                    .ok()
+                    .is_some_and(|current| current.parent() == exe.parent());
+                let bundle = exe
+                    .to_string_lossy()
+                    .to_lowercase()
+                    .ends_with("/canopy.app/contents/macos/canopy");
+                if !sibling && !bundle {
+                    continue;
+                }
+            }
             return Err(format!("a Canopy desktop may still own runtime state (pid {pid}); quit it before starting the backend"));
         }
     }
@@ -104,30 +120,114 @@ fn legacy_name(name: &str) -> bool {
     name.eq_ignore_ascii_case("canopy") || name.eq_ignore_ascii_case("canopy.exe")
 }
 
-/// Only init-parented Unix processes are demonstrably detached from their old
-/// owner. Containers with a subreaper deliberately fail closed rather than
-/// guessing whether the reaper is an old live desktop. Missing parent metadata
-/// is not permission to signal a process group.
+#[cfg(unix)]
+pub(crate) fn current_process_owner() -> Option<crate::settings::ProcessOwner> {
+    use sysinfo::{Pid, ProcessRefreshKind, ProcessesToUpdate, System};
+    let pid = std::process::id();
+    let mut system = System::new();
+    system.refresh_processes_specifics(
+        ProcessesToUpdate::Some(&[Pid::from_u32(pid)]),
+        false,
+        ProcessRefreshKind::nothing(),
+    );
+    let started = system.process(Pid::from_u32(pid))?.start_time();
+    (started > 0).then_some(crate::settings::ProcessOwner { pid, started })
+}
+
+#[cfg(unix)]
+pub(crate) fn orphan_owner_gone(pid: u32, owner: Option<&crate::settings::ProcessOwner>) -> bool {
+    use sysinfo::{Pid, ProcessRefreshKind, ProcessesToUpdate, System};
+    if let Some(owner) = owner {
+        if owner.pid <= 1 || owner.pid > i32::MAX as u32 || owner.started == 0 {
+            return false;
+        }
+        // ESRCH proves absence; access denied or incomplete metadata does not.
+        if unsafe { libc::kill(owner.pid as i32, 0) } != 0
+            && std::io::Error::last_os_error().raw_os_error() == Some(libc::ESRCH)
+        {
+            return true;
+        }
+        let mut system = System::new();
+        system.refresh_processes_specifics(
+            ProcessesToUpdate::Some(&[Pid::from_u32(owner.pid)]),
+            false,
+            ProcessRefreshKind::nothing(),
+        );
+        return system
+            .process(Pid::from_u32(owner.pid))
+            .is_some_and(|p| p.start_time() > 0 && p.start_time() != owner.started);
+    }
+    orphan_parent_verified(pid)
+}
+
+/// Old records have no owner identity. Only known init/reaper processes qualify;
+/// new records recover under arbitrary subreapers by proving their owner died.
 #[cfg(unix)]
 pub(crate) fn orphan_parent_verified(pid: u32) -> bool {
     use sysinfo::{Pid, ProcessRefreshKind, ProcessesToUpdate, System};
     let pid = Pid::from_u32(pid);
     let mut system = System::new();
-    system.refresh_processes_specifics(ProcessesToUpdate::Some(&[pid]), false, ProcessRefreshKind::nothing());
-    system.process(pid).and_then(|p| p.parent()).is_some_and(|p| p.as_u32() == 1)
+    system.refresh_processes_specifics(
+        ProcessesToUpdate::Some(&[pid]),
+        false,
+        ProcessRefreshKind::nothing(),
+    );
+    let Some(parent) = system.process(pid).and_then(|p| p.parent()) else {
+        return false;
+    };
+    if parent.as_u32() == 1 {
+        return true;
+    }
+    system.refresh_processes_specifics(
+        ProcessesToUpdate::Some(&[parent]),
+        false,
+        ProcessRefreshKind::nothing().with_exe(sysinfo::UpdateKind::Always),
+    );
+    system
+        .process(parent)
+        .and_then(|p| p.exe())
+        .is_some_and(|path| {
+            matches!(
+                path.to_str(),
+                Some(
+                    "/usr/lib/systemd/systemd"
+                        | "/lib/systemd/systemd"
+                        | "/sbin/init"
+                        | "/sbin/tini"
+                        | "/usr/bin/tini"
+                        | "/usr/bin/dumb-init"
+                )
+            )
+        })
 }
 
 /// Check all recorded candidates before either sweeper writes state.json.
 /// PID identity checks alone cannot distinguish legacy live children.
 pub fn verify_recovery(state: &crate::settings::RuntimeState) -> Result<(), String> {
     #[cfg(unix)]
-    for (pid, started) in state.orphans.iter().map(|o| (o.pgid, o.spawn_time_secs))
-        .chain(state.terminal_orphans.iter().map(|o| (o.pgid, o.spawn_time_secs))) {
-        if pid <= 1 { continue }
+    for (kind, pid, started, owner) in state
+        .orphans
+        .iter()
+        .map(|o| ("orphans", o.pgid, o.spawn_time_secs, o.owner.as_ref()))
+        .chain(state.terminal_orphans.iter().map(|o| {
+            (
+                "terminalOrphans",
+                o.pgid,
+                o.spawn_time_secs,
+                o.owner.as_ref(),
+            )
+        }))
+    {
+        if pid <= 1 {
+            continue;
+        }
         let live = unsafe { libc::killpg(pid, 0) == 0 };
-        if live && (started == 0 || (crate::services::proc_start_time_matches(pid as u32, started)
-            && !orphan_parent_verified(pid as u32))) {
-            return Err(format!("cannot safely recover recorded process group {pid}: its previous owner may still be alive; stop the previous Canopy instance and its children first"));
+        if live
+            && (started == 0
+                || (crate::services::proc_start_time_matches(pid as u32, started)
+                    && !orphan_owner_gone(pid as u32, owner)))
+        {
+            return Err(format!("state.json: cannot verify {kind} record for process group {pid}; no process was signalled. Inspect the saved record and running process identity. If the record is stale, preserve a backup and remove only that record before restarting; do not kill an unrelated process"));
         }
     }
     #[cfg(not(unix))]

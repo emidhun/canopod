@@ -403,6 +403,7 @@ pub struct OrphanProc {
     pub svc_key: String,
     pub pgid: i32,
     pub spawn_time_secs: u64,
+    pub owner: Option<ProcessOwner>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
@@ -411,7 +412,14 @@ pub struct TermOrphan {
     pub id: String,
     pub pgid: i32,
     pub spawn_time_secs: u64,
+    pub owner: Option<ProcessOwner>,
 }
+
+/// The spawning backend identity, independent of the process that later adopts
+/// its children (PID 1, systemd --user, or a container subreaper).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ProcessOwner { pub pid: u32, pub started: u64 }
 
 fn settings_path(app: &crate::runtime::RuntimePaths) -> PathBuf {
     app

@@ -86,6 +86,10 @@ pub struct RepoNode {
 }
 
 pub struct AppState {
+    #[cfg(unix)]
+    pub(crate) retained_orphans: Mutex<Vec<crate::settings::OrphanProc>>,
+    #[cfg(unix)]
+    pub(crate) retained_terminal_orphans: Mutex<Vec<crate::settings::TermOrphan>>,
     /// Per-runtime, cancellation-safe admission for the periodic refresh.
     refresh: tokio::sync::Mutex<()>,
     pub settings: RwLock<Settings>,
@@ -185,6 +189,10 @@ impl AppState {
         Self {
             refresh: tokio::sync::Mutex::new(()),
             settings: RwLock::new(settings),
+            #[cfg(unix)]
+            retained_orphans: Mutex::new(runtime.orphans.clone()),
+            #[cfg(unix)]
+            retained_terminal_orphans: Mutex::new(runtime.terminal_orphans.clone()),
             runtime: RwLock::new(runtime),
             tree: RwLock::new(Vec::new()),
             statuses: RwLock::new(HashMap::new()),

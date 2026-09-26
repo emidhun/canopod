@@ -720,11 +720,33 @@ pub fn get_buffer(table: &TermTable, id: &str) -> Option<BufferSnapshot> {
     })
 }
 
+/// A PTY shell owns a Unix session; job-control children may use other groups
+/// in that same session. Stop each group, rather than only the shell process.
+fn kill_session(sess: &mut PtySession) {
+    #[cfg(unix)]
+    if sess.pgid > 1 && unsafe { libc::getsid(sess.pgid) == sess.pgid }
+        && crate::services::proc_start_time_matches(sess.pgid as u32, sess.started_unix) {
+        use sysinfo::{System, ProcessesToUpdate, ProcessRefreshKind};
+        let mut system = System::new();
+        system.refresh_processes_specifics(ProcessesToUpdate::All, true, ProcessRefreshKind::nothing());
+        let mut groups = std::collections::HashSet::new();
+        for pid in system.processes().keys() {
+            let pid = pid.as_u32() as i32;
+            if unsafe { libc::getsid(pid) == sess.pgid } {
+                let group = unsafe { libc::getpgid(pid) };
+                if group > 1 { groups.insert(group); }
+            }
+        }
+        for group in groups { unsafe { libc::killpg(group, libc::SIGKILL); } }
+    }
+    let _ = sess.child.kill();
+}
+
 /// Kill and drop a session, including any retained output — closing a tab is the
 /// point at which the user is done with it.
 pub fn close(table: &TermTable, id: &str) {
     if let Some(mut sess) = table.sessions.lock().remove(id) {
-        let _ = sess.child.kill();
+        kill_session(&mut sess);
     }
     table.exited.lock().remove(id);
 }
@@ -758,21 +780,25 @@ pub fn close_worktree(app: &RuntimeContext, table: &TermTable, wt_key: &str) {
 }
 
 /// Kill every session (app quit).
-pub fn close_all(table: &TermTable) {
+pub fn close_all(app: &RuntimeContext) {
+    let table = app.state::<TermTable>();
     let mut sessions = table.sessions.lock();
     for (_, mut sess) in sessions.drain() {
-        let _ = sess.child.kill();
+        kill_session(&mut sess);
     }
     table.exited.lock().clear();
+    drop(sessions);
+    persist_orphans(app);
 }
 
 /// Snapshot live sessions' pgids into persisted runtime state, so a crash can be
 /// cleaned up on next launch (mirrors the service orphan sweep). Unix-only — see
 /// `sweep_orphans`.
 #[cfg(unix)]
-fn persist_orphans(app: &RuntimeContext) {
+pub(crate) fn persist_orphans(app: &RuntimeContext) {
     let table = app.state::<TermTable>();
-    let orphans: Vec<TermOrphan> = table
+    let owner = crate::ownership::current_process_owner();
+    let mut orphans: Vec<TermOrphan> = table
         .sessions
         .lock()
         .iter()
@@ -780,9 +806,15 @@ fn persist_orphans(app: &RuntimeContext) {
             id: id.clone(),
             pgid: s.pgid,
             spawn_time_secs: s.started_unix,
+            owner: owner.clone(),
         })
         .collect();
     let state = app.state::<AppState>();
+    {
+        let mut retained = state.retained_terminal_orphans.lock();
+        retained.retain(|o| o.pgid > 1 && unsafe { libc::killpg(o.pgid, 0) == 0 });
+        orphans.extend(retained.iter().cloned());
+    }
     let runtime = {
         let mut rt = state.runtime.write();
         rt.terminal_orphans = orphans;
@@ -792,7 +824,7 @@ fn persist_orphans(app: &RuntimeContext) {
 }
 
 #[cfg(windows)]
-fn persist_orphans(_app: &RuntimeContext) {}
+pub(crate) fn persist_orphans(_app: &RuntimeContext) {}
 
 /// Startup: kill terminal process groups left over from a crashed previous run
 /// (only when the group leader still exists and its start time matches). Unix-only
@@ -810,6 +842,8 @@ pub fn sweep_orphans(app: &RuntimeContext) {
     };
     let mut retained = Vec::new();
     for o in &orphans {
+        // A caller can already have started a child before entering serve.
+        if app.state::<TermTable>().sessions.lock().values().any(|p| p.pgid == o.pgid) { continue }
         if o.pgid <= 1 {
             continue;
         }
@@ -817,7 +851,7 @@ pub fn sweep_orphans(app: &RuntimeContext) {
         if alive {
             if o.spawn_time_secs == 0
                 || !crate::services::proc_start_time_matches(o.pgid as u32, o.spawn_time_secs)
-                || !crate::ownership::orphan_parent_verified(o.pgid as u32) {
+                || !crate::ownership::orphan_owner_gone(o.pgid as u32, o.owner.as_ref()) {
                 log::warn!("leaving process group {} alone: identity or orphan parent is unverified", o.pgid);
                 retained.push(o.clone());
                 continue;
@@ -826,15 +860,12 @@ pub fn sweep_orphans(app: &RuntimeContext) {
             unsafe {
                 libc::killpg(o.pgid, libc::SIGTERM);
             }
+            // Retain until a later probe proves it exited, including TERM refusal.
+            if unsafe { libc::killpg(o.pgid, 0) == 0 } { retained.push(o.clone()); }
         }
     }
-    let state = app.state::<AppState>();
-    let runtime = {
-        let mut rt = state.runtime.write();
-        rt.terminal_orphans = retained;
-        rt.clone()
-    };
-    let _ = crate::settings::save_runtime(app, &runtime);
+    *app.state::<AppState>().retained_terminal_orphans.lock() = retained;
+    persist_orphans(app);
 }
 
 /// Sweep idle SHELL sessions (bounds long-run resource growth). Killing the
@@ -871,7 +902,7 @@ pub fn sweep_idle(app: &RuntimeContext, table: &TermTable) {
     for (id, sess) in sessions.iter_mut() {
         let kind = kind_of(id);
         if kind == "shell" && sess.last_activity.elapsed() > IDLE_LIMIT {
-            let _ = sess.child.kill();
+            kill_session(sess);
             continue;
         }
         // Agents are exempt unless the repo opted in: a quiet agent may just
@@ -882,7 +913,7 @@ pub fn sweep_idle(app: &RuntimeContext, table: &TermTable) {
             if let Some(limit) = agent_limits.get(wt) {
                 if sess.last_activity.elapsed() > *limit {
                     log::info!("closing idle agent {id} after {}s", limit.as_secs());
-                    let _ = sess.child.kill();
+                    kill_session(sess);
                 }
             }
         }

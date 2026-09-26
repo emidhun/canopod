@@ -1,10 +1,6 @@
 #[cfg(feature = "desktop")]
 mod commands;
-#[cfg(feature = "desktop")]
-mod desktop_host;
 pub mod backend;
-pub mod operations;
-pub mod runtime;
 #[cfg(test)]
 mod csp;
 pub mod db;
@@ -423,7 +419,7 @@ pub fn run() {
                 // kill embedded terminal shells before their host process dies
                 let Some(context) = app.try_state::<runtime::RuntimeContext>() else { return };
                 let handle = context.inner().clone();
-                terminal::close_all(handle.state::<TermTable>());
+                terminal::close_all(&handle);
                 tauri::async_runtime::block_on(async move {
                     services::stop_all(&handle).await;
                 });
