@@ -1,20 +1,20 @@
 #[cfg(feature = "desktop")]
 mod commands;
-#[cfg(feature = "desktop")]
-mod desktop_host;
-pub mod operations;
-pub mod runtime;
 #[cfg(test)]
 mod csp;
 pub mod db;
-pub mod disk;
+#[cfg(feature = "desktop")]
+mod desktop_host;
 pub mod diagnostics;
+pub mod disk;
 pub mod error;
 pub mod events;
 pub mod git;
 pub mod notify;
+pub mod operations;
 pub mod ownership;
 pub mod proc;
+pub mod runtime;
 pub mod services;
 pub mod settings;
 pub mod setup;
@@ -24,9 +24,9 @@ pub mod stats;
 mod suite;
 pub mod terminal;
 pub mod toolchain;
-pub mod updates;
 #[cfg(feature = "desktop")]
 mod tray;
+pub mod updates;
 
 #[cfg(all(unix, feature = "devtools", feature = "desktop"))]
 use services::ProcTable;
