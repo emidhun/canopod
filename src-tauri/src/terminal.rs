@@ -34,6 +34,8 @@ const IDLE_LIMIT: Duration = Duration::from_secs(60 * 60);
 // larger buffer coalesces bursts into fewer events — fewer base64/JSON emits
 // under heavy output, with no added latency for small writes.
 const READ_CHUNK: usize = 32 * 1024;
+// Base64 expansion plus the terminal event envelope must fit one bus frame.
+const _: () = assert!(READ_CHUNK.div_ceil(3) * 4 + 4096 < crate::events::MAX_EVENT_BYTES);
 
 /// What an agent session is doing right now.
 ///
