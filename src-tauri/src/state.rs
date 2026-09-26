@@ -147,7 +147,8 @@ pub fn release_worktree_runtime(app: &RuntimeContext, repo_id: &str, wt_key: &st
     if let Some(s) = settings {
         let _ = crate::settings::save_settings(app, &s);
     }
-    if let Some(table) = app.try_state::<crate::services::ProcTable>() {
+    {
+        let table = app.state::<crate::services::ProcTable>();
         table.logs.lock().retain(|k, _| !k.starts_with(&prefix));
         // close the on-disk log handles too, or a removed worktree keeps file
         // descriptors open for the rest of the run
