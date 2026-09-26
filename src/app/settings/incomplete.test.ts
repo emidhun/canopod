@@ -19,6 +19,11 @@ const svc = (over: Record<string, unknown> = {}) =>
   ({ id: "web", name: "Frontend", kind: "web", command: "npm start", cwd: "", basePort: null, env: {}, ...over }) as never;
 
 describe("incompleteRows", () => {
+  it("preserves environment-only services and group-only commands", () => {
+    expect(incompleteRows(repo({ services: [svc({ name: "", command: "", env: { KEY: "value" } })] }))).toHaveLength(1);
+    expect(incompleteRows(repo({ customCommands: [{ label: "", command: "", group: "tools" }] }))).toHaveLength(1);
+  });
+
   it("finds nothing when every row is complete", () => {
     const r = repo({
       services: [svc()],

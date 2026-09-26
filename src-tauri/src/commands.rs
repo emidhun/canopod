@@ -511,9 +511,9 @@ pub fn save_text_file(path: String, contents: String) -> Result<(), CanopyError>
 }
 
 #[tauri::command]
-pub fn save_repo_config(app: AppHandle, repo_id: String, provision: Vec<ProvisionEntry>, setup: Vec<SetupTaskEntry>, setup_policy: Option<SetupPolicyEntry>) -> Result<(), CanopyError> {
+pub fn save_repo_config(app: AppHandle, repo_id: String, provision: Vec<ProvisionEntry>, setup: Vec<SetupTaskEntry>, setup_policy: Option<SetupPolicyEntry>, teardown: Option<Vec<String>>, migrate: Option<Vec<String>>) -> Result<(), CanopyError> {
     let context = runtime(&app);
-    crate::operations::save_repo_config(context, repo_id, provision, setup, setup_policy)
+    crate::operations::save_repo_config(context, repo_id, provision, setup, setup_policy, teardown, migrate)
 }
 
 #[tauri::command]

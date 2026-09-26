@@ -32,10 +32,6 @@ pub struct NotifyState {
 #[derive(Clone, Copy)]
 pub enum Kind {
     ServiceCrash,
-    /// No call site on main: the PTY detector that decides an agent is blocked
-    /// is #54 (PR #101). The preference, the gating and the badge term are all
-    /// here, so wiring it up is one call from `poll_states`.
-    #[allow(dead_code)]
     AgentWaiting,
     SetupDone,
     BranchMoved,
@@ -104,10 +100,8 @@ pub fn refresh_badge(app: &RuntimeContext) {
             .filter(|s| s.status == crate::state::SvcStatus::Error)
             .count()
     };
-    // Agent-waiting has no backend signal on main — the PTY detector is #54
-    // (PR #101). The preference, the notification text and this term are all
-    // in place; when that lands, this is the one line that changes.
-    let waiting = 0usize;
+    let waiting = app.try_state::<crate::terminal::TermTable>()
+        .map(|table| crate::terminal::waiting_count(&table)).unwrap_or(0);
     let total = (crashed + waiting) as i64;
 
     app.host().badge(&mode, total);

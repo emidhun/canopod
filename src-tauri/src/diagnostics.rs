@@ -98,7 +98,7 @@ pub fn gather(app: &RuntimeContext) -> Diagnostics {
         terminal_sessions: terminals,
         config_dir: app.path().app_config_dir().map(|p| p.display().to_string()).unwrap_or_default(),
         log_dir: app.path().app_log_dir().map(|p| p.display().to_string()).unwrap_or_default(),
-        crash_reports: 0,
+        crash_reports: crate::updates::crash_report_count(app),
     }
 }
 
@@ -128,8 +128,7 @@ pub struct ClearedCaches {
     pub bytes: u64,
 }
 
-/// Delete Canopy's own regenerable files: rotated per-service logs and the
-/// stale disk-usage measurements.
+/// Delete Canopy's rotated per-service logs.
 ///
 /// Scoped by construction — it only ever walks `<app-log-dir>/services`. It
 /// cannot touch a worktree, a database, a repository or a settings file,
@@ -173,5 +172,8 @@ pub fn reset_settings(app: &RuntimeContext) -> Result<(), String> {
         *s = crate::settings::Settings { repos: keep, ..Default::default() };
         s.clone()
     };
-    crate::settings::save_settings(app, &fresh)
+    crate::settings::save_settings(app, &fresh)?;
+    crate::git::apply_credentials(&fresh.security.ssh_key, &fresh.security.credential_helper);
+    crate::notify::refresh_badge(app);
+    Ok(())
 }

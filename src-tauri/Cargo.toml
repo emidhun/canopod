@@ -1,10 +1,11 @@
 [package]
 name = "canopy"
-version = "0.4.7"
+version = "0.5.0"
 description = "Canopy — lightweight git worktree and dev-service manager"
 authors = ["Midhun Kumar"]
 license = "AGPL-3.0-only"
 edition = "2021"
+rust-version = "1.89"
 
 [[bin]]
 name = "canopy"
@@ -73,6 +74,7 @@ libc = "0.2"
 [target.'cfg(windows)'.dependencies]
 windows = { version = "0.62", features = [
     "Win32_Foundation",
+    "Win32_Storage_FileSystem",
     "Win32_Security",
     "Win32_System_JobObjects",
     "Win32_System_Threading",
