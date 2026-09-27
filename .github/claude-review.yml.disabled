@@ -1,6 +1,7 @@
 # DISABLED — the automatic Claude Code review is commented out for now.
-# To re-enable, uncomment the workflow below (and keep the ANTHROPIC_API_KEY
-# repo secret in place).
+# To re-enable, move this file to workflows/claude-review.yml and uncomment
+# the workflow below (keep the ANTHROPIC_API_KEY repo secret in place).
+# Keeping a comment-only .yml under workflows causes invalid-workflow failures.
 #
 # Automatic Claude Code review on new PRs. Criteria live in
 # .claude/skills/pr-review/SKILL.md (single source of truth — used locally too);
