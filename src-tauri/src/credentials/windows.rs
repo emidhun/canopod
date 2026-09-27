@@ -83,13 +83,13 @@ pub(super) fn prepare_directory(path: &Path, create: bool) -> io::Result<Directo
 fn open_handle(path: &Path, create: bool, directory: bool, private: bool, sd: &Allocation) -> io::Result<File> {
     open_handle_access(path, create, directory, private, sd, false)
 }
-fn open_handle_access(path: &Path, create: bool, directory: bool, private: bool, sd: &Allocation, rename: bool) -> io::Result<File> {
+fn open_handle_access(path: &Path, create: bool, directory: bool, private: bool, sd: &Allocation, delete_access: bool) -> io::Result<File> {
     let path_w = wide(path)?;
     // Attribute-only handles do not participate in Windows sharing checks;
     // FILE_LIST_DIRECTORY (via GENERIC_READ) is necessary to pin a directory.
     let access = if directory { GENERIC_READ.0 }
         else if create { GENERIC_READ.0 | GENERIC_WRITE.0 | DELETE.0 }
-        else { GENERIC_READ.0 | if rename { DELETE.0 } else { 0 } };
+        else { GENERIC_READ.0 | if delete_access { DELETE.0 } else { 0 } };
     let flags = FILE_FLAG_OPEN_REPARSE_POINT | if directory { FILE_FLAG_BACKUP_SEMANTICS } else { FILE_ATTRIBUTE_NORMAL };
     let handle = unsafe { CreateFileW(PCWSTR(path_w.as_ptr()), access,
         if directory { FILE_SHARE_READ | FILE_SHARE_WRITE } else { FILE_SHARE_READ | FILE_SHARE_DELETE }, Some(&attributes(sd)),
@@ -114,7 +114,7 @@ fn open_handle_access(path: &Path, create: bool, directory: bool, private: bool,
     // POSIX replacement can unlink an old token after this reader opened it
     // but before validation. Zero links on that private handle is safe; more
     // than one still means an alias. Newly created/renamed files must be linked.
-    if !directory && (information.nNumberOfLinks > 1 || ((create || rename) && information.nNumberOfLinks != 1)) {
+    if !directory && (information.nNumberOfLinks > 1 || ((create || delete_access) && information.nNumberOfLinks != 1)) {
         return Err(denied("credential must not have hard links or an unlinked mutation target"));
     }
     if private { validate_acl(&file, sd)?; }
@@ -208,10 +208,20 @@ pub(super) fn replace(directory: &Directory, from: &Path, to: &Path) -> io::Resu
     }
 }
 pub(super) fn remove(directory: &Directory, path: &Path) -> io::Result<()> {
-    // Only cleanup of our random rotation temporary; refuse a replaced alias.
-    let file = open_handle(path, false, false, true, &directory.descriptor)?;
-    drop(file);
-    std::fs::remove_file(path)
+    // Delete the exact private, single-link object validated by this handle.
+    let file = open_handle_access(path, false, false, true, &directory.descriptor, true)?;
+    let handle = HANDLE(file.as_raw_handle());
+    let disposition = FILE_DISPOSITION_INFO_EX { Flags: FILE_DISPOSITION_FLAG_DELETE | FILE_DISPOSITION_FLAG_POSIX_SEMANTICS };
+    unsafe {
+        match SetFileInformationByHandle(handle, FileDispositionInfoEx, (&disposition as *const FILE_DISPOSITION_INFO_EX).cast(), std::mem::size_of::<FILE_DISPOSITION_INFO_EX>() as u32) {
+            Ok(()) => Ok(()),
+            Err(error) if matches!(error.code().0 as u32 & 0xffff, 50 | 87) => {
+                let disposition = FILE_DISPOSITION_INFO { DeleteFile: true };
+                win(SetFileInformationByHandle(handle, FileDispositionInfo, (&disposition as *const FILE_DISPOSITION_INFO).cast(), std::mem::size_of::<FILE_DISPOSITION_INFO>() as u32))
+            },
+            Err(error) => Err(io::Error::other(error)),
+        }
+    }
 }
 
 // Every ancestor, including the leaf directory, is pinned against rename.
