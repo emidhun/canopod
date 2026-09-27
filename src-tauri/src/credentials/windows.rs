@@ -193,6 +193,21 @@ mod tests {
     use std::os::windows::fs::OpenOptionsExt;
 
     #[test]
+    fn rotation_preserves_a_reader_of_the_previous_token() {
+        use std::io::Read;
+        let fixture = Fixture::new();
+        let owner = crate::ownership::RuntimeOwner::acquire(&fixture.0).unwrap();
+        let store = CredentialStore::open(&fixture.0).unwrap();
+        let old = store.rotate(CredentialKind::Mcp, &owner).unwrap().bearer;
+        let mut reader = open(&store.anchor, &store.directory.join("mcp.token")).unwrap();
+        let new = store.rotate(CredentialKind::Mcp, &owner).unwrap().bearer;
+        let mut previous = String::new();
+        reader.read_to_string(&mut previous).unwrap();
+        assert!(old.matches(previous.trim()));
+        assert!(store.load(CredentialKind::Mcp).unwrap().unwrap().matches(new.expose()));
+    }
+
+    #[test]
     fn credential_directory_junction_is_refused_without_touching_target() {
         let fixture = Fixture::new();
         let target = fixture.0.join("target"); std::fs::create_dir(&target).unwrap();
