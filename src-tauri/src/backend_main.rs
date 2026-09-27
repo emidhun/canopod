@@ -4,7 +4,7 @@ use canopy_lib::{
 };
 use std::path::PathBuf;
 
-const USAGE: &str = "canopy-backend <serve|status|stop|mcp> [--config-dir PATH] [--data-dir PATH] [--log-dir PATH]\ncanopy-backend serve [--port PORT]\n\nServe runs in the foreground; use a supervisor for persistence. Status/stop attach\nto the authenticated loopback backend without launching a GUI. MCP defaults to disabled.\ncanopy-backend mcp <status|enable|disable|rotate-token> [--repo ID]...\nEnable requires explicit registered repository IDs on first use. Re-enable without\n--repo preserves the allowlist. Credentials remain in private files; commands never print them.\n--port accepts 1024..65535 and persists for subsequent serve/status/stop commands.";
+const USAGE: &str = "canopy-backend <serve|status|stop|mcp> [--config-dir PATH] [--data-dir PATH] [--log-dir PATH]\ncanopy-backend serve [--port PORT]\n\nServe runs in the foreground; use a supervisor for persistence. Status/stop attach\nto the authenticated loopback backend without launching a GUI. MCP defaults to disabled. Stop acknowledges asynchronous process cleanup.\ncanopy-backend mcp <status|enable|disable|rotate-token> [--repo ID]...\nEnable requires explicit registered repository IDs on first use. Re-enable without\n--repo preserves the allowlist. Credentials remain in private files; commands never print them.\n--port accepts 1024..65535 and persists for subsequent serve/status/stop commands.";
 
 struct StderrLogger;
 impl log::Log for StderrLogger {
@@ -199,12 +199,6 @@ async fn attach(
         .send()
         .await
         .map_err(|e| format!("backend unavailable: {e}; run canopy-backend serve"))?;
-    if !response.status().is_success() {
-        return Err(format!(
-            "backend rejected {action}: HTTP {}",
-            response.status()
-        ));
-    }
     if response
         .headers()
         .get("x-canopy-api-version")
@@ -212,6 +206,12 @@ async fn attach(
         != Some(app_api::API_VERSION)
     {
         return Err("incompatible backend API version".into());
+    }
+    if !response.status().is_success() {
+        return Err(format!(
+            "backend rejected {action}: HTTP {}",
+            response.status()
+        ));
     }
     let mut bytes = Vec::new();
     while let Some(chunk) = response.chunk().await.map_err(|e| e.to_string())? {

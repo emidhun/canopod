@@ -199,6 +199,9 @@ mod tests {
         }
         use std::os::unix::process::CommandExt;
         use std::process::{Command, Stdio};
+        // This helper exits to orphan its child; the isolated subreaper test
+        // owns waitpid and asserts that the child is reaped.
+        #[allow(clippy::zombie_processes)]
         let child = Command::new("sleep")
             .arg("30")
             .process_group(0)
