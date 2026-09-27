@@ -209,10 +209,14 @@ impl Controller {
         // The owned blocking task completes disk commit AND publication even
         // when the HTTP caller disconnects or its request deadline expires.
         tokio::task::spawn_blocking(move || {
-            let _transaction = controller
-                .admin
-                .try_lock()
-                .ok_or("MCP administration busy")?;
+            let _transaction = if enabled {
+                controller
+                    .admin
+                    .try_lock()
+                    .ok_or("MCP administration busy")?
+            } else {
+                controller.admin.lock()
+            };
             controller.configure_sync(enabled, repo_ids)
         })
         .await
@@ -222,25 +226,14 @@ impl Controller {
         if self.shutdown.is_cancelled() {
             return Err("backend stopping".into());
         }
+        if !enabled {
+            return self.disable_sync();
+        }
         let (previous_live, faulted) = {
             let live = self.live.read();
             (live.policy.clone(), live.fault.is_some())
         };
-        let previous = match Policy::load(&self.app.path().config) {
-            Ok(policy) => policy,
-            Err(error) if !enabled => {
-                let mut live = self.live.write();
-                live.policy.enabled = false;
-                live.fault = Some(format!(
-                    "MCP disabled in memory; repair {} before enabling: {error}",
-                    self.app.path().config.join("mcp.json").display()
-                ));
-                live.generation.cancel();
-                live.generation = CancellationToken::new();
-                return Ok(());
-            }
-            Err(error) => return Err(error),
-        };
+        let previous = Policy::load(&self.app.path().config)?;
         if !faulted && previous != previous_live {
             return Err("MCP policy changed on disk; restart or repair before editing".into());
         }
@@ -251,7 +244,7 @@ impl Controller {
             policy.repo_ids.sort();
             policy.repo_ids.dedup();
         }
-        let bearer = if enabled {
+        let bearer = {
             let repos = self.app.state::<AppState>().settings.read().repos.clone();
             policy.repo_bindings.clear();
             for id in &policy.repo_ids {
@@ -283,11 +276,6 @@ impl Controller {
                     None => self.rotate_credential()?,
                 },
             )
-        } else {
-            policy
-                .repo_bindings
-                .retain(|id, _| policy.repo_ids.contains(id));
-            None
         };
         policy.save(&self.app.path().config, &previous)?;
         let mut live = self.live.write();
@@ -300,6 +288,43 @@ impl Controller {
         live.generation = CancellationToken::new();
         Ok(())
     }
+    fn disable_sync(&self) -> Result<(), String> {
+        let (previous_live, faulted) = {
+            let live = self.live.read();
+            (live.policy.clone(), live.fault.is_some())
+        };
+        let persisted = (|| {
+            let previous = Policy::load(&self.app.path().config)?;
+            if !faulted && previous != previous_live {
+                return Err("policy changed on disk; external edits were preserved".to_owned());
+            }
+            let mut disabled = previous.clone();
+            disabled.enabled = false;
+            disabled.save(&self.app.path().config, &previous)?;
+            Ok(disabled)
+        })();
+        // Revocation is unconditional, including read-only/full disks and
+        // external edits. Serialization prevents an older enable publishing
+        // after this kill switch; disk errors never restore live permission.
+        let mut live = self.live.write();
+        match persisted {
+            Ok(policy) => {
+                live.policy = policy;
+                live.fault = None;
+            }
+            Err(error) => {
+                live.fault = Some(format!(
+                    "MCP disabled in memory; repair {} before enabling: {error}",
+                    self.app.path().config.join("mcp.json").display()
+                ));
+            }
+        }
+        live.policy.enabled = false;
+        live.generation.cancel();
+        live.generation = CancellationToken::new();
+        Ok(())
+    }
+
     fn rotate_credential(&self) -> Result<Bearer, String> {
         let rotation = self
             .credentials
