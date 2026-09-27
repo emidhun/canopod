@@ -617,7 +617,8 @@ pub fn open(
                     // Keep what it printed: the UI shows an exited tab read-only
                     // until it's closed or restarted, and without this the output
                     // would die with the session the moment the process ended.
-                    let sess = sessions.remove(&id).unwrap();
+                    let mut sess = sessions.remove(&id).unwrap();
+                    kill_session(&mut sess);
                     let mut exited = table.exited.lock();
                     if exited.len() >= EXITED_CAP {
                         if let Some(oldest) = exited
@@ -724,8 +725,10 @@ pub fn get_buffer(table: &TermTable, id: &str) -> Option<BufferSnapshot> {
 /// in that same session. Stop each group, rather than only the shell process.
 fn kill_session(sess: &mut PtySession) {
     #[cfg(unix)]
-    if sess.pgid > 1 && unsafe { libc::getsid(sess.pgid) == sess.pgid }
-        && crate::services::proc_start_time_matches(sess.pgid as u32, sess.started_unix) {
+    // This entry exclusively owns an unreaped child; its PID cannot be reused.
+    // A zombie leader may reject getsid on macOS while background groups still
+    // retain its session ID, so inspect session members rather than the leader.
+    if sess.pgid > 1 {
         use sysinfo::{System, ProcessesToUpdate, ProcessRefreshKind};
         let mut system = System::new();
         system.refresh_processes_specifics(ProcessesToUpdate::All, true, ProcessRefreshKind::nothing());
@@ -739,7 +742,7 @@ fn kill_session(sess: &mut PtySession) {
         }
         for group in groups { unsafe { libc::killpg(group, libc::SIGKILL); } }
     }
-    let _ = sess.child.kill();
+    if sess.child.kill().is_ok() { let _ = sess.child.wait(); }
 }
 
 /// Kill and drop a session, including any retained output — closing a tab is the
