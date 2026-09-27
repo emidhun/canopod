@@ -211,7 +211,7 @@ pub(super) fn remove(directory: &Directory, path: &Path) -> io::Result<()> {
     // Delete the exact private, single-link object validated by this handle.
     let file = open_handle_access(path, false, false, true, &directory.descriptor, true)?;
     let handle = HANDLE(file.as_raw_handle());
-    let disposition = FILE_DISPOSITION_INFO_EX { Flags: FILE_DISPOSITION_FLAG_DELETE | FILE_DISPOSITION_FLAG_POSIX_SEMANTICS };
+    let disposition = FILE_DISPOSITION_INFO_EX { Flags: FILE_DISPOSITION_INFO_EX_FLAGS(FILE_DISPOSITION_FLAG_DELETE.0 | FILE_DISPOSITION_FLAG_POSIX_SEMANTICS.0) };
     unsafe {
         match SetFileInformationByHandle(handle, FileDispositionInfoEx, (&disposition as *const FILE_DISPOSITION_INFO_EX).cast(), std::mem::size_of::<FILE_DISPOSITION_INFO_EX>() as u32) {
             Ok(()) => Ok(()),
