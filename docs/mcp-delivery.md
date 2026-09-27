@@ -46,8 +46,9 @@ participating host must acquire the same OS lock before reading runtime state,
 sweeping child processes, or writing state. Keep the open file for the owner's
 entire lifetime; never unlink it. An occupied lock currently gives a clear
 startup error in the backend log. Packaged desktop presentation of that error
-still needs a visible recovery dialog before concurrent hosts ship. Future attach support must validate the backend handshake
-without constructing a second runtime.
+now displays a native error dialog before exiting. Future
+attach support must validate the backend handshake without constructing a
+second runtime.
 
 This guard coordinates upgraded hosts only. Old versions do not acquire it.
 Before shipping concurrent headless/desktop startup, the takeover path must
@@ -336,3 +337,26 @@ does not complete #139.
 Startup errors identify the exact `jobs/job-NNN.json` or `.tmp` file. Stop the backend before inspecting it. Preserve a copy for diagnosis. If a damaged snapshot cannot be repaired, move only that identified snapshot outside `jobs/` and restart; this discards its retry identity, so inspect the worktree before resubmitting the operation. Never remove the entire journal to repair one record. Private crash-leftover temporary files are discarded only after validation; insecure or hard-linked files are preserved and reported.
 
 Targets and checkpoint paths are limited to 4 KiB of JSON-encoded bytes. Caller outcomes retain their 16 KiB bound; a merged checkpoint path has a separate 4 KiB allowance. Every snapshot write, including interruption recovery, enforces the same 288 KiB cap.
+RPC. Snapshot reconciliation, browser sessions/CSRF, desktop attachment, MCP
+transport and live token-rotation/session invalidation remain later slices.
+This slice does not create an HTTP listener, enable MCP, generate credentials
+at startup, or change permission profiles. Wire authentication, revocation and
+session invalidation through the later application/MCP transport layers.
+
+### Orphan recovery diagnostics
+
+The backend logs to stderr (`RUST_LOG=debug` increases detail; this CLI accepts a level, not module directives), so supervisors can capture sweep warnings. New process records include the spawning backend PID and start identity: adopted children are recoverable after that owner dies, including under Linux subreapers. Legacy records without that identity only recover automatically under a recognized init process and with a matching group birth time. Unverified live records survive subsequent service and terminal state writes.
+
+If startup names an unverifiable `state.json` record, stop Canopy, preserve a backup of that file, inspect the named `orphans` or `terminalOrphans` entry and the running PID's identity, then remove only an entry confirmed stale. Do not kill an unrelated process merely because its PID matches an old record. Library hosts and explicitly isolated CLI data directories do not reject an unrelated default-directory desktop; the default CLI host retains the legacy-desktop exclusion check.
+
+Credential rotation requires the matching `RuntimeOwner` and serializes across all stores using that guard. Read-only opens never clean files. A writer validates and removes private crash leftovers under the ownership guard; new rotations use one fixed temporary name per credential kind, bounding crash debris. Unsafe leftovers are preserved.
+If startup names an unverifiable `state.json` record, stop Canopy, preserve a backup of that file, inspect the named `orphans` or `terminalOrphans` entry and the running PID's identity, then remove only an entry confirmed stale. Do not kill an unrelated process merely because its PID matches an old record. Library hosts and CLI directories with both config and data explicitly isolated do not reject an unrelated default-directory desktop; the default CLI host retains the legacy-desktop exclusion check.
+The declared Rust minimum is 1.95, matching the locked `sysinfo` dependency; the ownership APIs alone require 1.89.
+
+HTTP review follow-up: silent sockets have an explicit five-second first-byte deadline; retiring connections drain for twenty seconds to cover headers, body and handler deadlines. Shutdown still drains for at most two seconds. Protocol parse errors generated before application middleware may omit the API version header. `stop` acknowledges asynchronous cleanup.
+
+### Transport review corrections
+
+Malformed MCP policy or credential content faults only the MCP endpoint (503); application status, stop and administration remain available. MCP status reports the recovery error. Disable revokes live access even when policy bytes are malformed and preserves those bytes. Back up and repair the named file before explicitly enabling again; a missing path binding in an older enabled policy requires setting enabled=false then enabling the selected repositories. Token rotation repairs malformed token content only after file privacy checks pass.
+
+Policy stores both the registered path and its canonical path for each explicitly selected ID. Cached requests compare the current registration against that binding; removing a repository or reusing its ID for another path does not inherit permission. Administrative filesystem work runs in an owned blocking transaction that publishes committed state even if the requester disconnects. Shutdown returns 503 stopping; token/policy revocation returns 401 authorization_changed.

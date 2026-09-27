@@ -255,18 +255,32 @@ fn provision_to_json(provision: &[ProvisionFile]) -> serde_json::Value {
 /// setup commands. Preserves other top-level keys (teardown/migrate) and drops
 /// the legacy `env` block, which is now folded into `provision`. An existing but
 /// malformed file is an ERROR — rewriting it would silently drop those keys.
+#[cfg(test)]
 pub fn write_repo_config(
     repo_path: &str,
     provision: &[ProvisionFile],
     setup: &[SetupTask],
     policy: Option<&SetupPolicy>,
 ) -> Result<(), String> {
+    write_repo_config_sections(repo_path, provision, setup, policy, None, None)
+}
+
+pub fn write_repo_config_sections(
+    repo_path: &str,
+    provision: &[ProvisionFile],
+    setup: &[SetupTask],
+    policy: Option<&SetupPolicy>,
+    teardown: Option<&[String]>,
+    migrate: Option<&[String]>,
+) -> Result<(), String> {
     let path = Path::new(repo_path).join(".worktreemanager.json");
     let mut root: serde_json::Value = match std::fs::read_to_string(&path) {
         Ok(txt) if !txt.trim().is_empty() => serde_json::from_str(&txt).map_err(|e| {
             format!(".worktreemanager.json is malformed ({e}) — fix it by hand before saving from Settings")
         })?,
-        _ => serde_json::json!({}),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => serde_json::json!({}),
+        Ok(_) => return Err(format!("{} is empty — fix it before saving", path.display())),
+        Err(e) => return Err(format!("read {}: {e}", path.display())),
     };
     if !root.is_object() {
         return Err(".worktreemanager.json is not a JSON object — fix it by hand before saving from Settings".into());
@@ -276,6 +290,11 @@ pub fn write_repo_config(
     }
     root["$schema"] = serde_json::Value::String("canopy://worktree-manager/v1".into());
     root["provision"] = provision_to_json(provision);
+    for (key, commands) in [("teardown", teardown), ("migrate", migrate)] {
+        if let Some(commands) = commands {
+            root[key] = serde_json::json!(commands.iter().filter(|s| !s.trim().is_empty()).collect::<Vec<_>>());
+        }
+    }
     // A plain task round-trips as a bare string, so turning one option on for
     // one task doesn't rewrite the whole list into objects and produce a diff
     // that touches every line.
@@ -923,6 +942,7 @@ async fn run_tasks_parallel(
     for (i, (cmd, cwd)) in prepared.into_iter().enumerate() {
         let (wt, repo, vars, tx) = (wt_path.to_string(), repo_path.to_string(), vars.clone(), tx.clone());
         let timeout = policy.timeout_secs;
+        // The engine has no host context; its async caller already runs on Tokio.
         handles.push(tokio::spawn(async move {
             let step = i + 1;
             let prefix = format!("setup [{step}/{n}]");
@@ -1299,6 +1319,23 @@ mod tests {
        so the inner call must not number it again. When it did, every task
        reported "[1/1]": the footer read "Step 1 of 1" for a five-task run, and
        every task's output was filed under task 1. */
+    #[test]
+    fn lifecycle_edits_preserve_unknown_keys_and_fail_closed() {
+        let dir = std::env::temp_dir().join(format!("canopy-lifecycle-edit-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let file = dir.join(".worktreemanager.json");
+        std::fs::write(&file, r#"{"custom":{"keep":true},"teardown":["old"]}"#).unwrap();
+        write_repo_config_sections(dir.to_str().unwrap(), &[], &[], None, Some(&["new".into()]), Some(&["migrate".into()])).unwrap();
+        let value: serde_json::Value = serde_json::from_slice(&std::fs::read(&file).unwrap()).unwrap();
+        assert_eq!(value["custom"]["keep"], true);
+        assert_eq!(value["teardown"][0], "new");
+        assert_eq!(value["migrate"][0], "migrate");
+        std::fs::write(&file, "{broken").unwrap();
+        assert!(write_repo_config_sections(dir.to_str().unwrap(), &[], &[], None, Some(&[]), None).is_err());
+        assert_eq!(std::fs::read_to_string(&file).unwrap(), "{broken");
+        std::fs::remove_dir_all(dir).unwrap();
+    }
+
     #[test]
     fn a_caller_numbered_step_neither_renumbers_nor_re_announces() {
         // teardown/migrate hand over the whole list, so that call numbers it

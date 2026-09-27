@@ -37,3 +37,7 @@ Registered in `lib.rs`; typed wrappers in `src/ipc.ts`.
 - `WTM_SELFTEST_CREATE="repoId|branch|serviceId"` — create + setup + start once.
 - `WTM_SUITE=<repoId>` (+ `WTM_SUITE_FULL=1`) — full discovery/start/stop/create/remove suite, prints `[suite] …`.
 - `WTM_NO_BLUR_HIDE=1` — keep the popover open on blur (devtools).
+
+### Windows data-directory moves
+
+While the backend is running, Windows may refuse to rename or move directories containing Canopy's data directory with a sharing violation. Stop the backend before moving those folders; the open directory handles protect credential paths from replacement.
