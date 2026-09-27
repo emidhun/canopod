@@ -32,6 +32,10 @@
   --meta-faint: #63656c;
 
   /* ── accent + status hues ── */
+  --swatch-teal: #5cc7cd;
+  --swatch-green: #4cc266;
+  --swatch-amber: #e6ad5f;
+  --swatch-violet: #c77ecd;
   --teal: #5cc7cd;
   --teal-dim: rgba(92, 199, 205, 0.15);
   --green: #4cc266;

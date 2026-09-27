@@ -16,6 +16,10 @@ fn wide(path: &Path) -> io::Result<Vec<u16>> {
 }
 
 struct Allocation(*mut core::ffi::c_void);
+// SAFETY: LocalAlloc buffers are owned, read-only after construction, and may
+// be freed from any thread. Directory retains its descriptor for every user.
+unsafe impl Send for Allocation {}
+unsafe impl Sync for Allocation {}
 impl Drop for Allocation { fn drop(&mut self) { unsafe { let _ = LocalFree(Some(HLOCAL(self.0))); } } }
 
 fn descriptor() -> io::Result<Allocation> {
@@ -56,36 +60,35 @@ fn attributes(sd: &Allocation) -> SECURITY_ATTRIBUTES {
 // Keep every path component open without FILE_SHARE_DELETE. A directory
 // cannot be swapped between validation and a later Win32 path-based open or
 // rename while these handles live. The leaf DACL remains owner-only.
-pub(super) struct Directory { handles: Vec<File> }
+pub(super) struct Directory { handles: Vec<File>, descriptor: Allocation }
 pub(super) fn prepare_directory(path: &Path, create: bool) -> io::Result<Directory> {
+    let sd = descriptor()?;
     let mut handles = Vec::new();
     let mut parents: Vec<_> = path.parent().ok_or_else(|| denied("credential parent missing"))?.ancestors().collect();
     parents.reverse();
-    for parent in parents { handles.push(open_handle(parent, false, true, false)?); }
+    for parent in parents { handles.push(open_handle(parent, false, true, false, &sd)?); }
     if !create {
-        handles.push(open_handle(path, false, true, true)?);
-        return Ok(Directory { handles });
+        handles.push(open_handle(path, false, true, true, &sd)?);
+        return Ok(Directory { handles, descriptor: sd });
     }
-    let sd = descriptor()?;
     let path_w = wide(path)?;
     let created = unsafe { CreateDirectoryW(PCWSTR(path_w.as_ptr()), Some(&attributes(&sd))) };
     if let Err(error) = created {
         if error.code() != windows::core::HRESULT::from_win32(183) { return Err(io::Error::other(error)) }
     }
-    handles.push(open_handle(path, false, true, true)?);
-    Ok(Directory { handles })
+    handles.push(open_handle(path, false, true, true, &sd)?);
+    Ok(Directory { handles, descriptor: sd })
 }
 
-fn open_handle(path: &Path, create: bool, directory: bool, private: bool) -> io::Result<File> {
+fn open_handle(path: &Path, create: bool, directory: bool, private: bool, sd: &Allocation) -> io::Result<File> {
     let path_w = wide(path)?;
-    let sd = descriptor()?;
     // Attribute-only handles do not participate in Windows sharing checks;
     // FILE_LIST_DIRECTORY (via GENERIC_READ) is necessary to pin a directory.
     let access = if directory { GENERIC_READ.0 }
-        else if create { GENERIC_READ.0 | GENERIC_WRITE.0 } else { GENERIC_READ.0 };
+        else if create { GENERIC_READ.0 | GENERIC_WRITE.0 | DELETE.0 } else { GENERIC_READ.0 };
     let flags = FILE_FLAG_OPEN_REPARSE_POINT | if directory { FILE_FLAG_BACKUP_SEMANTICS } else { FILE_ATTRIBUTE_NORMAL };
     let handle = unsafe { CreateFileW(PCWSTR(path_w.as_ptr()), access,
-        if directory { FILE_SHARE_READ | FILE_SHARE_WRITE } else { FILE_SHARE_READ | FILE_SHARE_DELETE }, Some(&attributes(&sd)),
+        if directory { FILE_SHARE_READ | FILE_SHARE_WRITE } else { FILE_SHARE_READ | FILE_SHARE_DELETE }, Some(&attributes(sd)),
         if create { CREATE_NEW } else { OPEN_EXISTING }, flags, None) };
     let handle = handle.map_err(|error| match error.code().0 as u32 & 0xffff {
         2 | 3 => io::Error::new(io::ErrorKind::NotFound, "credential path does not exist"),
@@ -93,6 +96,9 @@ fn open_handle(path: &Path, create: bool, directory: bool, private: bool) -> io:
         _ => io::Error::other(error),
     })?;
     let file = unsafe { File::from_raw_handle(handle.0) };
+    let validation = (|| -> io::Result<()> {
+        #[cfg(test)]
+        if create && super::take_creation_failure() { return Err(io::Error::other("injected post-create validation failure")) }
     let meta = file.metadata()?;
     if meta.file_attributes() & FILE_ATTRIBUTE_REPARSE_POINT.0 != 0
         || if directory { !meta.is_dir() } else { !meta.is_file() } {
@@ -102,7 +108,17 @@ fn open_handle(path: &Path, create: bool, directory: bool, private: bool) -> io:
     let mut information = BY_HANDLE_FILE_INFORMATION::default();
     unsafe { win(GetFileInformationByHandle(handle, &mut information))?; }
     if !directory && information.nNumberOfLinks != 1 { return Err(denied("credential must not have hard links")) }
-    if private { validate_acl(&file, &sd)?; }
+    if private { validate_acl(&file, sd)?; }
+        Ok(())
+    })();
+    if let Err(error) = validation {
+        if create {
+            // Delete the exact newly created handle, even if validation failed.
+            let disposition = FILE_DISPOSITION_INFO { DeleteFile: true.into() };
+            unsafe { let _ = SetFileInformationByHandle(handle, FileDispositionInfo, (&disposition as *const FILE_DISPOSITION_INFO).cast(), std::mem::size_of::<FILE_DISPOSITION_INFO>() as u32); }
+        }
+        return Err(error);
+    }
     Ok(file)
 }
 
@@ -142,10 +158,10 @@ fn validate_acl(file: &File, expected: &Allocation) -> io::Result<()> {
 }
 
 pub(super) fn check_directory(directory: &Directory) -> io::Result<()> {
-    validate_acl(directory.handles.last().expect("pinned credential directory"), &descriptor()?)
+    validate_acl(directory.handles.last().expect("pinned credential directory"), &directory.descriptor)
 }
-pub(super) fn create(_: &Directory, path: &Path) -> io::Result<File> { open_handle(path, true, false, true) }
-pub(super) fn open(_: &Directory, path: &Path) -> io::Result<File> { open_handle(path, false, false, true) }
+pub(super) fn create(directory: &Directory, path: &Path) -> io::Result<File> { open_handle(path, true, false, true, &directory.descriptor) }
+pub(super) fn open(directory: &Directory, path: &Path) -> io::Result<File> { open_handle(path, false, false, true, &directory.descriptor) }
 // MoveFileExW below uses MOVEFILE_WRITE_THROUGH; no separate directory
 // flush is required/supported by this Win32 strategy.
 pub(super) fn sync_directory(_: &Directory) -> io::Result<()> { Ok(()) }
@@ -155,11 +171,22 @@ pub(super) fn replace(_: &Directory, from: &Path, to: &Path) -> io::Result<()> {
     let to = wide(to)?;
     unsafe { win(MoveFileExW(PCWSTR(from.as_ptr()), PCWSTR(to.as_ptr()), MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH)) }
 }
-pub(super) fn remove(_: &Directory, path: &Path) -> io::Result<()> {
+pub(super) fn remove(directory: &Directory, path: &Path) -> io::Result<()> {
     // Only cleanup of our random rotation temporary; refuse a replaced alias.
-    let file = open_handle(path, false, false, true)?;
+    let file = open_handle(path, false, false, true, &directory.descriptor)?;
     drop(file);
     std::fs::remove_file(path)
+}
+
+// Every ancestor, including the leaf directory, is pinned against rename.
+pub(super) fn temporary_names(_: &Directory, path: &Path) -> io::Result<Vec<std::ffi::OsString>> {
+    let mut names = Vec::new();
+    for (index, entry) in std::fs::read_dir(path)?.enumerate() {
+        if index >= 1024 { return Err(io::Error::other("too many credential directory entries to recover safely")) }
+        let name = entry?.file_name();
+        if name.to_str().is_some_and(super::rotation_temporary) { names.push(name); }
+    }
+    Ok(names)
 }
 
 #[cfg(test)]
@@ -169,10 +196,23 @@ mod tests {
     use std::os::windows::fs::OpenOptionsExt;
 
     #[test]
+    fn credential_directory_junction_is_refused_without_touching_target() {
+        let fixture = Fixture::new();
+        let target = fixture.0.join("target"); std::fs::create_dir(&target).unwrap();
+        let link = fixture.0.join("credentials");
+        let result = std::process::Command::new("cmd").args(["/C", "mklink", "/J"]).arg(&link).arg(&target).output().unwrap();
+        assert!(result.status.success(), "{}", String::from_utf8_lossy(&result.stderr));
+        assert!(CredentialStore::open(&fixture.0).is_err());
+        assert!(std::fs::read_dir(&target).unwrap().next().is_none());
+        std::fs::remove_dir(link).unwrap();
+    }
+
+    #[test]
     fn permissive_dacl_is_refused_without_replacing_the_credential() {
         let fixture = Fixture::new();
+        let _owner = crate::ownership::RuntimeOwner::acquire(&fixture.0).unwrap();
         let store = CredentialStore::open(&fixture.0).unwrap();
-        let old = store.rotate(CredentialKind::Mcp).unwrap().bearer;
+        let old = store.rotate(CredentialKind::Mcp, &_owner).unwrap().bearer;
         let file = std::fs::OpenOptions::new().access_mode(READ_CONTROL.0 | WRITE_DAC.0)
             .open(store.directory.join("mcp.token")).unwrap();
         let sd = descriptor().unwrap();
@@ -180,7 +220,7 @@ mod tests {
             let handle = HANDLE(file.as_raw_handle());
             win(SetSecurityInfo(handle, SE_FILE_OBJECT, DACL_SECURITY_INFORMATION | PROTECTED_DACL_SECURITY_INFORMATION,
                 None, None, Some(std::ptr::null()), None).ok()).unwrap();
-            let refused = store.load(CredentialKind::Mcp).is_err() && store.rotate(CredentialKind::Mcp).is_err();
+            let refused = store.load(CredentialKind::Mcp).is_err() && store.rotate(CredentialKind::Mcp, &_owner).is_err();
             let mut present = false.into();
             let mut defaulted = false.into();
             let mut acl = std::ptr::null_mut();
@@ -196,8 +236,9 @@ mod tests {
     #[test]
     fn directory_handles_prevent_replacement_until_store_closes() {
         let fixture = Fixture::new();
+        let _owner = crate::ownership::RuntimeOwner::acquire(&fixture.0).unwrap();
         let store = CredentialStore::open(&fixture.0).unwrap();
-        let original = store.rotate(CredentialKind::Mcp).unwrap().bearer;
+        let original = store.rotate(CredentialKind::Mcp, &_owner).unwrap().bearer;
         let path = store.directory.clone();
         let moved = fixture.0.join("moved");
         assert!(std::fs::rename(&path, &moved).is_err());

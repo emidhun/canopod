@@ -177,21 +177,15 @@ impl Default for NotifyCfg {
 /// Update-check preferences. Canopy checks the project's GitHub releases for a
 /// newer tag; it never downloads or installs anything on its own (see
 /// `updates.rs` for why).
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
 #[serde(rename_all = "camelCase", default)]
+// Background checking is opt-in until its result has a visible update notice.
 pub struct UpdatesCfg {
     /// check for a newer release in the background
     pub auto_check: bool,
 }
 
-impl Default for UpdatesCfg {
-    fn default() -> Self {
-        // Checking is a single small request a few times a day and is the only
-        // way someone learns a fix shipped, so it is on by default. Anything
-        // that *installs* would not be.
-        Self { auto_check: true }
-    }
-}
+
 
 /// Crash-report preferences.
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
@@ -405,6 +399,7 @@ pub struct OrphanProc {
     pub svc_key: String,
     pub pgid: i32,
     pub spawn_time_secs: u64,
+    pub owner: Option<ProcessOwner>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
@@ -413,7 +408,14 @@ pub struct TermOrphan {
     pub id: String,
     pub pgid: i32,
     pub spawn_time_secs: u64,
+    pub owner: Option<ProcessOwner>,
 }
+
+/// The spawning backend identity, independent of the process that later adopts
+/// its children (PID 1, systemd --user, or a container subreaper).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ProcessOwner { pub pid: u32, pub started: u64 }
 
 fn settings_path(app: &crate::runtime::RuntimePaths) -> PathBuf {
     app
