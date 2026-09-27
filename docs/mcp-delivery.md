@@ -123,12 +123,12 @@ startup entirely: merely disabling sweeping would still permit duplicate state
 writers. Existing invalid/unreadable settings or runtime JSON abort startup
 without quarantine or replacement.
 
-Unix recovery checks each recorded live group before any sweep. A matching
-process whose parent is not verifiably init is left alone, and headless startup
-refuses takeover. Both desktop and headless sweepers now retain skipped records.
-Unknown legacy spawn times also refuse headless recovery. Containers with a
-subreaper may require manually stopping the old children; no force-takeover flag
-bypasses this. This improves migration safety but is deliberately conservative.
+Unix recovery checks each recorded live group before any sweep. New records
+include the spawning owner's PID and raw kernel start identity; after that owner
+dies, verified groups can be recovered even under a Linux subreaper. Legacy
+records require a recognized init parent and matching group birth time. Both
+hosts retain unverified or inaccessible live records through later state writes;
+headless startup reports the exact record requiring manual recovery.
 
 The foreground host owns periodic refresh, statistics, update and terminal
 monitor tasks. An unexpected loop exit triggers cleanup and a nonzero exit,
@@ -169,13 +169,13 @@ access is unaffected). Stop the backend before relocating the data directory or
 its ancestors. This conservative tradeoff closes redirection even for an
 explicitly supplied data path; it is not narrowed to a presumed safe ancestor.
 
-Rotation writes a random sibling file, flushes it, and atomically replaces the
+Rotation writes a fixed private temporary per credential kind, flushes it, and atomically replaces the
 selected token. A pre-commit failure preserves the previous token. Unix flushes
 the directory after rename (macOS also uses F_FULLFSYNC on the written file);
-Windows uses write-through replacement. A post-rename directory-flush error is
+Windows requests write-through replacement but does not promise power-loss durability for same-volume rename. A post-rename directory-flush error is
 returned alongside the committed new token as a durability warning, so callers
 cannot accidentally retain an old in-memory token after committing a new file.
-Single runtime ownership and serialized rotation are caller requirements.
+The matching runtime ownership guard enforces serialized rotations across stores; process-local generation numbers let concurrent publishers reject stale results.
 
 The primitive itself opens no sockets and changes no permission profiles. The
 application host below explicitly creates its own credential when needed. MCP
@@ -215,7 +215,9 @@ independent supervisor to stop. Disconnecting a client does not request shutdown
 
 The control server admits 32 connections and 8 authenticated requests, limits
 bodies to 64 KiB, gives headers and request bodies five seconds each, and caps
-handlers at ten seconds. Control connections have a 60-second maximum lifetime.
+handlers at ten seconds. Control connections retire after 60 seconds, with up
+to twenty seconds to drain an active request. Silent sockets have a five-second
+first-byte deadline.
 Header timeout is applied in Hyper itself; request middleware alone cannot time
 out headers it has not received yet. Shutdown closes admission and gives accepted
 connections two seconds to flush while child cleanup proceeds independently.
@@ -287,10 +289,9 @@ session invalidation through the later application/MCP transport layers.
 
 The backend logs to stderr (`RUST_LOG=debug` increases detail; this CLI accepts a level, not module directives), so supervisors can capture sweep warnings. New process records include the spawning backend PID and start identity: adopted children are recoverable after that owner dies, including under Linux subreapers. Legacy records without that identity only recover automatically under a recognized init process and with a matching group birth time. Unverified live records survive subsequent service and terminal state writes.
 
-If startup names an unverifiable `state.json` record, stop Canopy, preserve a backup of that file, inspect the named `orphans` or `terminalOrphans` entry and the running PID's identity, then remove only an entry confirmed stale. Do not kill an unrelated process merely because its PID matches an old record. Library hosts and explicitly isolated CLI data directories do not reject an unrelated default-directory desktop; the default CLI host retains the legacy-desktop exclusion check.
+If startup names an unverifiable `state.json` record, stop Canopy, preserve a backup, inspect the named `orphans` or `terminalOrphans` entry and the running PID identity, then remove only an entry confirmed stale. Do not kill an unrelated process merely because its PID matches an old record. Library hosts and CLI hosts with both config and data explicitly isolated do not reject an unrelated default-directory desktop; shared-default CLI hosts retain the legacy-desktop exclusion check.
 
 Credential rotation requires the matching `RuntimeOwner` and serializes across all stores using that guard. Read-only opens never clean files. A writer validates and removes private crash leftovers under the ownership guard; new rotations use one fixed temporary name per credential kind, bounding crash debris. Unsafe leftovers are preserved.
-If startup names an unverifiable `state.json` record, stop Canopy, preserve a backup of that file, inspect the named `orphans` or `terminalOrphans` entry and the running PID's identity, then remove only an entry confirmed stale. Do not kill an unrelated process merely because its PID matches an old record. Library hosts and CLI directories with both config and data explicitly isolated do not reject an unrelated default-directory desktop; the default CLI host retains the legacy-desktop exclusion check.
 The declared Rust minimum is 1.95, matching the locked `sysinfo` dependency; the ownership APIs alone require 1.89.
 
 HTTP review follow-up: silent sockets have an explicit five-second first-byte deadline; retiring connections drain for twenty seconds to cover headers, body and handler deadlines. Shutdown still drains for at most two seconds. Protocol parse errors generated before application middleware may omit the API version header. `stop` acknowledges asynchronous cleanup.
