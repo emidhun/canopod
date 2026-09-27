@@ -1205,6 +1205,81 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn disable_revokes_after_valid_external_edits_or_deleted_policy() {
+        for deleted in [false, true] {
+            let running = Running::start().await;
+            let bearer = running.enable_mcp().await;
+            let path = running.directory.0.join("mcp.json");
+            if deleted {
+                std::fs::remove_file(&path).unwrap();
+            } else {
+                std::fs::write(&path, "{}").unwrap();
+            }
+            assert_eq!(
+                running
+                    .request(reqwest::Method::POST, "mcp/disable")
+                    .send()
+                    .await
+                    .unwrap()
+                    .status(),
+                StatusCode::OK
+            );
+            assert!(!running.mcp.enabled());
+            assert!(running.mcp.status()["error"].is_string());
+            assert_ne!(
+                running
+                    .rpc(&bearer, "tools/list", serde_json::json!({}))
+                    .send()
+                    .await
+                    .unwrap()
+                    .status(),
+                StatusCode::OK
+            );
+            if deleted {
+                assert!(!path.exists());
+            } else {
+                assert_eq!(std::fs::read_to_string(&path).unwrap(), "{}");
+            }
+            running.finish().await;
+        }
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn disable_revokes_even_when_policy_cannot_be_written() {
+        use std::os::unix::fs::PermissionsExt;
+        if unsafe { libc::geteuid() } == 0 {
+            return;
+        }
+        let running = Running::start().await;
+        let bearer = running.enable_mcp().await;
+        let path = running.directory.0.join("mcp.json");
+        let before = std::fs::read(&path).unwrap();
+        std::fs::set_permissions(&running.directory.0, std::fs::Permissions::from_mode(0o500))
+            .unwrap();
+        let response = running
+            .request(reqwest::Method::POST, "mcp/disable")
+            .send()
+            .await;
+        std::fs::set_permissions(&running.directory.0, std::fs::Permissions::from_mode(0o700))
+            .unwrap();
+        assert_eq!(response.unwrap().status(), StatusCode::OK);
+        assert!(!running.mcp.enabled());
+        assert!(running.mcp.status()["error"].is_string());
+        assert_eq!(std::fs::read(path).unwrap(), before);
+        assert_eq!(
+            running
+                .rpc(&bearer, "tools/list", serde_json::json!({}))
+                .send()
+                .await
+                .unwrap()
+                .status(),
+            StatusCode::SERVICE_UNAVAILABLE
+        );
+        running.finish().await;
+    }
+
+    #[tokio::test]
     async fn malformed_mcp_credential_keeps_app_alive_and_can_be_repaired() {
         let directory = Directory::new();
         let app = directory.context();
