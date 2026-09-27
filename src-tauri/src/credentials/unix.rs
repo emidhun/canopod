@@ -44,7 +44,10 @@ fn relative_open(directory: &Directory, path: &Path, flags: i32) -> io::Result<F
         let mut current = std::mem::MaybeUninit::<libc::stat>::uninit();
         if unsafe { libc::fstatat(directory.as_raw_fd(), name.as_ptr(), current.as_mut_ptr(), libc::AT_SYMLINK_NOFOLLOW) } == 0 {
             let current = unsafe { current.assume_init() };
-            if current.st_dev as u64 == identity.dev() && current.st_ino as u64 == identity.ino() {
+            // libc device/inode widths differ across supported Unix targets.
+            #[allow(clippy::unnecessary_cast)]
+            let same_file = current.st_dev as u64 == identity.dev() && current.st_ino as u64 == identity.ino();
+            if same_file {
                 unsafe { libc::unlinkat(directory.as_raw_fd(), name.as_ptr(), 0); }
             }
         }
