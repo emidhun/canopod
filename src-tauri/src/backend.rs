@@ -332,7 +332,15 @@ mod tests {
                 .embedded_terminal
                 .args = "--noprofile --norc".into();
             let pid_file = fixture.0.join("background-pid");
-            let ending = if shell_exits { "disown; exit" } else { "wait" };
+            let exit_gate = fixture.0.join("allow-shell-exit");
+            let ending = if shell_exits {
+                format!(
+                    "while [ ! -f '{}' ]; do sleep 0.01; done; disown; exit",
+                    exit_gate.display()
+                )
+            } else {
+                "wait".into()
+            };
             let command = format!(
                 "trap '' HUP; set -m; sleep 30 & echo $! > '{}'; {ending}",
                 pid_file.display()
@@ -360,11 +368,17 @@ mod tests {
                 );
                 tokio::time::sleep(Duration::from_millis(20)).await;
             };
-            assert_ne!(unsafe { libc::getpgid(pid as i32) }, unsafe {
-                libc::getsid(pid as i32)
-            });
+            let group = unsafe { libc::getpgid(pid as i32) };
+            let leader = unsafe { libc::getsid(pid as i32) };
+            assert!(
+                group > 1 && leader > 1,
+                "background job must be live before releasing its shell"
+            );
+            assert_ne!(group, leader);
             if shell_exits {
-                let leader = unsafe { libc::getsid(pid as i32) };
+                // Observe the separate job group before allowing shell exit;
+                // EOF cleanup can otherwise finish before the assertion.
+                std::fs::write(&exit_gate, b"exit").unwrap();
                 let deadline = std::time::Instant::now() + Duration::from_secs(5);
                 loop {
                     use sysinfo::{
