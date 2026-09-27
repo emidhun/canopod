@@ -9,7 +9,10 @@ use parking_lot::Mutex;
 use serde::Serialize;
 use std::collections::HashMap;
 use std::io::Write;
-use std::sync::{atomic::{AtomicBool, Ordering}, Arc, Weak};
+use std::sync::{
+    atomic::{AtomicBool, Ordering},
+    Arc, Weak,
+};
 use tokio::sync::{mpsc, OwnedSemaphorePermit, Semaphore};
 
 pub const MAX_SUBSCRIBERS: usize = 16;
@@ -28,8 +31,10 @@ impl SubscriptionKind {
     fn accepts(self, audience: Audience, event: &str) -> bool {
         match self {
             Self::Application => !matches!(audience, Audience::Terminals),
-            Self::Terminal => matches!(audience, Audience::Terminals | Audience::TerminalState)
-                || event == "terminal:state",
+            Self::Terminal => {
+                matches!(audience, Audience::Terminals | Audience::TerminalState)
+                    || event == "terminal:state"
+            }
         }
     }
 }
@@ -72,7 +77,13 @@ impl Default for EventHub {
 }
 
 #[derive(Debug, PartialEq, Eq)]
-pub enum EventError { Busy, ResnapshotRequired, Closed, Oversized }
+pub enum EventError {
+    Busy,
+    ResnapshotRequired,
+    Closed,
+    Oversized,
+    SequenceExhausted,
+}
 
 pub struct Subscription {
     id: u64,
@@ -88,58 +99,119 @@ pub struct Subscription {
 
 impl EventHub {
     pub fn subscribe(&self, kind: SubscriptionKind) -> Result<Subscription, EventError> {
-        let slot = self.0.slots.clone().try_acquire_owned().map_err(|_| EventError::Busy)?;
+        let slot = self
+            .0
+            .slots
+            .clone()
+            .try_acquire_owned()
+            .map_err(|_| EventError::Busy)?;
         let (sender, receiver) = mpsc::channel(QUEUE_CAPACITY);
         let lagged = Arc::new(AtomicBool::new(false));
         let mut state = self.0.state.lock();
-        let id = state.next_client.checked_add(1).ok_or(EventError::Closed)?;
+        let id = state
+            .next_client
+            .checked_add(1)
+            .ok_or(EventError::SequenceExhausted)?;
         state.next_client = id;
-        state.clients.insert(id, Client { kind, sender, lagged: lagged.clone() });
+        state.clients.insert(
+            id,
+            Client {
+                kind,
+                sender,
+                lagged: lagged.clone(),
+            },
+        );
         Ok(Subscription {
-            id, hub: Arc::downgrade(&self.0), receiver, lagged,
-            _slot: slot, start_sequence: state.sequence,
+            id,
+            hub: Arc::downgrade(&self.0),
+            receiver,
+            lagged,
+            _slot: slot,
+            start_sequence: state.sequence,
         })
     }
 
     pub fn interested(&self, audience: Audience, event: &str) -> bool {
-        self.0.state.lock().clients.values().any(|c| c.kind.accepts(audience, event))
+        self.0
+            .state
+            .lock()
+            .clients
+            .values()
+            .any(|c| c.kind.accepts(audience, event))
     }
 
     pub fn has_application_subscribers(&self) -> bool {
-        self.0.state.lock().clients.values().any(|c| matches!(c.kind, SubscriptionKind::Application))
+        self.0
+            .state
+            .lock()
+            .clients
+            .values()
+            .any(|c| matches!(c.kind, SubscriptionKind::Application))
     }
 
     pub fn has_terminal_subscribers(&self) -> bool {
-        self.0.state.lock().clients.values().any(|c| matches!(c.kind, SubscriptionKind::Terminal))
+        self.0
+            .state
+            .lock()
+            .clients
+            .values()
+            .any(|c| matches!(c.kind, SubscriptionKind::Terminal))
     }
 
-    pub fn publish(&self, audience: Audience, event: &str, payload: &serde_json::Value) -> Result<(), EventError> {
-        let mut state = self.0.state.lock();
-        if !state.clients.values().any(|c| c.kind.accepts(audience, event)) { return Ok(()) }
-        let sequence = state.sequence.checked_add(1).ok_or(EventError::Closed)?;
+    pub fn publish(
+        &self,
+        audience: Audience,
+        event: &str,
+        payload: &serde_json::Value,
+    ) -> Result<(), EventError> {
+        if !self.interested(audience, event) {
+            return Ok(());
+        }
         #[derive(Serialize)]
-        struct Envelope<'a> { sequence: u64, event: &'a str, payload: &'a serde_json::Value }
+        struct Body<'a> {
+            event: &'a str,
+            payload: &'a serde_json::Value,
+        }
+        // Recursive JSON encoding is bounded and outside the coordinator lock.
+        // Reserve 32 bytes for the sequence field (including a 20-digit u64).
         let mut bytes = LimitedBytes(Vec::new());
-        if serde_json::to_writer(&mut bytes, &Envelope { sequence, event, payload }).is_err() {
-            // A missing state event is a gap, not something to ignore and then
-            // pretend the next event completed the client's state history.
+        let oversized = serde_json::to_writer(&mut bytes, &Body { event, payload }).is_err()
+            || bytes.0.len() > MAX_EVENT_BYTES - 32;
+        let mut state = self.0.state.lock();
+        if !state
+            .clients
+            .values()
+            .any(|c| c.kind.accepts(audience, event))
+        {
+            return Ok(());
+        }
+        if oversized {
             state.clients.retain(|_, client| {
                 if client.kind.accepts(audience, event) {
                     client.lagged.store(true, Ordering::Release);
                     false
-                } else { true }
+                } else {
+                    true
+                }
             });
             return Err(EventError::Oversized);
         }
+        let sequence = state
+            .sequence
+            .checked_add(1)
+            .ok_or(EventError::SequenceExhausted)?;
         state.sequence = sequence;
+        let encoded = String::from_utf8(bytes.0).expect("serde JSON is UTF-8");
         let frame = EventFrame {
             sequence,
-            json: String::from_utf8(bytes.0).expect("serde JSON is UTF-8").into(),
+            json: format!("{{\"sequence\":{sequence},{}", &encoded[1..]).into(),
         };
         // Sequence allocation and enqueueing share one brief lock, preserving
         // ordering even when process-reader threads publish concurrently.
         state.clients.retain(|_, client| {
-            if !client.kind.accepts(audience, event) { return true }
+            if !client.kind.accepts(audience, event) {
+                return true;
+            }
             match client.sender.try_send(frame.clone()) {
                 Ok(()) => true,
                 Err(mpsc::error::TrySendError::Full(_)) => {
@@ -162,23 +234,31 @@ impl Write for LimitedBytes {
         self.0.extend_from_slice(bytes);
         Ok(bytes.len())
     }
-    fn flush(&mut self) -> std::io::Result<()> { Ok(()) }
+    fn flush(&mut self) -> std::io::Result<()> {
+        Ok(())
+    }
 }
 
 impl Subscription {
     pub async fn recv(&mut self) -> Result<EventFrame, EventError> {
-        if self.lagged.load(Ordering::Acquire) { return Err(EventError::ResnapshotRequired) }
+        if self.lagged.load(Ordering::Acquire) {
+            return Err(EventError::ResnapshotRequired);
+        }
         let frame = self.receiver.recv().await;
         // Check again after waiting: a producer can have overflowed this queue
         // while the consumer was waiting for its next poll.
-        if self.lagged.load(Ordering::Acquire) { return Err(EventError::ResnapshotRequired) }
+        if self.lagged.load(Ordering::Acquire) {
+            return Err(EventError::ResnapshotRequired);
+        }
         frame.ok_or(EventError::Closed)
     }
 }
 
 impl Drop for Subscription {
     fn drop(&mut self) {
-        if let Some(hub) = self.hub.upgrade() { hub.state.lock().clients.remove(&self.id); }
+        if let Some(hub) = self.hub.upgrade() {
+            hub.state.lock().clients.remove(&self.id);
+        }
     }
 }
 
@@ -187,15 +267,49 @@ mod tests {
     use super::*;
 
     #[tokio::test]
+    async fn terminal_broadcast_filter_and_oversized_isolation() {
+        let hub = EventHub::default();
+        let mut app = hub.subscribe(SubscriptionKind::Application).unwrap();
+        let mut term = hub.subscribe(SubscriptionKind::Terminal).unwrap();
+        hub.publish(Audience::All, "terminal:state", &serde_json::Value::Null)
+            .unwrap();
+        term.recv().await.unwrap();
+        app.recv().await.unwrap();
+        hub.publish(Audience::All, "tree:changed", &serde_json::Value::Null)
+            .unwrap();
+        app.recv().await.unwrap();
+        assert!(term.receiver.is_empty());
+        assert_eq!(
+            hub.publish(
+                Audience::Terminals,
+                "terminal:data",
+                &serde_json::json!("x".repeat(MAX_EVENT_BYTES))
+            ),
+            Err(EventError::Oversized)
+        );
+        assert_eq!(
+            term.recv().await.unwrap_err(),
+            EventError::ResnapshotRequired
+        );
+        hub.publish(Audience::All, "tree:changed", &serde_json::Value::Null)
+            .unwrap();
+        app.recv().await.unwrap();
+    }
+
+    #[tokio::test]
     async fn slow_consumer_cannot_block_or_grow_the_producer() {
         let hub = EventHub::default();
         let mut slow = hub.subscribe(SubscriptionKind::Application).unwrap();
         let mut fast = hub.subscribe(SubscriptionKind::Application).unwrap();
         for n in 0..QUEUE_CAPACITY + 5 {
-            hub.publish(Audience::All, "tree:changed", &serde_json::json!(n)).unwrap();
+            hub.publish(Audience::All, "tree:changed", &serde_json::json!(n))
+                .unwrap();
             assert_eq!(fast.recv().await.unwrap().sequence, (n + 1) as u64);
         }
-        assert_eq!(slow.recv().await.unwrap_err(), EventError::ResnapshotRequired);
+        assert_eq!(
+            slow.recv().await.unwrap_err(),
+            EventError::ResnapshotRequired
+        );
         assert_eq!(hub.0.state.lock().clients.len(), 1);
     }
 
@@ -203,8 +317,18 @@ mod tests {
     async fn oversized_state_requires_rehydration_and_never_enters_a_queue() {
         let hub = EventHub::default();
         let mut client = hub.subscribe(SubscriptionKind::Application).unwrap();
-        assert_eq!(hub.publish(Audience::All, "tree:changed", &serde_json::json!("x".repeat(MAX_EVENT_BYTES))), Err(EventError::Oversized));
-        assert_eq!(client.recv().await.unwrap_err(), EventError::ResnapshotRequired);
+        assert_eq!(
+            hub.publish(
+                Audience::All,
+                "tree:changed",
+                &serde_json::json!("x".repeat(MAX_EVENT_BYTES))
+            ),
+            Err(EventError::Oversized)
+        );
+        assert_eq!(
+            client.recv().await.unwrap_err(),
+            EventError::ResnapshotRequired
+        );
         assert!(client.receiver.is_empty());
     }
 
@@ -212,12 +336,17 @@ mod tests {
     fn subscriber_limit_applies_even_to_evicted_slow_consumers() {
         let hub = EventHub::default();
         let mut clients: Vec<_> = (0..MAX_SUBSCRIBERS)
-            .map(|_| hub.subscribe(SubscriptionKind::Application).unwrap()).collect();
+            .map(|_| hub.subscribe(SubscriptionKind::Application).unwrap())
+            .collect();
         for _ in 0..QUEUE_CAPACITY + 1 {
-            hub.publish(Audience::All, "tree:changed", &serde_json::Value::Null).unwrap();
+            hub.publish(Audience::All, "tree:changed", &serde_json::Value::Null)
+                .unwrap();
         }
         assert!(hub.0.state.lock().clients.is_empty());
-        assert!(matches!(hub.subscribe(SubscriptionKind::Application), Err(EventError::Busy)));
+        assert!(matches!(
+            hub.subscribe(SubscriptionKind::Application),
+            Err(EventError::Busy)
+        ));
         clients.pop();
         assert!(hub.subscribe(SubscriptionKind::Application).is_ok());
     }
@@ -227,10 +356,20 @@ mod tests {
         let hub = EventHub::default();
         let mut app = hub.subscribe(SubscriptionKind::Application).unwrap();
         let mut terminal = hub.subscribe(SubscriptionKind::Terminal).unwrap();
-        hub.publish(Audience::Terminals, "terminal:data", &serde_json::json!("bytes")).unwrap();
+        hub.publish(
+            Audience::Terminals,
+            "terminal:data",
+            &serde_json::json!("bytes"),
+        )
+        .unwrap();
         assert_eq!(terminal.recv().await.unwrap().sequence, 1);
         assert!(app.receiver.is_empty());
-        hub.publish(Audience::TerminalState, "terminal:exit", &serde_json::json!({"id": "term"})).unwrap();
+        hub.publish(
+            Audience::TerminalState,
+            "terminal:exit",
+            &serde_json::json!({"id": "term"}),
+        )
+        .unwrap();
         assert_eq!(terminal.recv().await.unwrap().sequence, 2);
         assert_eq!(app.recv().await.unwrap().sequence, 2);
     }
@@ -239,13 +378,22 @@ mod tests {
     async fn concurrent_publishers_deliver_in_sequence_order() {
         let hub = EventHub::default();
         let mut client = hub.subscribe(SubscriptionKind::Application).unwrap();
-        let threads: Vec<_> = (0..4).map(|_| {
-            let hub = hub.clone();
-            std::thread::spawn(move || {
-                for _ in 0..4 { hub.publish(Audience::All, "status", &serde_json::Value::Null).unwrap(); }
+        let threads: Vec<_> = (0..4)
+            .map(|_| {
+                let hub = hub.clone();
+                std::thread::spawn(move || {
+                    for _ in 0..4 {
+                        hub.publish(Audience::All, "status", &serde_json::Value::Null)
+                            .unwrap();
+                    }
+                })
             })
-        }).collect();
-        for thread in threads { thread.join().unwrap(); }
-        for sequence in 1..=16 { assert_eq!(client.recv().await.unwrap().sequence, sequence); }
+            .collect();
+        for thread in threads {
+            thread.join().unwrap();
+        }
+        for sequence in 1..=16 {
+            assert_eq!(client.recv().await.unwrap().sequence, sequence);
+        }
     }
 }

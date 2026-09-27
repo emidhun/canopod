@@ -1,10 +1,11 @@
 [package]
 name = "canopy"
-version = "0.4.7"
+version = "0.5.0"
 description = "Canopy — lightweight git worktree and dev-service manager"
 authors = ["Midhun Kumar"]
 license = "AGPL-3.0-only"
 edition = "2021"
+rust-version = "1.95"
 
 [[bin]]
 name = "canopy"
@@ -34,7 +35,7 @@ tauri-build = { version = "2", features = [], optional = true }
 tauri = { version = "2", features = ["tray-icon", "image-png", "macos-private-api"], optional = true }
 tauri-plugin-opener = { version = "2", optional = true }
 # rolling file log in the app log dir — the thing a bug report can attach.
-# `log` macros everywhere; eprintln! is reserved for the headless test harness.
+# Desktop uses `log`; the backend CLI logger and test harness write stderr.
 log = "0.4"
 tauri-plugin-log = { version = "2", optional = true }
 tauri-plugin-positioner = { version = "2", features = ["tray-icon"], optional = true }
@@ -87,6 +88,7 @@ libc = "0.2"
 [target.'cfg(windows)'.dependencies]
 windows = { version = "0.62", features = [
     "Win32_Foundation",
+    "Win32_Storage_FileSystem",
     "Win32_Security",
     "Win32_Security_Authorization",
     "Win32_Storage_FileSystem",

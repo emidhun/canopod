@@ -7,10 +7,10 @@ import { TRow } from "../primitives";
 import type { PageProps } from "../types";
 
 export const ACCENT_SWATCHES: { id: Accent; name: string; color: string }[] = [
-  { id: "teal", name: "Teal", color: "#5cc7cd" },
-  { id: "green", name: "Green", color: "#4cc266" },
-  { id: "amber", name: "Amber", color: "#e6ad5f" },
-  { id: "violet", name: "Violet", color: "#c77ecd" },
+  { id: "teal", name: "Teal", color: "var(--swatch-teal)" },
+  { id: "green", name: "Green", color: "var(--swatch-green)" },
+  { id: "amber", name: "Amber", color: "var(--swatch-amber)" },
+  { id: "violet", name: "Violet", color: "var(--swatch-violet)" },
 ];
 
 
@@ -99,8 +99,8 @@ function UpdatesSection({ settings, patch, markDirty }: Pick<PageProps, "setting
       <TRow
         title="Check for updates automatically"
         hint="Asks GitHub twice a day whether a newer release exists. Nothing is downloaded or installed."
-        on={settings.updates?.autoCheck !== false}
-        onToggle={() => { patch({ updates: { autoCheck: !(settings.updates?.autoCheck !== false) } }); markDirty("general"); }}
+        on={settings.updates?.autoCheck === true}
+        onToggle={() => { patch({ updates: { autoCheck: !(settings.updates?.autoCheck === true) } }); markDirty("general"); }}
       />
       <div className="row" style={{ marginTop: 8, alignItems: "center", gap: 10 }}>
         <button className="btn" onClick={check} disabled={checking || !hasBackend()}>
