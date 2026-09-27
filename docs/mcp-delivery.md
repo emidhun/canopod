@@ -103,3 +103,4 @@ buffer and makes no atomic snapshot guarantee. The authenticated application
 API still needs the #157 snapshot/event reconciliation and connection timeouts
 before exposing it to browsers. A reconnect must load a new authoritative
 snapshot; a cursor alone cannot recover dropped history.
+The declared Rust minimum is 1.95, matching the locked `sysinfo` dependency; the ownership APIs alone require 1.89.
