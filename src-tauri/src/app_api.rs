@@ -75,11 +75,23 @@ impl Config {
             options.mode(0o600);
         }
         let mut file = options.open(&temporary).map_err(|e| e.to_string())?;
-        file.write_all(&serde_json::to_vec_pretty(self).map_err(|e| e.to_string())?)
-            .map_err(|e| e.to_string())?;
-        file.sync_all().map_err(|e| e.to_string())?;
-        drop(file);
-        std::fs::rename(&temporary, &path).map_err(|e| format!("save {}: {e}", path.display()))
+        let result = (|| {
+            file.write_all(&serde_json::to_vec_pretty(self).map_err(|e| e.to_string())?)
+                .map_err(|e| e.to_string())?;
+            file.sync_all().map_err(|e| e.to_string())?;
+            drop(file);
+            std::fs::rename(&temporary, &path).map_err(|e| format!("save {}: {e}", path.display()))
+        })();
+        if result.is_err() {
+            let _ = std::fs::remove_file(&temporary);
+        }
+        #[cfg(unix)]
+        if result.is_ok() {
+            if let Err(error) = std::fs::File::open(directory).and_then(|f| f.sync_all()) {
+                log::warn!("backend port committed but directory flush failed: {error}");
+            }
+        }
+        result
     }
 }
 
@@ -293,6 +305,7 @@ impl Server {
                     let (stream, _) = match accepted {
                         Ok(value) => { accept_backoff = Duration::from_millis(100); value },
                         Err(error) => {
+                            if matches!(error.kind(), std::io::ErrorKind::ConnectionAborted | std::io::ErrorKind::ConnectionReset | std::io::ErrorKind::Interrupted) { continue; }
                             log::warn!("accept backend connection: {error}; retrying after {accept_backoff:?}");
                             tokio::select! {
                                 _ = stopped(shutdown.clone()) => break Ok(()),
@@ -308,6 +321,15 @@ impl Server {
                     let lifetime = self.connection_lifetime;
                     connections.spawn(async move {
                         let _slot = permit;
+                        // Hyper's idle timer behavior must not decide whether
+                        // silent unauthenticated sockets retain admission.
+                        let mut first = [0u8; 1];
+                        tokio::select! {
+                            _ = stopped(shutdown.clone()) => return,
+                            ready = tokio::time::timeout(Duration::from_secs(5), stream.peek(&mut first)) => {
+                                if !matches!(ready, Ok(Ok(1))) { return; }
+                            },
+                        }
                         let mut builder = hyper::server::conn::http1::Builder::new();
                         builder.timer(TokioTimer::new()).header_read_timeout(Duration::from_secs(5)).max_buf_size(16 * 1024);
                         let connection = builder.serve_connection(TokioIo::new(stream), TowerToHyperService::new(router));
@@ -323,7 +345,7 @@ impl Server {
                             _ = tokio::time::sleep(lifetime) => {
                                 connection.as_mut().graceful_shutdown();
                                 tokio::select! {
-                                    _ = tokio::time::timeout(Duration::from_secs(10), &mut connection) => {},
+                                    _ = tokio::time::timeout(Duration::from_secs(20), &mut connection) => {},
                                     _ = stopped(shutdown) => {
                                         let _ = tokio::time::timeout(Duration::from_secs(2), &mut connection).await;
                                     },
@@ -334,6 +356,7 @@ impl Server {
                 }
             }
         };
+        drop(self.listener);
         // Join every accepted connection before releasing the runtime clone.
         // Each gets at most two seconds to flush its shutdown response.
         self.state.stop.send_replace(true);
@@ -694,6 +717,34 @@ mod tests {
         assert!(!*running.shutdown.borrow());
         running.finish().await;
         drop(idle);
+    }
+
+    #[tokio::test]
+    async fn silent_connection_releases_admission_after_first_byte_deadline() {
+        use tokio::io::AsyncReadExt;
+        let running = Running::start().await;
+        let mut stream =
+            tokio::net::TcpStream::connect((std::net::Ipv4Addr::LOCALHOST, running.port))
+                .await
+                .unwrap();
+        let mut byte = [0];
+        assert_eq!(
+            tokio::time::timeout(Duration::from_secs(7), stream.read(&mut byte))
+                .await
+                .unwrap()
+                .unwrap(),
+            0
+        );
+        assert_eq!(
+            running
+                .request(reqwest::Method::GET, "status")
+                .send()
+                .await
+                .unwrap()
+                .status(),
+            StatusCode::OK
+        );
+        running.finish().await;
     }
 
     #[test]
