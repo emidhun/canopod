@@ -221,13 +221,13 @@ fn mcp_control_result(state: &ApiState, result: Result<(), String>) -> Response 
     }
 }
 async fn mcp_enable(State(state): State<ApiState>, Json(input): Json<McpEnable>) -> Response {
-    mcp_control_result(&state, state.mcp.configure(true, input.repo_ids))
+    mcp_control_result(&state, state.mcp.configure(true, input.repo_ids).await)
 }
 async fn mcp_disable(State(state): State<ApiState>) -> Response {
-    mcp_control_result(&state, state.mcp.configure(false, None))
+    mcp_control_result(&state, state.mcp.configure(false, None).await)
 }
 async fn mcp_rotate(State(state): State<ApiState>) -> Response {
-    mcp_control_result(&state, state.mcp.rotate())
+    mcp_control_result(&state, state.mcp.rotate().await)
 }
 async fn mcp_request(State(state): State<ApiState>, request: Request) -> Response {
     if *state.stop.borrow() {
@@ -310,7 +310,8 @@ impl Server {
     }
 
     async fn run(self) -> Result<(), String> {
-        let router = Router::new()
+        let application = Router::new()
+            .fallback(|| async { error(StatusCode::NOT_FOUND, "not_found") })
             .route("/api/v1/status", get(status))
             .route("/api/v1/stop", post(stop))
             .route("/api/v1/mcp/status", get(mcp_status))
@@ -321,9 +322,14 @@ impl Server {
                 self.state.clone(),
                 authorize,
             ))
-            // MCP has its own credential/admission layer, independent of app auth.
-            .route("/mcp", any(mcp_request))
             .with_state(self.state.clone());
+        // App authentication is attached before merging the independently
+        // authenticated MCP router; route insertion order cannot bypass it.
+        let router = application.merge(
+            Router::new()
+                .route("/mcp", any(mcp_request))
+                .with_state(self.state.clone()),
+        );
         let slots = self.connections;
         let shutdown = self.state.stop.subscribe();
         let mut connections = JoinSet::new();
@@ -479,7 +485,9 @@ mod tests {
             Self::with_lifetime(Duration::from_secs(60)).await
         }
         async fn with_lifetime(lifetime: Duration) -> Self {
-            let directory = Directory::new();
+            Self::with_directory(Directory::new(), lifetime).await
+        }
+        async fn with_directory(directory: Directory, lifetime: Duration) -> Self {
             let reservation = TcpListener::bind("127.0.0.1:0").await.unwrap();
             let port = reservation.local_addr().unwrap().port();
             drop(reservation);
@@ -774,6 +782,10 @@ mod tests {
                 .repos
                 .push(crate::settings::RepoCfg {
                     id: "allowed".into(),
+                    path: std::fs::canonicalize(&self.directory.0)
+                        .unwrap()
+                        .to_string_lossy()
+                        .into_owned(),
                     ..Default::default()
                 });
             let response = self
@@ -1017,12 +1029,13 @@ mod tests {
                 .await
                 .unwrap()
                 .status(),
-            StatusCode::CONFLICT
+            StatusCode::OK
         );
         assert_eq!(
             std::fs::read_to_string(running.directory.0.join("mcp.json")).unwrap(),
             "{broken"
         );
+        assert!(!running.mcp.enabled());
         running.finish().await;
     }
 
@@ -1089,6 +1102,174 @@ mod tests {
         drop(reloaded);
         running.finish().await;
     }
+    #[tokio::test]
+    async fn malformed_mcp_policy_keeps_app_control_available_and_repair_is_explicit() {
+        let directory = Directory::new();
+        std::fs::write(directory.0.join("mcp.json"), "{broken").unwrap();
+        let running = Running::with_directory(directory, Duration::from_secs(60)).await;
+        assert_eq!(
+            running
+                .request(reqwest::Method::GET, "status")
+                .send()
+                .await
+                .unwrap()
+                .status(),
+            StatusCode::OK
+        );
+        assert!(running.mcp.status()["error"].is_string());
+        assert_eq!(
+            running
+                .rpc(&running.bearer, "tools/list", serde_json::json!({}))
+                .send()
+                .await
+                .unwrap()
+                .status(),
+            StatusCode::SERVICE_UNAVAILABLE
+        );
+        assert_eq!(
+            running
+                .request(reqwest::Method::POST, "mcp/disable")
+                .send()
+                .await
+                .unwrap()
+                .status(),
+            StatusCode::OK
+        );
+        assert_eq!(
+            std::fs::read_to_string(running.directory.0.join("mcp.json")).unwrap(),
+            "{broken"
+        );
+        std::fs::write(running.directory.0.join("mcp.json"), "{}").unwrap();
+        let bearer = running.enable_mcp().await;
+        assert_eq!(
+            running
+                .rpc(&bearer, "tools/list", serde_json::json!({}))
+                .send()
+                .await
+                .unwrap()
+                .status(),
+            StatusCode::OK
+        );
+        running.finish().await;
+    }
+
+    #[tokio::test]
+    async fn repository_removal_and_id_reuse_do_not_inherit_permission() {
+        let running = Running::start().await;
+        let bearer = running.enable_mcp().await;
+        running
+            .app
+            .state::<AppState>()
+            .settings
+            .write()
+            .repos
+            .clear();
+        let params = serde_json::json!({"name":"canopy_status","arguments":{"repoId":"allowed"}});
+        let body: serde_json::Value = running
+            .rpc(&bearer, "tools/call", params.clone())
+            .send()
+            .await
+            .unwrap()
+            .json()
+            .await
+            .unwrap();
+        assert_eq!(body["result"]["content"][0]["text"], "repo_not_found");
+        running
+            .app
+            .state::<AppState>()
+            .settings
+            .write()
+            .repos
+            .push(crate::settings::RepoCfg {
+                id: "allowed".into(),
+                path: "/different/repository".into(),
+                ..Default::default()
+            });
+        let body: serde_json::Value = running
+            .rpc(&bearer, "tools/call", params)
+            .send()
+            .await
+            .unwrap()
+            .json()
+            .await
+            .unwrap();
+        assert_eq!(body["result"]["content"][0]["text"], "repo_not_allowed");
+        running.finish().await;
+    }
+
+    #[tokio::test]
+    async fn policy_narrowing_revokes_inflight_requests_and_shutdown_has_distinct_status() {
+        use tokio::io::{AsyncReadExt, AsyncWriteExt};
+        let running = Running::start().await;
+        let bearer = running.enable_mcp().await;
+        running
+            .app
+            .state::<AppState>()
+            .settings
+            .write()
+            .repos
+            .push(crate::settings::RepoCfg {
+                id: "second".into(),
+                path: std::fs::canonicalize(&running.directory.0)
+                    .unwrap()
+                    .to_string_lossy()
+                    .into_owned(),
+                ..Default::default()
+            });
+        running
+            .mcp
+            .configure(true, Some(vec!["allowed".into(), "second".into()]))
+            .await
+            .unwrap();
+        for stopping in [false, true] {
+            let mut stream =
+                tokio::net::TcpStream::connect((std::net::Ipv4Addr::LOCALHOST, running.port))
+                    .await
+                    .unwrap();
+            stream.write_all(format!("POST /mcp HTTP/1.1\r\nHost: 127.0.0.1:{}\r\nAuthorization: Bearer {}\r\nContent-Type: application/json\r\nContent-Length: 1\r\nConnection: close\r\n\r\n", running.port, bearer.expose()).as_bytes()).await.unwrap();
+            let deadline = Instant::now() + Duration::from_secs(2);
+            while running.mcp.available_requests() == MAX_REQUESTS {
+                assert!(Instant::now() < deadline);
+                tokio::time::sleep(Duration::from_millis(5)).await;
+            }
+            if stopping {
+                running.mcp.shutdown();
+            } else {
+                running
+                    .mcp
+                    .configure(true, Some(vec!["second".into()]))
+                    .await
+                    .unwrap();
+            }
+            let mut response = String::new();
+            tokio::time::timeout(Duration::from_secs(2), stream.read_to_string(&mut response))
+                .await
+                .unwrap()
+                .unwrap();
+            assert!(
+                response.contains(if stopping {
+                    "503 Service Unavailable"
+                } else {
+                    "401 Unauthorized"
+                }),
+                "{response}"
+            );
+            assert!(
+                response.contains(if stopping {
+                    "stopping"
+                } else {
+                    "authorization_changed"
+                }),
+                "{response}"
+            );
+            if !stopping {
+                let body: serde_json::Value = running.rpc(&bearer, "tools/call", serde_json::json!({"name":"canopy_status","arguments":{"repoId":"allowed"}})).send().await.unwrap().json().await.unwrap();
+                assert_eq!(body["result"]["content"][0]["text"], "repo_not_allowed");
+            }
+        }
+        running.finish().await;
+    }
+
     #[tokio::test]
     async fn mcp_stalled_requests_are_bounded_and_rotation_cancels_them() {
         use tokio::io::{AsyncReadExt, AsyncWriteExt};
