@@ -77,11 +77,15 @@ pub(super) fn prepare_directory(path: &Path) -> io::Result<Directory> {
 }
 
 fn open_handle(path: &Path, create: bool, directory: bool, private: bool, sd: &Allocation) -> io::Result<File> {
+    open_handle_access(path, create, directory, private, sd, false)
+}
+fn open_handle_access(path: &Path, create: bool, directory: bool, private: bool, sd: &Allocation, rename: bool) -> io::Result<File> {
     let path_w = wide(path)?;
     // Attribute-only handles do not participate in Windows sharing checks;
     // FILE_LIST_DIRECTORY (via GENERIC_READ) is necessary to pin a directory.
     let access = if directory { GENERIC_READ.0 }
-        else if create { GENERIC_READ.0 | GENERIC_WRITE.0 | DELETE.0 } else { GENERIC_READ.0 };
+        else if create { GENERIC_READ.0 | GENERIC_WRITE.0 | DELETE.0 }
+        else { GENERIC_READ.0 | if rename { DELETE.0 } else { 0 } };
     let flags = FILE_FLAG_OPEN_REPARSE_POINT | if directory { FILE_FLAG_BACKUP_SEMANTICS } else { FILE_ATTRIBUTE_NORMAL };
     let handle = unsafe { CreateFileW(PCWSTR(path_w.as_ptr()), access,
         if directory { FILE_SHARE_READ | FILE_SHARE_WRITE } else { FILE_SHARE_READ | FILE_SHARE_DELETE }, Some(&attributes(sd)),
@@ -158,15 +162,41 @@ pub(super) fn check_directory(directory: &Directory) -> io::Result<()> {
 }
 pub(super) fn create(directory: &Directory, path: &Path) -> io::Result<File> { open_handle(path, true, false, true, &directory.descriptor) }
 pub(super) fn open(directory: &Directory, path: &Path) -> io::Result<File> { open_handle(path, false, false, true, &directory.descriptor) }
-// Win32 does not provide a portable directory fsync here. WRITE_THROUGH
-// covers copy/delete moves, not same-volume rename durability. Ok means no
+// Win32 does not provide a portable directory fsync here. File contents
+// are flushed before the atomic handle rename. Ok means no
 // reported I/O failure, not a guarantee against power loss.
 pub(super) fn sync_directory(_: &Directory) -> io::Result<()> { Ok(()) }
 pub(super) fn sync_file(file: &File) -> io::Result<()> { file.sync_all() }
-pub(super) fn replace(_: &Directory, from: &Path, to: &Path) -> io::Result<()> {
-    let from = wide(from)?;
-    let to = wide(to)?;
-    unsafe { win(MoveFileExW(PCWSTR(from.as_ptr()), PCWSTR(to.as_ptr()), MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH)) }
+pub(super) fn replace(directory: &Directory, from: &Path, to: &Path) -> io::Result<()> {
+    let file = open_handle_access(from, false, false, true, &directory.descriptor, true)?;
+    let target = wide(to)?;
+    let bytes = std::mem::offset_of!(FILE_RENAME_INFO, FileName) + target.len() * 2;
+    let length = u32::try_from(bytes).map_err(|_| denied("credential rename path too long"))?;
+    // usize storage provides FILE_RENAME_INFO alignment and room for its
+    // variable UTF-16 tail, including NUL. All bytes start initialized.
+    let mut storage = vec![0usize; bytes.div_ceil(std::mem::size_of::<usize>())];
+    let info = storage.as_mut_ptr().cast::<FILE_RENAME_INFO>();
+    let handle = HANDLE(file.as_raw_handle());
+    unsafe {
+        // FILE_RENAME_FLAG_REPLACE_IF_EXISTS | FILE_RENAME_FLAG_POSIX_SEMANTICS
+        // keeps existing readers on the old object while new opens see the new
+        // token. MoveFileExW rejects this case despite FILE_SHARE_DELETE.
+        // https://learn.microsoft.com/windows-hardware/drivers/ddi/ntifs/ns-ntifs-_file_rename_information
+        (*info).Anonymous.Flags = 0x1 | 0x2;
+        (*info).RootDirectory = HANDLE::default();
+        (*info).FileNameLength = ((target.len() - 1) * 2) as u32;
+        std::ptr::copy_nonoverlapping(target.as_ptr(), std::ptr::addr_of_mut!((*info).FileName).cast::<u16>(), target.len());
+        match SetFileInformationByHandle(handle, FileRenameInfoEx, info.cast(), length) {
+            Ok(()) => Ok(()),
+            // Older filesystems may lack extended rename flags. The classic
+            // atomic rename remains fail-closed if an open reader blocks it.
+            Err(error) if matches!(error.code().0 as u32 & 0xffff, 50 | 87) => {
+                (*info).Anonymous.ReplaceIfExists = true;
+                win(SetFileInformationByHandle(handle, FileRenameInfo, info.cast(), length))
+            },
+            Err(error) => Err(io::Error::other(error)),
+        }
+    }
 }
 pub(super) fn remove(directory: &Directory, path: &Path) -> io::Result<()> {
     // Only cleanup of our random rotation temporary; refuse a replaced alias.
