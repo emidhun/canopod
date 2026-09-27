@@ -1205,6 +1205,54 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn malformed_mcp_credential_keeps_app_alive_and_can_be_repaired() {
+        let directory = Directory::new();
+        let app = directory.context();
+        let store = CredentialStore::open(&directory.0).unwrap();
+        store
+            .rotate(CredentialKind::Mcp, app.owner().unwrap())
+            .unwrap();
+        std::fs::write(directory.0.join("credentials/mcp.token"), "invalid").unwrap();
+        drop(store);
+        drop(app);
+        let running = Running::with_directory(directory, Duration::from_secs(60)).await;
+        assert_eq!(
+            running
+                .request(reqwest::Method::GET, "status")
+                .send()
+                .await
+                .unwrap()
+                .status(),
+            StatusCode::OK
+        );
+        assert!(running.mcp.status()["error"].is_string());
+        assert_eq!(
+            std::fs::read_to_string(running.directory.0.join("credentials/mcp.token")).unwrap(),
+            "invalid"
+        );
+        assert_eq!(
+            running
+                .request(reqwest::Method::POST, "mcp/rotate-token")
+                .send()
+                .await
+                .unwrap()
+                .status(),
+            StatusCode::OK
+        );
+        let bearer = running.enable_mcp().await;
+        assert_eq!(
+            running
+                .rpc(&bearer, "tools/list", serde_json::json!({}))
+                .send()
+                .await
+                .unwrap()
+                .status(),
+            StatusCode::OK
+        );
+        running.finish().await;
+    }
+
+    #[tokio::test]
     async fn repository_removal_and_id_reuse_do_not_inherit_permission() {
         let running = Running::start().await;
         let bearer = running.enable_mcp().await;

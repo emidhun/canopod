@@ -294,3 +294,9 @@ If startup names an unverifiable `state.json` record, stop Canopy, preserve a ba
 The declared Rust minimum is 1.95, matching the locked `sysinfo` dependency; the ownership APIs alone require 1.89.
 
 HTTP review follow-up: silent sockets have an explicit five-second first-byte deadline; retiring connections drain for twenty seconds to cover headers, body and handler deadlines. Shutdown still drains for at most two seconds. Protocol parse errors generated before application middleware may omit the API version header. `stop` acknowledges asynchronous cleanup.
+
+### Transport review corrections
+
+Malformed MCP policy or credential content faults only the MCP endpoint (503); application status, stop and administration remain available. MCP status reports the recovery error. Disable revokes live access even when policy bytes are malformed and preserves those bytes. Back up and repair the named file before explicitly enabling again; a missing path binding in an older enabled policy requires setting enabled=false then enabling the selected repositories. Token rotation repairs malformed token content only after file privacy checks pass.
+
+Policy stores both the registered path and its canonical path for each explicitly selected ID. Cached requests compare the current registration against that binding; removing a repository or reusing its ID for another path does not inherit permission. Administrative filesystem work runs in an owned blocking transaction that publishes committed state even if the requester disconnects. Shutdown returns 503 stopping; token/policy revocation returns 401 authorization_changed.
