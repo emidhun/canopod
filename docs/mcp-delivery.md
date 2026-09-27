@@ -172,7 +172,7 @@ explicitly supplied data path; it is not narrowed to a presumed safe ancestor.
 Rotation writes a fixed private temporary per credential kind, flushes it, and atomically replaces the
 selected token. A pre-commit failure preserves the previous token. Unix flushes
 the directory after rename (macOS also uses F_FULLFSYNC on the written file);
-Windows requests write-through replacement but does not promise power-loss durability for same-volume rename. A post-rename directory-flush error is
+Windows renames the validated temporary by handle with POSIX replacement semantics, preserving existing readers of the previous token. It does not promise power-loss durability for directory metadata. A post-rename directory-flush error is
 returned alongside the committed new token as a durability warning, so callers
 cannot accidentally retain an old in-memory token after committing a new file.
 The matching runtime ownership guard enforces serialized rotations across stores; process-local generation numbers let concurrent publishers reject stale results.
