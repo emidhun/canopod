@@ -75,6 +75,7 @@ fn run_lifecycle(method: &str) {
     drop(owner);
 }
 
+#[cfg(unix)]
 #[test]
 fn foreground_logger_exposes_preserved_orphan_warning() {
     use std::os::unix::process::CommandExt;
@@ -82,8 +83,11 @@ fn foreground_logger_exposes_preserved_orphan_warning() {
     std::fs::create_dir_all(&dir.0).unwrap();
     let mut unrelated = ChildGuard(Command::new("sleep").arg("30").process_group(0).spawn().unwrap());
     std::fs::write(dir.0.join("state.json"), serde_json::to_vec(&serde_json::json!({"orphans":[{"svcKey":"stale", "pgid":unrelated.0.id(), "spawnTimeSecs":1}]})).unwrap()).unwrap();
+    let reservation = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+    let port = reservation.local_addr().unwrap().port().to_string();
+    drop(reservation);
     let mut backend = ChildGuard(Command::new(env!("CARGO_BIN_EXE_canopy-backend"))
-        .arg("serve").arg("--data-dir").arg(&dir.0).arg("--config-dir").arg(&dir.0).arg("--log-dir").arg(&dir.0).stderr(Stdio::piped()).spawn().unwrap());
+        .arg("serve").arg("--port").arg(port).arg("--data-dir").arg(&dir.0).arg("--config-dir").arg(&dir.0).arg("--log-dir").arg(&dir.0).stderr(Stdio::piped()).spawn().unwrap());
     let stderr = backend.0.stderr.take().unwrap();
     let (send, receive) = std::sync::mpsc::channel();
     let reader = std::thread::spawn(move || {
