@@ -111,7 +111,12 @@ fn open_handle_access(path: &Path, create: bool, directory: bool, private: bool,
     // Hard links are another path to a credential; disallow them as on Unix.
     let mut information = BY_HANDLE_FILE_INFORMATION::default();
     unsafe { win(GetFileInformationByHandle(handle, &mut information))?; }
-    if !directory && information.nNumberOfLinks != 1 { return Err(denied("credential must not have hard links")) }
+    // POSIX replacement can unlink an old token after this reader opened it
+    // but before validation. Zero links on that private handle is safe; more
+    // than one still means an alias. Newly created/renamed files must be linked.
+    if !directory && (information.nNumberOfLinks > 1 || ((create || rename) && information.nNumberOfLinks != 1)) {
+        return Err(denied("credential must not have hard links or an unlinked mutation target"));
+    }
     if private { validate_acl(&file, sd)?; }
         Ok(())
     })();
@@ -225,6 +230,20 @@ mod tests {
     use super::*;
     use crate::credentials::{tests::Fixture, CredentialKind, CredentialStore};
     use std::os::windows::fs::OpenOptionsExt;
+
+    #[test]
+    fn readers_still_reject_hard_link_aliases() {
+        let fixture = Fixture::new();
+        let owner = crate::ownership::RuntimeOwner::acquire(&fixture.0).unwrap();
+        let store = CredentialStore::open(&fixture.0).unwrap();
+        store.rotate(CredentialKind::Mcp, &owner).unwrap();
+        let alias = fixture.0.join("token-alias");
+        std::fs::hard_link(store.directory.join("mcp.token"), &alias).unwrap();
+        assert!(store.load(CredentialKind::Mcp).is_err());
+        assert!(store.rotate(CredentialKind::Mcp, &owner).is_err());
+        std::fs::remove_file(alias).unwrap();
+        assert!(store.load(CredentialKind::Mcp).unwrap().is_some());
+    }
 
     #[test]
     fn rotation_preserves_a_reader_of_the_previous_token() {
