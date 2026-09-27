@@ -83,8 +83,16 @@ pub(super) fn temporary_names(directory: &Directory, _: &Path) -> io::Result<Vec
     impl Drop for Dir { fn drop(&mut self) { unsafe { libc::closedir(self.0); } } }
     let stream = Dir(stream); let mut names = Vec::new();
     for _ in 0..1024 {
+        #[cfg(target_os = "linux")]
+        let errno = unsafe { libc::__errno_location() };
+        #[cfg(not(target_os = "linux"))]
+        let errno = unsafe { libc::__error() };
+        unsafe { *errno = 0; }
         let entry = unsafe { libc::readdir(stream.0) };
-        if entry.is_null() { return Ok(names) }
+        if entry.is_null() {
+            let error = unsafe { *errno };
+            return if error == 0 { Ok(names) } else { Err(io::Error::from_raw_os_error(error)) };
+        }
         let name = unsafe { std::ffi::CStr::from_ptr((*entry).d_name.as_ptr()) };
         if name.to_str().is_ok_and(super::rotation_temporary) { names.push(std::ffi::OsStr::from_bytes(name.to_bytes()).to_owned()); }
     }
