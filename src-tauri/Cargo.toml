@@ -56,6 +56,7 @@ getrandom = "0.4"
 subtle = "2.6"
 zeroize = "1"
 # Loopback application API; protocol-specific MCP handlers remain separate.
+# Pin the reviewed HTTP middleware behavior shared with the MCP transport.
 axum = { version = "=0.8.9", default-features = false, features = ["http1", "json", "tokio"] }
 hyper = { version = "1", features = ["server", "http1"] }
 hyper-util = { version = "0.1", features = ["tokio", "service"] }
