@@ -38,7 +38,7 @@ fn relative_open(directory: &Directory, path: &Path, flags: i32) -> io::Result<F
     let fail = flags & libc::O_EXCL != 0 && super::take_creation_failure();
     #[cfg(not(test))]
     let fail = false;
-    let result = if fail { Err(io::Error::other("injected post-create validation failure")) } else { validate(file) };
+    let result = if fail { Err(io::Error::other("injected post-create validation failure")) } else { validate(file, flags & libc::O_EXCL != 0) };
     if result.is_err() && flags & libc::O_EXCL != 0 {
         let mut current = std::mem::MaybeUninit::<libc::stat>::uninit();
         if unsafe { libc::fstatat(directory.as_raw_fd(), name.as_ptr(), current.as_mut_ptr(), libc::AT_SYMLINK_NOFOLLOW) } == 0 {
@@ -54,9 +54,11 @@ fn relative_open(directory: &Directory, path: &Path, flags: i32) -> io::Result<F
     result
 }
 
-fn validate(file: File) -> io::Result<File> {
+fn validate(file: File, require_linked: bool) -> io::Result<File> {
     let meta = file.metadata()?;
-    if !meta.is_file() || meta.nlink() != 1 || meta.uid() != unsafe { libc::geteuid() } || meta.mode() & 0o077 != 0 {
+    // An atomic rotation may unlink a reader between openat and fstat.
+    // Its private descriptor remains safe; a second hard link is never safe.
+    if !meta.is_file() || (meta.nlink() > 1 || (require_linked && meta.nlink() != 1)) || meta.uid() != unsafe { libc::geteuid() } || meta.mode() & 0o077 != 0 {
         return Err(denied("credential must be a private regular file owned by the current user, without hard links"));
     }
     Ok(file)
@@ -113,6 +115,22 @@ mod tests {
     use super::*;
     use crate::credentials::{tests::Fixture, CredentialKind, CredentialStore};
     use std::os::unix::fs::{PermissionsExt, symlink};
+
+    #[test]
+    fn opened_private_reader_remains_valid_after_atomic_replacement() {
+        let fixture = Fixture::new();
+        let owner = crate::ownership::RuntimeOwner::acquire(&fixture.0).unwrap();
+        let store = CredentialStore::open(&fixture.0).unwrap();
+        let old = store.rotate(CredentialKind::Mcp, &owner).unwrap().bearer;
+        let reader = File::open(store.directory.join("mcp.token")).unwrap();
+        store.rotate(CredentialKind::Mcp, &owner).unwrap();
+        assert_eq!(reader.metadata().unwrap().nlink(), 0);
+        assert!(validate(reader.try_clone().unwrap(), true).is_err());
+        let mut reader = validate(reader, false).unwrap();
+        let mut text = String::new();
+        std::io::Read::read_to_string(&mut reader, &mut text).unwrap();
+        assert!(old.matches(text.trim()));
+    }
 
     #[test]
     fn stale_cleanup_preserves_links_and_insecure_files() {
