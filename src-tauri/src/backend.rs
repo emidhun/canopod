@@ -318,68 +318,99 @@ mod tests {
     #[cfg(unix)]
     #[tokio::test]
     async fn terminal_shutdown_stops_background_job_control_groups_and_persists() {
-        let fixture = Fixture::new();
-        let app = open(fixture.paths()).unwrap();
-        app.state::<AppState>()
-            .settings
-            .write()
-            .embedded_terminal
-            .program = "/bin/bash".into();
-        app.state::<AppState>()
-            .settings
-            .write()
-            .embedded_terminal
-            .args = "--noprofile --norc".into();
-        let pid_file = fixture.0.join("background-pid");
-        let command = format!("set -m; sleep 30 & echo $! > '{}'; wait", pid_file.display());
-        crate::terminal::open(
-            &app,
-            app.state(),
-            "fixture::shell::test",
-            fixture.0.to_str().unwrap(),
-            80,
-            24,
-            Some(command),
-        )
-        .unwrap();
-        let deadline = std::time::Instant::now() + Duration::from_secs(5);
-        let pid: u32 = loop {
-            if let Ok(text) = std::fs::read_to_string(&pid_file) {
-                if let Ok(pid) = text.trim().parse() {
-                    break pid;
+        for shell_exits in [false, true] {
+            let fixture = Fixture::new();
+            let app = open(fixture.paths()).unwrap();
+            app.state::<AppState>()
+                .settings
+                .write()
+                .embedded_terminal
+                .program = "/bin/bash".into();
+            app.state::<AppState>()
+                .settings
+                .write()
+                .embedded_terminal
+                .args = "--noprofile --norc".into();
+            let pid_file = fixture.0.join("background-pid");
+            let ending = if shell_exits { "disown; exit" } else { "wait" };
+            let command = format!(
+                "trap '' HUP; set -m; sleep 30 & echo $! > '{}'; {ending}",
+                pid_file.display()
+            );
+            crate::terminal::open(
+                &app,
+                app.state(),
+                "fixture::shell::test",
+                fixture.0.to_str().unwrap(),
+                80,
+                24,
+                Some(command),
+            )
+            .unwrap();
+            let deadline = std::time::Instant::now() + Duration::from_secs(5);
+            let pid: u32 = loop {
+                if let Ok(text) = std::fs::read_to_string(&pid_file) {
+                    if let Ok(pid) = text.trim().parse() {
+                        break pid;
+                    }
+                }
+                assert!(
+                    std::time::Instant::now() < deadline,
+                    "PTY background command did not start"
+                );
+                tokio::time::sleep(Duration::from_millis(20)).await;
+            };
+            assert_ne!(unsafe { libc::getpgid(pid as i32) }, unsafe {
+                libc::getsid(pid as i32)
+            });
+            if shell_exits {
+                let leader = unsafe { libc::getsid(pid as i32) };
+                let deadline = std::time::Instant::now() + Duration::from_secs(5);
+                loop {
+                    use sysinfo::{
+                        Pid, ProcessRefreshKind, ProcessStatus, ProcessesToUpdate, System,
+                    };
+                    let mut system = System::new();
+                    system.refresh_processes_specifics(
+                        ProcessesToUpdate::Some(&[Pid::from_u32(leader as u32)]),
+                        true,
+                        ProcessRefreshKind::nothing(),
+                    );
+                    if system
+                        .process(Pid::from_u32(leader as u32))
+                        .is_none_or(|p| p.status() == ProcessStatus::Zombie)
+                    {
+                        break;
+                    }
+                    assert!(std::time::Instant::now() < deadline, "shell did not exit");
+                    tokio::time::sleep(Duration::from_millis(20)).await;
                 }
             }
-            assert!(
-                std::time::Instant::now() < deadline,
-                "PTY background command did not start"
-            );
-            tokio::time::sleep(Duration::from_millis(20)).await;
-        };
-        assert_ne!(unsafe { libc::getpgid(pid as i32) }, unsafe { libc::getsid(pid as i32) });
-        crate::terminal::close_all(&app);
-        let deadline = std::time::Instant::now() + Duration::from_secs(5);
-        let persisted: settings::RuntimeState =
-            settings::load_checked(&fixture.0.join("state.json")).unwrap();
-        assert!(persisted.terminal_orphans.is_empty());
-        loop {
-            use sysinfo::{Pid, ProcessRefreshKind, ProcessStatus, ProcessesToUpdate, System};
-            let mut system = System::new();
-            system.refresh_processes_specifics(
-                ProcessesToUpdate::Some(&[Pid::from_u32(pid)]),
-                true,
-                ProcessRefreshKind::nothing(),
-            );
-            if system
-                .process(Pid::from_u32(pid))
-                .is_none_or(|p| p.status() == ProcessStatus::Zombie)
-            {
-                break;
+            crate::terminal::close_all(&app);
+            let deadline = std::time::Instant::now() + Duration::from_secs(5);
+            let persisted: settings::RuntimeState =
+                settings::load_checked(&fixture.0.join("state.json")).unwrap();
+            assert!(persisted.terminal_orphans.is_empty());
+            loop {
+                use sysinfo::{Pid, ProcessRefreshKind, ProcessStatus, ProcessesToUpdate, System};
+                let mut system = System::new();
+                system.refresh_processes_specifics(
+                    ProcessesToUpdate::Some(&[Pid::from_u32(pid)]),
+                    true,
+                    ProcessRefreshKind::nothing(),
+                );
+                if system
+                    .process(Pid::from_u32(pid))
+                    .is_none_or(|p| p.status() == ProcessStatus::Zombie)
+                {
+                    break;
+                }
+                assert!(
+                    std::time::Instant::now() < deadline,
+                    "background PTY process survived shutdown"
+                );
+                tokio::time::sleep(Duration::from_millis(20)).await;
             }
-            assert!(
-                std::time::Instant::now() < deadline,
-                "background PTY process survived shutdown"
-            );
-            tokio::time::sleep(Duration::from_millis(20)).await;
         }
     }
 
