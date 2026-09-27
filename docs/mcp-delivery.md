@@ -215,7 +215,9 @@ independent supervisor to stop. Disconnecting a client does not request shutdown
 
 The control server admits 32 connections and 8 authenticated requests, limits
 bodies to 64 KiB, gives headers and request bodies five seconds each, and caps
-handlers at ten seconds. Control connections have a 60-second maximum lifetime.
+handlers at ten seconds. Control connections retire after 60 seconds, with up
+to twenty seconds to drain an active request. Silent sockets have a five-second
+first-byte deadline.
 Header timeout is applied in Hyper itself; request middleware alone cannot time
 out headers it has not received yet. Shutdown closes admission and gives accepted
 connections two seconds to flush while child cleanup proceeds independently.
