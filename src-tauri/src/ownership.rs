@@ -98,18 +98,6 @@ pub fn refuse_legacy_desktop() -> Result<(), String> {
     }
     for (pid, process) in system.processes() {
         if *pid != own && legacy_name(&process.name().to_string_lossy()) {
-            if let Some(exe) = process.exe() {
-                let sibling = std::env::current_exe()
-                    .ok()
-                    .is_some_and(|current| current.parent() == exe.parent());
-                let bundle = exe
-                    .to_string_lossy()
-                    .to_lowercase()
-                    .ends_with("/canopy.app/contents/macos/canopy");
-                if !sibling && !bundle {
-                    continue;
-                }
-            }
             return Err(format!("a Canopy desktop may still own runtime state (pid {pid}); quit it before starting the backend"));
         }
     }
@@ -120,18 +108,33 @@ fn legacy_name(name: &str) -> bool {
     name.eq_ignore_ascii_case("canopy") || name.eq_ignore_ascii_case("canopy.exe")
 }
 
+/// Raw kernel creation identity, stable when the system clock is stepped.
+#[cfg(target_os = "linux")]
+fn process_start_token(pid: u32) -> Option<u64> {
+    let stat = std::fs::read_to_string(format!("/proc/{pid}/stat")).ok()?;
+    stat.rsplit_once(')')?.1.split_whitespace().nth(19)?.parse().ok()
+}
+#[cfg(target_os = "macos")]
+fn process_start_token(pid: u32) -> Option<u64> {
+    let mut info = std::mem::MaybeUninit::<libc::proc_bsdinfo>::uninit();
+    let size = std::mem::size_of::<libc::proc_bsdinfo>() as i32;
+    if unsafe { libc::proc_pidinfo(pid as i32, libc::PROC_PIDTBSDINFO, 0, info.as_mut_ptr().cast(), size) } != size { return None }
+    let info = unsafe { info.assume_init() };
+    info.pbi_start_tvsec.checked_mul(1_000_000)?.checked_add(info.pbi_start_tvusec)
+}
+#[cfg(all(unix, not(any(target_os = "linux", target_os = "macos"))))]
+fn process_start_token(_: u32) -> Option<u64> { None }
+
 #[cfg(unix)]
 pub(crate) fn current_process_owner() -> Option<crate::settings::ProcessOwner> {
-    use sysinfo::{Pid, ProcessRefreshKind, ProcessesToUpdate, System};
-    let pid = std::process::id();
-    let mut system = System::new();
-    system.refresh_processes_specifics(
-        ProcessesToUpdate::Some(&[Pid::from_u32(pid)]),
-        false,
-        ProcessRefreshKind::nothing(),
-    );
-    let started = system.process(Pid::from_u32(pid))?.start_time();
+    let pid = std::process::id(); let started = process_start_token(pid)?;
     (started > 0).then_some(crate::settings::ProcessOwner { pid, started })
+}
+
+#[cfg(unix)]
+pub(crate) fn group_may_be_alive(pgid: i32) -> bool {
+    pgid > 1 && (unsafe { libc::killpg(pgid, 0) } == 0
+        || std::io::Error::last_os_error().raw_os_error() != Some(libc::ESRCH))
 }
 
 #[cfg(unix)]
@@ -153,9 +156,8 @@ pub(crate) fn orphan_owner_gone(pid: u32, owner: Option<&crate::settings::Proces
             false,
             ProcessRefreshKind::nothing(),
         );
-        return system
-            .process(Pid::from_u32(owner.pid))
-            .is_some_and(|p| p.start_time() > 0 && p.start_time() != owner.started);
+        return system.process(Pid::from_u32(owner.pid)).is_some_and(|p| p.status() == sysinfo::ProcessStatus::Zombie)
+            || process_start_token(owner.pid).is_some_and(|started| started > 0 && started != owner.started);
     }
     orphan_parent_verified(pid)
 }
@@ -221,13 +223,13 @@ pub fn verify_recovery(state: &crate::settings::RuntimeState) -> Result<(), Stri
         if pid <= 1 {
             continue;
         }
-        let live = unsafe { libc::killpg(pid, 0) == 0 };
+        let live = group_may_be_alive(pid);
         if live
             && (started == 0
                 || (crate::services::proc_start_time_matches(pid as u32, started)
                     && !orphan_owner_gone(pid as u32, owner)))
         {
-            return Err(format!("state.json: cannot verify {kind} record for process group {pid}; no process was signalled. Inspect the saved record and running process identity. If the record is stale, preserve a backup and remove only that record before restarting; do not kill an unrelated process"));
+            return Err(format!("cannot verify state.json {kind} record for process group {pid}; no process was signalled. Inspect the saved record and running process identity. If the record is stale, preserve a backup and remove only that record before restarting; do not kill an unrelated process"));
         }
     }
     #[cfg(not(unix))]

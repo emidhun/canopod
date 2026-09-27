@@ -328,7 +328,7 @@ mod tests {
             .embedded_terminal
             .args = "--noprofile --norc".into();
         let pid_file = fixture.0.join("background-pid");
-        let command = format!("sleep 30 & echo $! > '{}'; wait", pid_file.display());
+        let command = format!("set -m; sleep 30 & echo $! > '{}'; wait", pid_file.display());
         crate::terminal::open(
             &app,
             app.state(),
@@ -352,7 +352,9 @@ mod tests {
             );
             tokio::time::sleep(Duration::from_millis(20)).await;
         };
+        assert_ne!(unsafe { libc::getpgid(pid as i32) }, unsafe { libc::getsid(pid as i32) });
         crate::terminal::close_all(&app);
+        let deadline = std::time::Instant::now() + Duration::from_secs(5);
         let persisted: settings::RuntimeState =
             settings::load_checked(&fixture.0.join("state.json")).unwrap();
         assert!(persisted.terminal_orphans.is_empty());
