@@ -252,11 +252,16 @@ canopy-backend mcp enable
 Repeating `enable` with `--repo` replaces the allowlist; omitting it preserves the
 previous list. Enable requires a nonempty list of registered IDs. The policy is
 stored separately in `mcp.json`, never in a legacy desktop whole-object save.
-Malformed or externally changed policy is preserved and requires restart before
-another edit. Policy writes commit before becoming live. Credentials remain in
+Malformed or externally changed policy is preserved. MCP status reports recovery
+instructions while application control remains available. Enable requires repair;
+disable always revokes live access and reports any persistence failure in status.
+If disable reports a persistence error, repair the policy before restarting: the
+old enabled policy can otherwise become active again. Successful policy writes
+commit before becoming live. Credentials remain in
 the private MCP token file; no control command prints them. Ordinary restart and
 re-enable preserve the token and endpoint. Rotation requires updating the client
-credential. Missing credentials for an enabled policy fail startup explicitly.
+credential. Missing credentials fault MCP without preventing backend startup;
+use application administration to rotate the MCP token.
 
 MCP authorization runs before body collection/SDK dispatch. It rejects app
 credentials, foreign/duplicate Host or Origin, and invalid bearer values; native
@@ -279,11 +284,6 @@ permission profiles, private client configuration export, roots inference,
 remaining read tools, jobs, human approvals, packaged client validation on every
 platform, and measured performance budgets. Local debug client checks do not
 substitute for the packaged cross-platform acceptance matrix.
-RPC. Snapshot reconciliation, browser sessions/CSRF, desktop attachment, MCP
-transport and live token-rotation/session invalidation remain later slices.
-This slice does not create an HTTP listener, enable MCP, generate credentials
-at startup, or change permission profiles. Wire authentication, revocation and
-session invalidation through the later application/MCP transport layers.
 
 ### Orphan recovery diagnostics
 
