@@ -81,3 +81,5 @@ process-global static. Tests construct and use the context without a Tauri
 application, check shared leases/state, preserve event payloads, skip unobserved
 serialization, and schedule work from a synchronous caller. The `core` CI job
 builds and tests on Linux without installing desktop system libraries.
+
+The declared Rust minimum is 1.95, matching the locked `sysinfo` dependency; the ownership APIs alone require 1.89.
