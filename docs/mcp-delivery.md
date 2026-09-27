@@ -123,12 +123,12 @@ startup entirely: merely disabling sweeping would still permit duplicate state
 writers. Existing invalid/unreadable settings or runtime JSON abort startup
 without quarantine or replacement.
 
-Unix recovery checks each recorded live group before any sweep. A matching
-process whose parent is not verifiably init is left alone, and headless startup
-refuses takeover. Both desktop and headless sweepers now retain skipped records.
-Unknown legacy spawn times also refuse headless recovery. Containers with a
-subreaper may require manually stopping the old children; no force-takeover flag
-bypasses this. This improves migration safety but is deliberately conservative.
+Unix recovery checks each recorded live group before any sweep. New records
+include the spawning owner's PID and raw kernel start identity; after that owner
+dies, verified groups can be recovered even under a Linux subreaper. Legacy
+records require a recognized init parent and matching group birth time. Both
+hosts retain unverified or inaccessible live records through later state writes;
+headless startup reports the exact record requiring manual recovery.
 
 The foreground host owns periodic refresh, statistics, update and terminal
 monitor tasks. An unexpected loop exit triggers cleanup and a nonzero exit,
@@ -149,5 +149,5 @@ acceptance gates for #156; the foreground binary alone does not complete it.
 
 The backend logs to stderr (`RUST_LOG=debug` increases detail; this CLI accepts a level, not module directives), so supervisors can capture sweep warnings. New process records include the spawning backend PID and start identity: adopted children are recoverable after that owner dies, including under Linux subreapers. Legacy records without that identity only recover automatically under a recognized init process and with a matching group birth time. Unverified live records survive subsequent service and terminal state writes.
 
-If startup names an unverifiable `state.json` record, stop Canopy, preserve a backup of that file, inspect the named `orphans` or `terminalOrphans` entry and the running PID's identity, then remove only an entry confirmed stale. Do not kill an unrelated process merely because its PID matches an old record. Library hosts and CLI directories with both config and data explicitly isolated do not reject an unrelated default-directory desktop; the default CLI host retains the legacy-desktop exclusion check.
+If startup names an unverifiable `state.json` record, stop Canopy, preserve a backup, inspect the named `orphans` or `terminalOrphans` entry and the running PID identity, then remove only an entry confirmed stale. Do not kill an unrelated process merely because its PID matches an old record. Library hosts and CLI hosts with both config and data explicitly isolated do not reject an unrelated default-directory desktop; shared-default CLI hosts retain the legacy-desktop exclusion check.
 The declared Rust minimum is 1.95, matching the locked `sysinfo` dependency; the ownership APIs alone require 1.89.
