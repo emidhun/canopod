@@ -11,9 +11,16 @@ use std::path::Path;
 
 pub struct RuntimeOwner {
     lock: File,
+    data: std::path::PathBuf,
+    credential_serial: parking_lot::Mutex<u64>,
 }
 
 impl RuntimeOwner {
+    pub(crate) fn credential_mutation(&self, data: &Path) -> std::io::Result<parking_lot::MutexGuard<'_, u64>> {
+        if data != self.data { return Err(std::io::Error::new(std::io::ErrorKind::PermissionDenied, "credential writer requires ownership of its data directory")) }
+        Ok(self.credential_serial.lock())
+    }
+
     pub fn acquire(data_dir: &Path) -> Result<Self, String> {
         fs::create_dir_all(data_dir)
             .map_err(|e| format!("create runtime directory {}: {e}", data_dir.display()))?;
@@ -69,7 +76,7 @@ impl RuntimeOwner {
                 format!("lock runtime directory {}: {e}", data_dir.display())
             }
         })?;
-        Ok(Self { lock: file })
+        Ok(Self { lock: file, data: fs::canonicalize(data_dir).map_err(|e| e.to_string())?, credential_serial: parking_lot::Mutex::new(0) })
     }
 }
 
