@@ -74,12 +74,11 @@ fn run() -> Result<(), String> {
         *target =
             std::fs::canonicalize(&path).map_err(|e| format!("resolve {}: {e}", path.display()))?;
     }
-    // Legacy desktop builds only use the platform default data directory.
-    // An explicitly isolated directory must not be blocked by unrelated apps.
-    let default_data = backend::default_paths()?.data;
-    if std::fs::canonicalize(&paths.data).unwrap_or(paths.data.clone())
-        == std::fs::canonicalize(&default_data).unwrap_or(default_data)
-    {
+    // Either shared directory permits legacy state races. Isolated hosts must
+    // override both config and data; binary install locations are not evidence.
+    let defaults = backend::default_paths()?;
+    let canonical = |path: &std::path::Path| std::fs::canonicalize(path).unwrap_or_else(|_| path.to_owned());
+    if canonical(&paths.data) == canonical(&defaults.data) || canonical(&paths.config) == canonical(&defaults.config) {
         canopy_lib::ownership::refuse_legacy_desktop()?;
     }
     let runtime = tokio::runtime::Runtime::new().map_err(|e| format!("start executor: {e}"))?;

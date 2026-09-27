@@ -812,7 +812,7 @@ pub(crate) fn persist_orphans(app: &RuntimeContext) {
     let state = app.state::<AppState>();
     {
         let mut retained = state.retained_terminal_orphans.lock();
-        retained.retain(|o| o.pgid > 1 && unsafe { libc::killpg(o.pgid, 0) == 0 });
+        retained.retain(|o| crate::ownership::group_may_be_alive(o.pgid));
         orphans.extend(retained.iter().cloned());
     }
     let runtime = {
@@ -847,7 +847,7 @@ pub fn sweep_orphans(app: &RuntimeContext) {
         if o.pgid <= 1 {
             continue;
         }
-        let alive = unsafe { libc::killpg(o.pgid, 0) == 0 };
+        let alive = crate::ownership::group_may_be_alive(o.pgid);
         if alive {
             if o.spawn_time_secs == 0
                 || !crate::services::proc_start_time_matches(o.pgid as u32, o.spawn_time_secs)
@@ -861,7 +861,7 @@ pub fn sweep_orphans(app: &RuntimeContext) {
                 libc::killpg(o.pgid, libc::SIGTERM);
             }
             // Retain until a later probe proves it exited, including TERM refusal.
-            if unsafe { libc::killpg(o.pgid, 0) == 0 } { retained.push(o.clone()); }
+            if crate::ownership::group_may_be_alive(o.pgid) { retained.push(o.clone()); }
         }
     }
     *app.state::<AppState>().retained_terminal_orphans.lock() = retained;

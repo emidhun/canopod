@@ -48,7 +48,7 @@ fn foreground_logger_exposes_preserved_orphan_warning() {
     use std::os::unix::process::CommandExt;
     let dir = Directory(std::env::temp_dir().join(format!("canopy-backend-warning-{}", std::process::id())));
     std::fs::create_dir_all(&dir.0).unwrap();
-    let unrelated = ChildGuard(Command::new("sleep").arg("30").process_group(0).spawn().unwrap());
+    let mut unrelated = ChildGuard(Command::new("sleep").arg("30").process_group(0).spawn().unwrap());
     std::fs::write(dir.0.join("state.json"), serde_json::to_vec(&serde_json::json!({"orphans":[{"svcKey":"stale", "pgid":unrelated.0.id(), "spawnTimeSecs":1}]})).unwrap()).unwrap();
     let mut backend = ChildGuard(Command::new(env!("CARGO_BIN_EXE_canopy-backend"))
         .arg("serve").arg("--data-dir").arg(&dir.0).arg("--config-dir").arg(&dir.0).arg("--log-dir").arg(&dir.0).stderr(Stdio::piped()).spawn().unwrap());
@@ -66,4 +66,5 @@ fn foreground_logger_exposes_preserved_orphan_warning() {
         assert!(Instant::now() < deadline); std::thread::sleep(Duration::from_millis(20));
     }
     reader.join().unwrap(); warning.expect("sweep warning was not written to stderr");
+    assert!(unrelated.0.try_wait().unwrap().is_none(), "unrelated process was signalled");
 }
