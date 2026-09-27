@@ -107,7 +107,18 @@ pub(super) fn replace(directory: &Directory, from: &Path, to: &Path) -> io::Resu
     Ok(())
 }
 pub(super) fn remove(directory: &Directory, path: &Path) -> io::Result<()> {
-    if unsafe { libc::unlinkat(directory.as_raw_fd(), name(path)?.as_ptr(), 0) } < 0 { return Err(io::Error::last_os_error()) }
+    let file = validate(relative_open(directory, path, libc::O_RDONLY)?, true)?;
+    let identity = file.metadata()?;
+    let name = name(path)?;
+    let mut current = std::mem::MaybeUninit::<libc::stat>::uninit();
+    if unsafe { libc::fstatat(directory.as_raw_fd(), name.as_ptr(), current.as_mut_ptr(), libc::AT_SYMLINK_NOFOLLOW) } < 0 { return Err(io::Error::last_os_error()) }
+    let current = unsafe { current.assume_init() };
+    #[allow(clippy::unnecessary_cast)] // libc identity field widths vary by Unix platform
+    let same = current.st_dev as u64 == identity.dev() && current.st_ino as u64 == identity.ino();
+    if !same { return Err(denied("credential cleanup path changed after validation")) }
+    // The pinned private directory and runtime writer guard exclude other
+    // principals and concurrent Canopy mutations; same-user edits are trusted.
+    if unsafe { libc::unlinkat(directory.as_raw_fd(), name.as_ptr(), 0) } < 0 { return Err(io::Error::last_os_error()) }
     Ok(())
 }
 
