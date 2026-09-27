@@ -52,6 +52,9 @@ pub struct CredentialStore { directory: PathBuf, anchor: platform::Directory }
 /// Once rename succeeds the new credential is committed and must become the
 /// active value even if directory fsync subsequently fails. Returning that
 /// warning separately avoids an old in-memory token with a new token on disk.
+/// Windows has no portable directory fsync: None only means no reported error,
+/// not a power-loss durability guarantee. Generations are process-local and
+/// callers publishing rotations concurrently must reject older generations.
 pub struct Rotation {
     pub bearer: Bearer,
     pub generation: u64,
@@ -97,14 +100,15 @@ impl CredentialStore {
         }
         let bearer = Bearer::generate()?;
         // Cleanup is a writer action, never performed by read-only clients.
+        let temporary = self.directory.join(format!(".rotate-{}", kind.filename()));
         for name in platform::temporary_names(&self.anchor, &self.directory)? {
             let path = self.directory.join(name);
             match platform::open(&self.anchor, &path) {
                 Ok(file) => { drop(file); platform::remove(&self.anchor, &path)?; }
+                Err(error) if path == temporary => return Err(io::Error::new(io::ErrorKind::PermissionDenied, format!("unsafe rotation temporary {}; preserve and repair it before retrying: {error}", path.display()))),
                 Err(error) => log::warn!("preserving unsafe credential temporary {}: {error}", path.display()),
             }
         }
-        let temporary = self.directory.join(format!(".rotate-{}", kind.filename()));
         let mut file = platform::create(&self.anchor, &temporary)?;
         let outcome = (|| {
             file.write_all(&bearer.0)?;
@@ -169,6 +173,9 @@ mod tests {
             }
             threads.into_iter().flat_map(|thread| thread.join().unwrap()).collect::<Vec<_>>()
         });
+        let mut generations: Vec<_> = rotations.iter().map(|r| r.generation).collect();
+        generations.sort_unstable();
+        assert_eq!(generations, (1..=32).collect::<Vec<_>>());
         let latest = rotations.iter().max_by_key(|r| r.generation).unwrap();
         assert!(rotations.iter().all(|r| r.durability_warning.is_none()));
         assert!(store.load(CredentialKind::Mcp).unwrap().unwrap().matches(latest.bearer.expose()));

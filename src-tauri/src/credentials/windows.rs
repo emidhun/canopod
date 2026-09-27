@@ -110,7 +110,7 @@ fn open_handle(path: &Path, create: bool, directory: bool, private: bool, sd: &A
     if let Err(error) = validation {
         if create {
             // Delete the exact newly created handle, even if validation failed.
-            let disposition = FILE_DISPOSITION_INFO { DeleteFile: true.into() };
+            let disposition = FILE_DISPOSITION_INFO { DeleteFile: true };
             unsafe { let _ = SetFileInformationByHandle(handle, FileDispositionInfo, (&disposition as *const FILE_DISPOSITION_INFO).cast(), std::mem::size_of::<FILE_DISPOSITION_INFO>() as u32); }
         }
         return Err(error);
@@ -158,8 +158,9 @@ pub(super) fn check_directory(directory: &Directory) -> io::Result<()> {
 }
 pub(super) fn create(directory: &Directory, path: &Path) -> io::Result<File> { open_handle(path, true, false, true, &directory.descriptor) }
 pub(super) fn open(directory: &Directory, path: &Path) -> io::Result<File> { open_handle(path, false, false, true, &directory.descriptor) }
-// MoveFileExW below uses MOVEFILE_WRITE_THROUGH; no separate directory
-// flush is required/supported by this Win32 strategy.
+// Win32 does not provide a portable directory fsync here. WRITE_THROUGH
+// covers copy/delete moves, not same-volume rename durability. Ok means no
+// reported I/O failure, not a guarantee against power loss.
 pub(super) fn sync_directory(_: &Directory) -> io::Result<()> { Ok(()) }
 pub(super) fn sync_file(file: &File) -> io::Result<()> { file.sync_all() }
 pub(super) fn replace(_: &Directory, from: &Path, to: &Path) -> io::Result<()> {
