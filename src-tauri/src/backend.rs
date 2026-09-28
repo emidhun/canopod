@@ -44,7 +44,7 @@ impl Host for HeadlessHost {
     fn badge(&self, _: &str, _: i64) {}
 }
 
-/// No state is read, quarantined, or swept until both owner checks succeed.
+/// No state is read, quarantined, or swept until runtime ownership is acquired.
 /// Every task's context clone retains the OS lock, including during shutdown.
 pub fn open(paths: RuntimePaths) -> Result<RuntimeContext, String> {
     let owner = ownership::RuntimeOwner::acquire(&paths.data)?;
@@ -512,11 +512,13 @@ mod tests {
             .subscribe(crate::events::SubscriptionKind::Application)
             .unwrap();
         let (send, receive) = tokio::sync::oneshot::channel();
+        let (ready, started) = tokio::sync::oneshot::channel();
         let host = tokio::spawn(serve(app.clone(), async {
+            ready.send(()).unwrap();
             receive.await.map_err(|e| e.to_string())
         }));
         drop(client);
-        tokio::time::sleep(Duration::from_millis(100)).await;
+        tokio::time::timeout(Duration::from_secs(3), started).await.unwrap().unwrap();
         let survived = app
             .state::<crate::services::ProcTable>()
             .procs
@@ -536,7 +538,7 @@ mod tests {
 
     #[cfg(unix)]
     #[tokio::test]
-    async fn a_live_legacy_child_is_never_recovered_as_an_orphan() {
+    async fn legacy_records_are_retained_but_reused_pid_records_expire() {
         use std::os::unix::process::CommandExt;
         let mut child = std::process::Command::new("sleep")
             .arg("30")
@@ -583,19 +585,21 @@ mod tests {
         crate::terminal::persist_orphans(&app);
         let saved: settings::RuntimeState =
             settings::load_checked(&fixture.0.join("state.json")).unwrap();
-        assert_eq!(saved.orphans.len(), 2);
-        assert_eq!(saved.terminal_orphans.len(), 2);
-        let retained = app.state::<AppState>().runtime.read().orphans.len() == 2
+        let retained = app.state::<AppState>().runtime.read().orphans.len() == 1
             && app
                 .state::<AppState>()
                 .runtime
                 .read()
                 .terminal_orphans
                 .len()
-                == 2;
+                == 1;
         let still_alive = child.try_wait().unwrap().is_none();
         child.kill().unwrap();
         child.wait().unwrap();
+        assert_eq!(saved.orphans.len(), 1);
+        assert_eq!(saved.orphans[0].spawn_time_secs, 0);
+        assert_eq!(saved.terminal_orphans.len(), 1);
+        assert_eq!(saved.terminal_orphans[0].spawn_time_secs, 0);
         assert!(rejected && parent_rejected && still_alive && retained);
     }
 }
