@@ -249,6 +249,15 @@ impl Server {
             .map_err(|e| {
                 format!("bind backend at 127.0.0.1:{port}: {e}; choose a free --port explicitly")
             })?;
+        Self::from_listener(app, listener, stop)
+    }
+
+    fn from_listener(app: RuntimeContext, listener: TcpListener, stop: watch::Sender<bool>) -> Result<Self, String> {
+        let address = listener.local_addr().map_err(|e| format!("read backend listener address: {e}"))?;
+        if address.ip() != std::net::IpAddr::V4(std::net::Ipv4Addr::LOCALHOST) || address.port() < 1024 {
+            return Err("backend listener must use 127.0.0.1 and a port between 1024 and 65535".into());
+        }
+        let port = address.port();
         let credentials = CredentialStore::open(&app.path().data)
             .map_err(|e| format!("open application credentials: {e}"))?;
         let bearer = match credentials
@@ -459,12 +468,9 @@ mod tests {
             let directory = Directory::new();
             let reservation = TcpListener::bind("127.0.0.1:0").await.unwrap();
             let port = reservation.local_addr().unwrap().port();
-            drop(reservation);
             let (shutdown, _) = watch::channel(false);
             let app = directory.context();
-            let mut server = Server::bind(app.clone(), port, shutdown.clone())
-                .await
-                .unwrap();
+            let mut server = Server::from_listener(app.clone(), reservation, shutdown.clone()).unwrap();
             server.connection_lifetime = lifetime;
             let bearer = CredentialStore::open_existing(&directory.0)
                 .unwrap()
@@ -505,6 +511,19 @@ mod tests {
                 .unwrap()
                 .unwrap();
         }
+    }
+
+    #[tokio::test]
+    async fn adopts_an_already_bound_listener() {
+        let directory = Directory::new();
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let address = listener.local_addr().unwrap();
+        let (stop, _) = watch::channel(false);
+        let server = Server::from_listener(directory.context(), listener, stop).unwrap();
+        assert_eq!(server.listener.local_addr().unwrap(), address);
+        assert!(TcpListener::bind(address).await.is_err());
+        drop(server);
+        assert!(TcpListener::bind(address).await.is_ok());
     }
 
     #[tokio::test]
