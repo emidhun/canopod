@@ -33,7 +33,7 @@ pub fn spawn_stats_task(app: RuntimeContext) -> tokio::task::JoinHandle<()> {
             // enumerating every process on the machine 30×/min is the app's
             // steady-state CPU cost — skip it while nothing is on screen
             // (the stats card can't be seen from the tray)
-            if !app.interested(crate::runtime::Audience::Main) {
+            if !should_poll(&app) {
                 continue;
             }
 
@@ -88,4 +88,10 @@ pub fn spawn_stats_task(app: RuntimeContext) -> tokio::task::JoinHandle<()> {
             let _ = app.emit_to(crate::runtime::Audience::Main, "service:stats", &StatsEvent { entries });
         }
     })
+}
+
+// Event interest can come from a machine client; only a visible UI needs
+// continuous system-wide sampling for its stats card.
+pub(crate) fn should_poll(app: &RuntimeContext) -> bool {
+    app.host().user_present()
 }

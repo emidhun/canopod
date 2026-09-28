@@ -284,6 +284,9 @@ pub async fn open_in_editor(app: AppHandle, wt_key: String) -> Result<(), Canopy
     Ok(())
 }
 
+/// Open a file only after canonicalizing both paths and checking containment.
+/// This rejects traversal and symlinks outside the selected worktree before
+/// passing the shell-quoted path to the configured editor.
 #[tauri::command]
 pub async fn open_file_in_editor(
     app: AppHandle,
@@ -325,6 +328,7 @@ pub async fn open_file_in_editor(
     Ok(())
 }
 
+/// Reveal the selected worktree in the platform file manager.
 #[tauri::command]
 pub fn reveal_in_finder(wt_key: String) -> Result<(), CanopyError> {
     #[cfg(target_os = "macos")]
@@ -693,6 +697,8 @@ pub fn save_repo_config(
     )
 }
 
+// ── disk usage ────────────────────────────────────────────────────────────
+
 #[tauri::command]
 pub fn get_disk_usage(app: AppHandle) -> std::collections::HashMap<String, crate::disk::DiskUsage> {
     let context = runtime(&app);
@@ -720,6 +726,7 @@ pub fn list_experiments() -> Vec<crate::diagnostics::Experiment> {
     crate::operations::list_experiments()
 }
 
+/// Reveal the app log directory for diagnosis without exposing arbitrary paths.
 #[tauri::command]
 pub fn open_log_dir(app: AppHandle) -> Result<(), CanopyError> {
     let dir = app
@@ -754,6 +761,7 @@ pub fn crash_report_count(app: AppHandle) -> usize {
     crate::operations::crash_report_count(context)
 }
 
+/// Reveal the crash-report directory used by this application.
 #[tauri::command]
 pub fn open_crash_reports(app: AppHandle) -> Result<(), CanopyError> {
     let dir = crate::updates::crash_dir(&runtime(&app))

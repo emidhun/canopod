@@ -144,10 +144,8 @@ pub fn request(app: &RuntimeContext, wt_keys: Vec<String>, force: bool) {
             let path = next.clone();
             let measured = app.executor().spawn_blocking(move || measure(&path)).await;
             let Ok(usage) = measured else { continue };
-            {
-                let cache = app.state::<DiskCache>();
-                cache.usage.lock().insert(next.clone(), usage);
-            }
+            let cache = app.state::<DiskCache>();
+            cache.usage.lock().insert(next.clone(), usage);
             let _ = app.emit(
                 "worktree:disk",
                 &DiskEvent {
