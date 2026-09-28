@@ -602,11 +602,17 @@ pub async fn refresh_git_meta(app: &RuntimeContext, wt_path: &str) {
 /// once (tray click + window show is exactly that), and each full refresh is
 /// 2 git spawns per worktree — no reason to run three copies concurrently.
 pub async fn refresh_all(app: &RuntimeContext) {
+    with_refresh_guard(app, async {
+        let _ = refresh_tree(app).await;
+        refresh_all_git_meta(app).await;
+    }).await;
+}
+
+async fn with_refresh_guard(app: &RuntimeContext, refresh: impl std::future::Future<Output = ()>) {
     let Ok(_refresh) = app.state::<AppState>().refresh.try_lock() else {
         return; // one is already running for this runtime
     };
-    let _ = refresh_tree(app).await;
-    refresh_all_git_meta(app).await;
+    refresh.await;
 }
 
 /// Refresh git meta for every worktree. Worktrees are independent, so the
@@ -640,8 +646,8 @@ pub async fn refresh_all_git_meta(app: &RuntimeContext) {
 mod tests {
     use super::*;
 
-    #[test]
-    fn refresh_all_is_independent_across_runtimes() {
+    #[tokio::test]
+    async fn refresh_all_is_independent_across_runtimes() {
         struct QuietHost;
         impl crate::runtime::Host for QuietHost {
             fn interested(&self, _: crate::runtime::Audience) -> bool { false }
@@ -649,30 +655,29 @@ mod tests {
             fn notify(&self, _: &str, _: &str, _: bool) -> Result<(), String> { Ok(()) }
             fn badge(&self, _: &str, _: i64) {}
         }
-        let executor = tokio::runtime::Runtime::new().unwrap();
         let root = std::env::temp_dir().join(format!("canopy-refresh-{}", std::process::id()));
         let make = |name: &str| RuntimeContext::new(
             AppState::new(Settings::default(), RuntimeState::default()),
             crate::runtime::RuntimePaths { config: root.join(name), data: root.join(name), logs: root.join(name) },
-            executor.handle().clone(), std::sync::Arc::new(QuietHost),
+            tokio::runtime::Handle::current(), std::sync::Arc::new(QuietHost),
         );
         let first = make("first");
         let second = make("second");
         second.state::<AppState>().statuses.write().insert("stale".into(), SvcStatus::Error);
-        // Hold the first refresh inside its runtime read, after it acquires
-        // single-flight ownership. The other runtime must still refresh.
-        let blocked = first.state::<AppState>().runtime.write();
-        let running = first.clone();
-        let task = executor.spawn(async move { refresh_all(&running).await });
-        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(3);
-        while first.state::<AppState>().refresh.try_lock().is_ok() {
-            assert!(std::time::Instant::now() < deadline, "first refresh did not enter");
-            std::thread::yield_now();
-        }
-        executor.block_on(refresh_all(&second));
-        assert!(second.state::<AppState>().statuses.read().is_empty());
-        drop(blocked);
-        executor.block_on(async { tokio::time::timeout(std::time::Duration::from_secs(3), task).await.unwrap().unwrap() });
+        let (entered, ready) = tokio::sync::oneshot::channel();
+        let (release, released) = tokio::sync::oneshot::channel();
+        let task = tokio::spawn(async move {
+            with_refresh_guard(&first, async {
+                entered.send(()).unwrap();
+                released.await.unwrap();
+            }).await;
+        });
+        tokio::time::timeout(std::time::Duration::from_secs(3), ready).await.unwrap().unwrap();
+        refresh_all(&second).await;
+        let refreshed = second.state::<AppState>().statuses.read().is_empty();
+        release.send(()).unwrap();
+        tokio::time::timeout(std::time::Duration::from_secs(3), task).await.unwrap().unwrap();
+        assert!(refreshed, "a different runtime must not share the in-flight guard");
         std::fs::remove_dir_all(root).unwrap();
     }
 
