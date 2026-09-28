@@ -110,7 +110,7 @@ fn open_handle_access(path: &Path, create: bool, directory: bool, private: bool,
     // POSIX replacement can unlink an old token after this reader opened it
     // but before validation. Zero links on that private handle is safe; more
     // than one still means an alias. Newly created/renamed files must be linked.
-    if !directory && (information.nNumberOfLinks > 1 || ((create || delete_access) && information.nNumberOfLinks != 1)) {
+    if !directory && !super::windows_link_count_is_safe(information.nNumberOfLinks, create || delete_access) {
         return Err(denied("credential must not have hard links or an unlinked mutation target"));
     }
     if private { validate_acl(&file, sd)?; }
@@ -269,11 +269,13 @@ mod tests {
     #[test]
     fn credential_directory_junction_is_refused_without_touching_target() {
         let fixture = Fixture::new();
-        let target = fixture.0.join("target"); std::fs::create_dir(&target).unwrap();
+        let target = fixture.0.join("target");
+        drop(prepare_directory(&target).unwrap());
         let link = fixture.0.join("credentials");
         let result = std::process::Command::new("cmd").args(["/C", "mklink", "/J"]).arg(&link).arg(&target).output().unwrap();
         assert!(result.status.success(), "{}", String::from_utf8_lossy(&result.stderr));
-        assert!(CredentialStore::open(&fixture.0).is_err());
+        let error = CredentialStore::open(&fixture.0).err().unwrap();
+        assert!(error.to_string().contains("reparse"), "{error}");
         assert!(std::fs::read_dir(&target).unwrap().next().is_none());
         std::fs::remove_dir(link).unwrap();
     }
