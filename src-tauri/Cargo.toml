@@ -103,3 +103,7 @@ windows = { version = "0.62", features = [
 # back to a plain borderless window (see src/tray.rs).
 [target.'cfg(target_os = "macos")'.dependencies]
 tauri-nspanel = { git = "https://github.com/ahkohd/tauri-nspanel", rev = "a3122e894383aa068ec5365a42994e3ac94ba1b6", version = "2.1.0", optional = true }
+
+[dev-dependencies]
+# Deterministic log-pump deadlines without wall-clock sleeps.
+tokio = { version = "1", features = ["test-util"] }
