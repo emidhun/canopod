@@ -91,6 +91,22 @@ impl CredentialStore {
         Ok(Some(bearer))
     }
 
+    fn sweep_temporaries(&self, temporary: &Path, mut remove: impl FnMut(&Path) -> io::Result<()>) -> io::Result<()> {
+        for name in platform::temporary_names(&self.anchor, &self.directory)? {
+            let path = self.directory.join(name);
+            let outcome = platform::open(&self.anchor, &path).and_then(|file| {
+                drop(file);
+                remove(&path)
+            });
+            match outcome {
+                Ok(()) => {},
+                Err(error) if path == temporary => return Err(io::Error::new(io::ErrorKind::PermissionDenied, format!("unsafe or undeletable rotation temporary {}; preserve and repair it before retrying: {error}", path.display()))),
+                Err(error) => log::warn!("preserving credential temporary {}: {error}", path.display()),
+            }
+        }
+        Ok(())
+    }
+
     /// Failure before atomic rename preserves the current credential. Missing
     /// credentials are created only through this explicit mutation.
     pub fn rotate(&self, kind: CredentialKind, owner: &crate::ownership::RuntimeOwner) -> io::Result<Rotation> {
@@ -107,14 +123,7 @@ impl CredentialStore {
         let bearer = Bearer::generate()?;
         // Cleanup is a writer action, never performed by read-only clients.
         let temporary = self.directory.join(format!(".rotate-{}", kind.filename()));
-        for name in platform::temporary_names(&self.anchor, &self.directory)? {
-            let path = self.directory.join(name);
-            match platform::open(&self.anchor, &path) {
-                Ok(file) => { drop(file); platform::remove(&self.anchor, &path)?; }
-                Err(error) if path == temporary => return Err(io::Error::new(io::ErrorKind::PermissionDenied, format!("unsafe rotation temporary {}; preserve and repair it before retrying: {error}", path.display()))),
-                Err(error) => log::warn!("preserving unsafe credential temporary {}: {error}", path.display()),
-            }
-        }
+        self.sweep_temporaries(&temporary, |path| platform::remove(&self.anchor, path))?;
         let mut file = platform::create(&self.anchor, &temporary)?;
         let outcome = (|| {
             file.write_all(&bearer.0)?;
@@ -147,6 +156,12 @@ fn rotation_temporary(name: &str) -> bool {
         .is_some_and(|suffix| suffix.len() == 32 && suffix.bytes().all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b)))
 }
 
+// Kept pure so the Windows zero-link reader rule is tested on every host.
+#[cfg(any(windows, test))]
+fn windows_link_count_is_safe(count: u32, require_linked: bool) -> bool {
+    count <= 1 && (!require_linked || count == 1)
+}
+
 fn denied(message: &'static str) -> io::Error { io::Error::new(io::ErrorKind::PermissionDenied, message) }
 
 #[cfg(test)]
@@ -161,6 +176,48 @@ mod tests {
         }
     }
     impl Drop for Fixture { fn drop(&mut self) { let _ = fs::remove_dir_all(&self.0); } }
+
+    #[test]
+    fn windows_link_counts_allow_detached_readers_only() {
+        assert!(windows_link_count_is_safe(0, false));
+        assert!(windows_link_count_is_safe(1, false));
+        assert!(windows_link_count_is_safe(1, true));
+        assert!(!windows_link_count_is_safe(0, true));
+        for count in [2, 3, u32::MAX] {
+            assert!(!windows_link_count_is_safe(count, false));
+            assert!(!windows_link_count_is_safe(count, true));
+        }
+    }
+
+    #[test]
+    fn unrelated_undeletable_temporary_does_not_block_rotation() {
+        let fixture = Fixture::new();
+        let owner = crate::ownership::RuntimeOwner::acquire(&fixture.0).unwrap();
+        let store = CredentialStore::open(&fixture.0).unwrap();
+        let leftover = store.directory.join(".rotate-mcp.token");
+        drop(platform::create(&store.anchor, &leftover).unwrap());
+        let current = store.directory.join(".rotate-application.token");
+        let fail = |_: &Path| Err(denied("simulated delete refusal"));
+        store.sweep_temporaries(&current, fail).unwrap();
+        assert!(leftover.exists());
+        assert!(store.sweep_temporaries(&leftover, fail).is_err());
+        store.rotate(CredentialKind::Application, &owner).unwrap();
+        assert!(!leftover.exists(), "fixed MCP temporary must be swept");
+    }
+
+    #[test]
+    fn unsafe_current_temporary_is_preserved_and_blocks_rotation() {
+        let fixture = Fixture::new();
+        let owner = crate::ownership::RuntimeOwner::acquire(&fixture.0).unwrap();
+        let store = CredentialStore::open(&fixture.0).unwrap();
+        let path = store.directory.join(".rotate-mcp.token");
+        fs::create_dir(&path).unwrap();
+        let error = store.rotate(CredentialKind::Mcp, &owner).err().unwrap();
+        assert_eq!(error.kind(), io::ErrorKind::PermissionDenied);
+        assert!(error.to_string().contains(".rotate-mcp.token"));
+        assert!(path.is_dir());
+        assert!(store.load(CredentialKind::Mcp).unwrap().is_none());
+    }
 
     #[test]
     fn ownership_serializes_independent_stores_and_rejects_wrong_directory() {
