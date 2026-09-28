@@ -207,10 +207,8 @@ pub fn run() {
                 tauri::async_runtime::spawn(async move {
                     loop {
                         tokio::time::sleep(std::time::Duration::from_secs(5 * 60)).await;
-                        {
-        let table = context.state::<TermTable>();
-                            terminal::sweep_idle(&context, table);
-                        }
+                        let table = context.state::<TermTable>();
+                        terminal::sweep_idle(&context, table);
                     }
                 });
             }
@@ -439,11 +437,12 @@ pub fn run() {
 
 // Tauri has already built configs with create=true. Only deferred windows
 // belong to the post-ownership initialization path.
+#[cfg(feature = "desktop")]
 fn deferred_windows(windows: &[tauri::utils::config::WindowConfig]) -> impl Iterator<Item = &tauri::utils::config::WindowConfig> {
     windows.iter().filter(|config| !config.create)
 }
 
-#[cfg(test)]
+#[cfg(all(test, feature = "desktop"))]
 mod window_tests {
     #[test]
     fn builds_only_deferred_windows() {
