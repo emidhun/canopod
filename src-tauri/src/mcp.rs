@@ -197,6 +197,10 @@ impl Controller {
     pub(crate) fn available_requests(&self) -> usize {
         self.requests.available_permits()
     }
+    #[cfg(test)]
+    pub(crate) fn admin_guard_for_test(&self) -> parking_lot::MutexGuard<'_, ()> {
+        self.admin.lock()
+    }
     pub fn enabled(&self) -> bool {
         let live = self.live.read();
         live.policy.enabled && live.fault.is_none() && !self.shutdown.is_cancelled()

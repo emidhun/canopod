@@ -1197,6 +1197,43 @@ mod tests {
         running.finish().await;
     }
     #[tokio::test]
+    async fn old_enabled_policy_faults_without_disabling_app_control() {
+        let directory = Directory::new();
+        let old = r#"{"enabled":true,"repoIds":["allowed"]}"#;
+        std::fs::write(directory.0.join("mcp.json"), old).unwrap();
+        let running = Running::with_directory(directory, Duration::from_secs(60)).await;
+        let status: serde_json::Value = running.request(reqwest::Method::GET, "status").send().await.unwrap().json().await.unwrap();
+        assert_eq!(status["mcpEnabled"], false);
+        assert!(status["mcpError"].as_str().unwrap().contains("path bindings"));
+        assert_eq!(std::fs::read_to_string(running.directory.0.join("mcp.json")).unwrap(), old);
+        running.finish().await;
+    }
+
+    #[tokio::test]
+    async fn concurrent_admin_changes_return_conflict() {
+        let running = Running::start().await;
+        running.enable_mcp().await;
+        let controller = running.mcp.clone();
+        let (ready, started) = tokio::sync::oneshot::channel();
+        let (release, released) = std::sync::mpsc::channel();
+        let holder = tokio::task::spawn_blocking(move || {
+            let _transaction = controller.admin_guard_for_test();
+            ready.send(()).unwrap();
+            released.recv_timeout(Duration::from_secs(5)).unwrap();
+        });
+        tokio::time::timeout(Duration::from_secs(2), started).await.unwrap().unwrap();
+        for action in ["mcp/enable", "mcp/rotate-token"] {
+            let response = running.request(reqwest::Method::POST, action).json(&serde_json::json!({"repoIds":["allowed"]})).send().await.unwrap();
+            assert_eq!(response.status(), StatusCode::CONFLICT);
+            let body: serde_json::Value = response.json().await.unwrap();
+            assert!(body["message"].as_str().unwrap().contains("busy"));
+        }
+        release.send(()).unwrap();
+        tokio::time::timeout(Duration::from_secs(2), holder).await.unwrap().unwrap();
+        running.finish().await;
+    }
+
+    #[tokio::test]
     async fn malformed_mcp_policy_keeps_app_control_available_and_repair_is_explicit() {
         let directory = Directory::new();
         std::fs::write(directory.0.join("mcp.json"), "{broken").unwrap();
@@ -1211,6 +1248,10 @@ mod tests {
             StatusCode::OK
         );
         assert!(running.mcp.status()["error"].is_string());
+        let fault = running.mcp.status()["error"].clone();
+        assert_eq!(running.request(reqwest::Method::POST, "mcp/rotate-token").send().await.unwrap().status(), StatusCode::OK);
+        assert_eq!(running.mcp.status()["error"], fault, "rotation must not repair policy faults");
+
         assert_eq!(
             running
                 .rpc(&running.bearer, "tools/list", serde_json::json!({}))
@@ -1453,10 +1494,11 @@ mod tests {
             let deadline = Instant::now() + Duration::from_secs(2);
             while running.mcp.available_requests() == MAX_REQUESTS {
                 assert!(Instant::now() < deadline);
-                tokio::time::sleep(Duration::from_millis(5)).await;
+                tokio::task::yield_now().await;
             }
             if stopping {
-                running.mcp.shutdown();
+                let response = running.request(reqwest::Method::POST, "stop").send().await.unwrap();
+                assert_eq!(response.status(), StatusCode::ACCEPTED);
             } else {
                 running
                     .mcp
