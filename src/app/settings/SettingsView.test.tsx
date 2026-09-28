@@ -7,6 +7,7 @@ import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it } from "vitest";
 import SettingsView from "./SettingsView";
+import { MOCK } from "./mocks";
 
 // No Tauri in jsdom, so hasBackend() is false and the shell loads MOCK.
 const open = () => render(<SettingsView onClose={() => {}} />);
@@ -48,4 +49,8 @@ describe("SettingsView shell", () => {
       expect(await screen.findByText(blurb)).toBeInTheDocument();
     }
   });
+});
+
+it("keeps automatic update checks opt-in in preview", () => {
+  expect(MOCK.updates?.autoCheck).toBe(false);
 });
