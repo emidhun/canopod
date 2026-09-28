@@ -77,6 +77,7 @@ export default function SettingsView({ onClose }: { onClose: () => void }) {
   const [setupByRepo, setSetupByRepo] = useState<Record<string, SetupTask[]>>({});
   const [policyByRepo, setPolicyByRepo] = useState<Record<string, SetupPolicy>>({});
   const [extrasByRepo, setExtrasByRepo] = useState<Record<string, { teardown: string[]; migrate: string[] }>>({});
+  const [loadedRepos, setLoadedRepos] = useState<ReadonlySet<string>>(new Set());
   const editRevision = useRef(0);
   const repoEditRevision = useRef(new Map<string, number>());
   const dirtyRepos = useRef<Set<string>>(new Set());
@@ -96,11 +97,13 @@ export default function SettingsView({ onClose }: { onClose: () => void }) {
 
   function load() {
     clearInvalid();
+    setLoadedRepos(new Set());
     if (!hasBackend()) {
       setSettings({ ...MOCK, repos: MOCK.repos.map(normalizeRepo) });
       setRepoId(MOCK.repos[0].id);
       setCardsByRepo({ [MOCK.repos[0].id]: toCards(MOCK_CARDS) });
       setSetupByRepo({ [MOCK.repos[0].id]: MOCK_SETUP });
+      setLoadedRepos(new Set(MOCK.repos.map((r) => r.id)));
       setDirty(new Set());
       dirtyRepos.current = new Set();
       return;
@@ -112,9 +115,9 @@ export default function SettingsView({ onClose }: { onClose: () => void }) {
       dirtyRepos.current = new Set();
       s.repos.forEach((r) => {
         ipc.getRepoConfig(r.id).then((c) => {
-        if (dirtyRepos.current.has(r.id)) return;
           setCardsByRepo((m) => ({ ...m, [r.id]: toCards(c.provision) }));
           setSetupByRepo((m) => ({ ...m, [r.id]: c.setup }));
+          setLoadedRepos((ids) => new Set(ids).add(r.id));
           setPolicyByRepo((m) => ({ ...m, [r.id]: c.setupPolicy ?? DEFAULT_POLICY }));
           setExtrasByRepo((m) => ({ ...m, [r.id]: { teardown: c.teardown || [], migrate: c.migrate || [] } }));
         }).catch(() => {});
@@ -158,7 +161,7 @@ export default function SettingsView({ onClose }: { onClose: () => void }) {
     document.addEventListener("keydown", k);
     return () => document.removeEventListener("keydown", k);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [dirty, settings, repoId, page, cardsByRepo, setupByRepo, policyByRepo, extrasByRepo, saving]);
+  }, [dirty, settings, repoId, page, cardsByRepo, setupByRepo, policyByRepo, extrasByRepo, loadedRepos, saving]);
 
   useEffect(() => {
     if (!repoMenu) return;
@@ -201,6 +204,10 @@ export default function SettingsView({ onClose }: { onClose: () => void }) {
     const revision = editRevision.current;
     const repoRevisions = new Map(repoEditRevision.current);
     const reposToSave = new Set(dirtyRepos.current);
+    if ([...reposToSave].some((id) => !loadedRepos.has(id))) {
+      showToast("Repo config has not loaded — wait or reload before saving");
+      return;
+    }
 
     // A half-filled row cannot be persisted. It used to be filtered out here
     // silently, which reads as data loss (#43) — refuse the save instead, name
@@ -378,6 +385,9 @@ export default function SettingsView({ onClose }: { onClose: () => void }) {
           <button className="btn sm" onClick={addRepo}><Plus size={10} />Add repository</button>
         </div>
       );
+    }
+    if ((page === "files" || page === "setup") && repo && !loadedRepos.has(repo.id)) {
+      return <div role="status">Repo config has not loaded yet. If loading fails, use Discard to retry.</div>;
     }
     switch (page) {
       case "services": return <ServicesPage {...pageProps} />;

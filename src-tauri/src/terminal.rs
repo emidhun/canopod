@@ -672,18 +672,21 @@ pub fn write(app: &RuntimeContext, table: &TermTable, id: &str, data: &str) -> R
         }
         (sess.writer.clone(), answered)
     };
-    if answered {
-        let _ = app.emit(
-            "terminal:state",
-            &StateEvent {
-                id,
-                state: Activity::Busy,
-            },
-        );
-    }
+    report_answered(answered, || {
+        let _ = app.emit("terminal:state", &StateEvent { id, state: Activity::Busy });
+    }, || crate::notify::refresh_badge(app));
     let mut w = writer.lock();
     w.write_all(data.as_bytes()).map_err(|e| e.to_string())?;
     w.flush().map_err(|e| e.to_string())
+}
+
+// Publish both views of the waiting-to-busy transition before the PTY write,
+// which may block or fail even though the user has already answered.
+fn report_answered(answered: bool, emit_state: impl FnOnce(), refresh_badge: impl FnOnce()) {
+    if answered {
+        emit_state();
+        refresh_badge();
+    }
 }
 
 /// Resize a session's PTY (xterm's fit addon drives this).
@@ -882,6 +885,17 @@ pub fn sweep_idle(app: &RuntimeContext, table: &TermTable) {
 #[cfg(test)]
 mod tests {
     use super::{b64, kind_of, looks_like_prompt, strip_ansi};
+
+    #[test]
+    fn answered_input_refreshes_badge_once() {
+        for answered in [false, true] {
+            let emitted = std::cell::Cell::new(0);
+            let refreshed = std::cell::Cell::new(0);
+            super::report_answered(answered, || emitted.set(emitted.get() + 1), || refreshed.set(refreshed.get() + 1));
+            assert_eq!(emitted.get(), i32::from(answered));
+            assert_eq!(refreshed.get(), i32::from(answered));
+        }
+    }
 
     #[test]
     fn strip_ansi_removes_csi_and_osc() {
