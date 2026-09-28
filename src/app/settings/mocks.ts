@@ -4,7 +4,7 @@ import { type ProvisionEntry, type Settings, type SetupTask } from "../../ipc";
 import { DEFAULT_AGENT_CONTEXT, DEFAULT_NOTIFY, DEFAULT_SECURITY, DEFAULT_TERM, DEFAULT_WT_DEFAULTS } from "./provision";
 
 export const MOCK: Settings = {
-  version: 1, editor: { command: "code" }, terminal: "Terminal", showSwitchBranch: true, pinnedWorktrees: [], security: DEFAULT_SECURITY, notifications: DEFAULT_NOTIFY, embeddedTerminal: DEFAULT_TERM, experiments: {}, keybindings: {}, updates: { autoCheck: true }, crashReports: { enabled: false },
+  version: 1, editor: { command: "code" }, terminal: "Terminal", showSwitchBranch: true, pinnedWorktrees: [], security: DEFAULT_SECURITY, notifications: DEFAULT_NOTIFY, embeddedTerminal: DEFAULT_TERM, experiments: {}, keybindings: {}, updates: { autoCheck: false }, crashReports: { enabled: false },
   repos: [{
     id: "tooljet", name: "ToolJet", path: "~/ToolJetSpace/CE/ToolJet", worktreeDir: ".worktrees", resetDb: "", migrateDb: "", defaultBase: "main", worktreeDefaults: DEFAULT_WT_DEFAULTS, agentContext: DEFAULT_AGENT_CONTEXT, maxParallelAgents: 0, agentIdleTimeoutMin: 0,
     services: [
