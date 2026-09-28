@@ -77,7 +77,7 @@ fn run_lifecycle(method: &str) {
 
 #[cfg(unix)]
 #[test]
-fn foreground_logger_exposes_preserved_orphan_warning() {
+fn foreground_logger_exposes_stale_orphan_expiry() {
     use std::os::unix::process::CommandExt;
     let dir = Directory(std::env::temp_dir().join(format!("canopy-backend-warning-{}", std::process::id())));
     std::fs::create_dir_all(&dir.0).unwrap();
@@ -92,7 +92,7 @@ fn foreground_logger_exposes_preserved_orphan_warning() {
     let (send, receive) = std::sync::mpsc::channel();
     let reader = std::thread::spawn(move || {
         for line in BufReader::new(stderr).lines().map_while(Result::ok) {
-            if line.contains("leaving process group") { let _ = send.send(()); }
+            if line.contains("forgetting stale process group record") { let _ = send.send(()); }
         }
     });
     let warning = receive.recv_timeout(Duration::from_secs(10));
