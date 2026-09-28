@@ -22,6 +22,7 @@ fn delivers(audience: Audience, label: &str) -> bool {
 }
 
 impl Host for DesktopHost {
+    fn user_present(&self) -> bool { crate::windows_visible() }
     fn interested(&self, audience: Audience) -> bool {
         // Preserve delivery of state changes to hidden windows. High-volume
         // streams retain the existing visibility gate until event subscriptions
