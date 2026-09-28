@@ -531,8 +531,10 @@ impl Handler {
         // Hold policy through the cached read: rotation/disable linearizes
         // either before this call or after it, never halfway through it.
         let live = self.controller.live.read();
-        if self.controller.shutdown.is_cancelled()
-            || live.fault.is_some()
+        if self.controller.shutdown.is_cancelled() {
+            return Err("stopping");
+        }
+        if live.fault.is_some()
             || self.generation.is_cancelled()
             || !live.policy.enabled
         {
@@ -579,5 +581,25 @@ impl Handler {
         Ok(serde_json::json!({"repoId":repo_id,"source":"cache","cacheAvailable":repo.is_some(),
             "worktrees":repo.map(|r| r.worktrees.len()).unwrap_or(0),
             "services":{"stopped":counts[0],"starting":counts[1],"running":counts[2],"stopping":counts[3],"error":counts[4]}}).to_string())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn a_cached_tool_racing_shutdown_reports_stopping() {
+        let directory = std::env::temp_dir().join(format!("canopy-mcp-shutdown-{}", std::process::id()));
+        std::fs::create_dir_all(&directory).unwrap();
+        let app = crate::backend::open(crate::runtime::RuntimePaths { config: directory.clone(), data: directory.clone(), logs: directory.clone() }).unwrap();
+        let controller = Controller::open(app.clone(), Arc::new(CredentialStore::open(&directory).unwrap()), 12345).unwrap();
+        let handler = Handler { controller: controller.clone(), generation: controller.live.read().generation.clone() };
+        controller.shutdown();
+        assert_eq!(handler.cached_status("allowed"), Err("stopping"));
+        drop(handler);
+        drop(controller);
+        drop(app);
+        std::fs::remove_dir_all(directory).unwrap();
     }
 }
