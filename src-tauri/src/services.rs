@@ -942,6 +942,10 @@ pub fn sweep_orphans(app: &RuntimeContext) {
         }
         let alive = crate::ownership::group_may_be_alive(o.pgid);
         if alive {
+            if proc_start_time_changed(o.pgid as u32, o.spawn_time_secs) {
+                log::warn!("forgetting stale process group record {}: start time changed; no process signalled", o.pgid);
+                continue;
+            }
             if o.spawn_time_secs == 0
                 || !proc_start_time_matches(o.pgid as u32, o.spawn_time_secs)
                 || !crate::ownership::orphan_owner_gone(o.pgid as u32, o.owner.as_ref()) {
@@ -970,6 +974,18 @@ pub fn sweep_orphans(_app: &RuntimeContext) {}
 /// must never SIGTERM that. Unix-only; only the Unix crash sweep calls it.
 #[cfg(unix)]
 pub(crate) fn proc_start_time_matches(pid: u32, recorded_secs: u64) -> bool {
+    process_start_seconds(pid).is_some_and(|actual| actual.abs_diff(recorded_secs) <= 5)
+}
+
+// A known different identity is stale, not unverifiable. Forget it without
+// signalling; unknown metadata and legacy zero timestamps remain retained.
+#[cfg(unix)]
+pub(crate) fn proc_start_time_changed(pid: u32, recorded_secs: u64) -> bool {
+    recorded_secs != 0 && process_start_seconds(pid).is_some_and(|actual| actual.abs_diff(recorded_secs) > 5)
+}
+
+#[cfg(unix)]
+fn process_start_seconds(pid: u32) -> Option<u64> {
     use sysinfo::{Pid, ProcessRefreshKind, ProcessesToUpdate, System};
     let mut sys = System::new();
     sys.refresh_processes_specifics(
@@ -977,11 +993,11 @@ pub(crate) fn proc_start_time_matches(pid: u32, recorded_secs: u64) -> bool {
         false,
         ProcessRefreshKind::nothing(),
     );
-    let Some(p) = sys.process(Pid::from_u32(pid)) else { return false };
+    let p = sys.process(Pid::from_u32(pid))?;
     let actual = p.start_time(); // seconds since the epoch
     // an unreadable start time (0) fails the match — skipping a sweep is safe,
     // killing an innocent process group is not
-    actual != 0 && actual.abs_diff(recorded_secs) <= 5
+    (actual != 0).then_some(actual)
 }
 
 // ── readiness probes ──────────────────────────────────────────────────

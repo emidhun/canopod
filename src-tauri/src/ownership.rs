@@ -195,19 +195,12 @@ pub(crate) fn orphan_parent_verified(pid: u32) -> bool {
     system
         .process(parent)
         .and_then(|p| p.exe())
-        .is_some_and(|path| {
-            matches!(
-                path.to_str(),
-                Some(
-                    "/usr/lib/systemd/systemd"
-                        | "/lib/systemd/systemd"
-                        | "/sbin/init"
-                        | "/sbin/tini"
-                        | "/usr/bin/tini"
-                        | "/usr/bin/dumb-init"
-                )
-            )
-        })
+        .is_some_and(legacy_reaper)
+}
+
+#[cfg(unix)]
+fn legacy_reaper(path: &Path) -> bool {
+    matches!(path.to_str(), Some("/usr/lib/systemd/systemd" | "/lib/systemd/systemd" | "/sbin/init" | "/sbin/tini" | "/usr/bin/tini" | "/usr/bin/dumb-init"))
 }
 
 /// Check all recorded candidates before either sweeper writes state.json.
@@ -259,6 +252,26 @@ mod tests {
         ));
         fs::create_dir_all(&path).unwrap();
         path
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn legacy_reaper_paths_are_explicit() {
+        for path in ["/usr/lib/systemd/systemd", "/lib/systemd/systemd", "/sbin/init", "/sbin/tini", "/usr/bin/tini", "/usr/bin/dumb-init"] {
+            assert!(super::legacy_reaper(Path::new(path)), "{path}");
+        }
+        for path in ["/tmp/systemd", "/usr/bin/canopy", "/usr/bin/canopy-backend", "/tmp/tini", "/sbin/init-extra"] {
+            assert!(!super::legacy_reaper(Path::new(path)), "{path}");
+        }
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn macos_process_start_identity_is_stable() {
+        let first = super::process_start_token(std::process::id()).unwrap();
+        assert!(first > 0);
+        assert_eq!(super::process_start_token(std::process::id()), Some(first));
+        assert_eq!(super::process_start_token(u32::MAX), None);
     }
 
     #[test]
