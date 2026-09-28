@@ -282,6 +282,18 @@ mod tests {
         fs::remove_dir_all(dir).unwrap();
     }
 
+    #[test]
+    fn dropping_owner_unlocks_even_with_a_cloned_file() {
+        let dir = directory();
+        let owner = RuntimeOwner::acquire(&dir).unwrap();
+        let duplicate = owner.lock.try_clone().unwrap();
+        drop(owner);
+        let next = RuntimeOwner::acquire(&dir).unwrap();
+        drop(next);
+        drop(duplicate);
+        fs::remove_dir_all(dir).unwrap();
+    }
+
     // Run by the process test below with a private temp directory. A normal
     // test-suite invocation does nothing. The parent kills us to exercise OS
     // lock release without Rust destructors, as in a backend crash.
