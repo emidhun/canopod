@@ -583,12 +583,10 @@ mod tests {
             assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
             assert_eq!(response.headers()["x-canopy-api-version"], API_VERSION);
         }
-        let response = running
-            .request(reqwest::Method::GET, "status")
-            .header("x-canopy-api-version", "2")
-            .send()
-            .await
-            .unwrap();
+        let mut request = running.request(reqwest::Method::GET, "status").build().unwrap();
+        request.headers_mut().insert("x-canopy-api-version", "2".parse().unwrap());
+        assert_eq!(request.headers().get_all("x-canopy-api-version").iter().count(), 1);
+        let response = running.client.execute(request).await.unwrap();
         assert_eq!(response.status(), StatusCode::CONFLICT);
         assert_eq!(response.headers()["x-canopy-api-version"], API_VERSION);
         running.finish().await;
