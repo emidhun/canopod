@@ -264,6 +264,15 @@ async fn stopped(mut receiver: watch::Receiver<bool>) {
     }
 }
 
+fn accept_retry(kind: std::io::ErrorKind, backoff: Duration) -> (Option<Duration>, Duration) {
+    use std::io::ErrorKind::{ConnectionAborted, ConnectionReset, Interrupted};
+    if matches!(kind, ConnectionAborted | ConnectionReset | Interrupted) {
+        (None, backoff)
+    } else {
+        (Some(backoff), (backoff * 2).min(Duration::from_secs(1)))
+    }
+}
+
 pub struct Server {
     listener: TcpListener,
     state: ApiState,
@@ -284,6 +293,15 @@ impl Server {
             .map_err(|e| {
                 format!("bind backend at 127.0.0.1:{port}: {e}; choose a free --port explicitly")
             })?;
+        Self::from_listener(app, listener, stop)
+    }
+
+    fn from_listener(app: RuntimeContext, listener: TcpListener, stop: watch::Sender<bool>) -> Result<Self, String> {
+        let address = listener.local_addr().map_err(|e| format!("read backend listener address: {e}"))?;
+        if address.ip() != std::net::IpAddr::V4(std::net::Ipv4Addr::LOCALHOST) || address.port() < 1024 {
+            return Err("backend listener must use 127.0.0.1 and a port between 1024 and 65535".into());
+        }
+        let port = address.port();
         let credentials = CredentialStore::open(&app.path().data)
             .map_err(|e| format!("open application credentials: {e}"))?;
         let bearer = match credentials
@@ -355,13 +373,15 @@ impl Server {
                     let (stream, _) = match accepted {
                         Ok(value) => { accept_backoff = Duration::from_millis(100); value },
                         Err(error) => {
-                            if matches!(error.kind(), std::io::ErrorKind::ConnectionAborted | std::io::ErrorKind::ConnectionReset | std::io::ErrorKind::Interrupted) { continue; }
-                            log::warn!("accept backend connection: {error}; retrying after {accept_backoff:?}");
+                            // Accept errors never stop the runtime or its supervised children.
+                            let (delay, next) = accept_retry(error.kind(), accept_backoff);
+                            accept_backoff = next;
+                            let Some(delay) = delay else { continue };
+                            log::warn!("accept backend connection: {error}; retrying after {delay:?}");
                             tokio::select! {
                                 _ = stopped(shutdown.clone()) => break Ok(()),
-                                _ = tokio::time::sleep(accept_backoff) => {},
+                                _ = tokio::time::sleep(delay) => {},
                             }
-                            accept_backoff = (accept_backoff * 2).min(Duration::from_secs(1));
                             continue;
                         }
                     };
@@ -513,12 +533,9 @@ mod tests {
         async fn with_directory(directory: Directory, lifetime: Duration) -> Self {
             let reservation = TcpListener::bind("127.0.0.1:0").await.unwrap();
             let port = reservation.local_addr().unwrap().port();
-            drop(reservation);
             let (shutdown, _) = watch::channel(false);
             let app = directory.context();
-            let mut server = Server::bind(app.clone(), port, shutdown.clone())
-                .await
-                .unwrap();
+            let mut server = Server::from_listener(app.clone(), reservation, shutdown.clone()).unwrap();
             server.connection_lifetime = lifetime;
             let bearer = CredentialStore::open_existing(&directory.0)
                 .unwrap()
@@ -562,6 +579,33 @@ mod tests {
                 .unwrap()
                 .unwrap();
         }
+    }
+
+    #[test]
+    fn accept_errors_retry_with_bounded_backoff() {
+        use std::io::ErrorKind::*;
+        for kind in [ConnectionAborted, ConnectionReset, Interrupted] {
+            assert_eq!(accept_retry(kind, Duration::from_millis(100)), (None, Duration::from_millis(100)));
+        }
+        let mut backoff = Duration::from_millis(100);
+        for expected in [100, 200, 400, 800, 1000, 1000] {
+            let (delay, next) = accept_retry(Other, backoff);
+            assert_eq!(delay, Some(Duration::from_millis(expected)));
+            backoff = next;
+        }
+    }
+
+    #[tokio::test]
+    async fn adopts_an_already_bound_listener() {
+        let directory = Directory::new();
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let address = listener.local_addr().unwrap();
+        let (stop, _) = watch::channel(false);
+        let server = Server::from_listener(directory.context(), listener, stop).unwrap();
+        assert_eq!(server.listener.local_addr().unwrap(), address);
+        assert!(TcpListener::bind(address).await.is_err());
+        drop(server);
+        assert!(TcpListener::bind(address).await.is_ok());
     }
 
     #[tokio::test]
@@ -621,12 +665,10 @@ mod tests {
             assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
             assert_eq!(response.headers()["x-canopy-api-version"], API_VERSION);
         }
-        let response = running
-            .request(reqwest::Method::GET, "status")
-            .header("x-canopy-api-version", "2")
-            .send()
-            .await
-            .unwrap();
+        let mut request = running.request(reqwest::Method::GET, "status").build().unwrap();
+        request.headers_mut().insert("x-canopy-api-version", "2".parse().unwrap());
+        assert_eq!(request.headers().get_all("x-canopy-api-version").iter().count(), 1);
+        let response = running.client.execute(request).await.unwrap();
         assert_eq!(response.status(), StatusCode::CONFLICT);
         assert_eq!(response.headers()["x-canopy-api-version"], API_VERSION);
         running.finish().await;
