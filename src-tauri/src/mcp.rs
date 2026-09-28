@@ -41,6 +41,8 @@ struct Policy {
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 struct RepoBinding {
     registered_path: String,
+    // Reserved for diagnostics/future filesystem identity checks. Authorization
+    // compares registered_path without performing request-time filesystem I/O.
     canonical_path: String,
 }
 
@@ -310,7 +312,8 @@ impl Controller {
         match persisted {
             Ok(policy) => {
                 live.policy = policy;
-                live.fault = None;
+                // Disabling access does not repair an earlier credential fault.
+                // Explicit enable/rotation clears faults only after validation.
             }
             Err(error) => {
                 live.fault = Some(format!(

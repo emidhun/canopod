@@ -211,6 +211,7 @@ async fn status(State(state): State<ApiState>) -> Json<serde_json::Value> {
         "cachedWorktrees": worktrees,
         "trackedServices": services,
         "mcpEnabled": state.mcp.enabled(),
+        "mcpError": state.mcp.status()["error"],
     }))
 }
 
@@ -1343,6 +1344,12 @@ mod tests {
             StatusCode::OK
         );
         assert!(running.mcp.status()["error"].is_string());
+        let fault = running.mcp.status()["error"].clone();
+        assert_eq!(running.request(reqwest::Method::POST, "mcp/disable").send().await.unwrap().status(), StatusCode::OK);
+        assert_eq!(running.mcp.status()["error"], fault, "disable must retain credential faults");
+        let status: serde_json::Value = running.request(reqwest::Method::GET, "status").send().await.unwrap().json().await.unwrap();
+        assert_eq!(status["mcpError"], fault);
+
         assert_eq!(
             std::fs::read_to_string(running.directory.0.join("credentials/mcp.token")).unwrap(),
             "invalid"
