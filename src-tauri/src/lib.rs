@@ -123,8 +123,12 @@ pub fn run() {
                     // dialog in setup deadlocks the main thread on some platforms.
                     // No webview or runtime may operate without ownership.
                     let exit = handle.clone();
-                    handle.dialog().message(error).title("Canopy could not start")
-                        .kind(MessageDialogKind::Error).show(move |_| exit.exit(1));
+                    handle
+                        .dialog()
+                        .message(error)
+                        .title("Canopy could not start")
+                        .kind(MessageDialogKind::Error)
+                        .show(move |_| exit.exit(1));
                     return Ok(());
                 }
             };
@@ -145,7 +149,7 @@ pub fn run() {
                 std::sync::Arc::new(desktop_host::DesktopHost(handle.clone())),
             );
             app.manage(context.clone());
-            for config in &app.config().app.windows {
+            for config in deferred_windows(&app.config().app.windows) {
                 tauri::WebviewWindowBuilder::from_config(app, config)?.build()?;
             }
             tray::init(&handle)?;
@@ -412,7 +416,9 @@ pub fn run() {
             // Cmd-Q / app exit: kill every spawned process group before dying
             if let tauri::RunEvent::ExitRequested { code, api, .. } = event {
                 if app.try_state::<ownership::RuntimeOwner>().is_none() {
-                    if code.is_none() { api.prevent_exit(); }
+                    if code.is_none() {
+                        api.prevent_exit();
+                    }
                     return;
                 }
                 // kill embedded terminal shells before their host process dies
@@ -424,4 +430,23 @@ pub fn run() {
                 });
             }
         });
+}
+
+// Tauri has already built configs with create=true. Only deferred windows
+// belong to the post-ownership initialization path.
+fn deferred_windows(windows: &[tauri::utils::config::WindowConfig]) -> impl Iterator<Item = &tauri::utils::config::WindowConfig> {
+    windows.iter().filter(|config| !config.create)
+}
+
+#[cfg(test)]
+mod window_tests {
+    #[test]
+    fn builds_only_deferred_windows() {
+        let windows = [
+            tauri::utils::config::WindowConfig { label: "automatic".into(), create: true, ..Default::default() },
+            tauri::utils::config::WindowConfig { label: "deferred".into(), create: false, ..Default::default() },
+        ];
+        let labels: Vec<_> = super::deferred_windows(&windows).map(|config| config.label.as_str()).collect();
+        assert_eq!(labels, ["deferred"]);
+    }
 }
