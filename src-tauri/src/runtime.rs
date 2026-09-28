@@ -303,6 +303,19 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn all_interest_requires_application_subscribers() {
+        let app = context(Arc::new(RecordingHost::default()));
+        assert!(!app.interested(Audience::All));
+        let terminal = app.events().subscribe(crate::events::SubscriptionKind::Terminal).unwrap();
+        assert!(!app.interested(Audience::All));
+        let application = app.events().subscribe(crate::events::SubscriptionKind::Application).unwrap();
+        assert!(app.interested(Audience::All));
+        drop(application);
+        assert!(!app.interested(Audience::All));
+        drop(terminal);
+    }
+
+    #[tokio::test]
     async fn remote_resnapshot_never_fails_native_emit() {
         for native in [false, true] {
             let host = Arc::new(RecordingHost {
