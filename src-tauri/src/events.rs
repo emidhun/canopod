@@ -273,7 +273,7 @@ mod tests {
         let mut term = hub.subscribe(SubscriptionKind::Terminal).unwrap();
         hub.publish(Audience::All, "terminal:state", &serde_json::Value::Null)
             .unwrap();
-        term.recv().await.unwrap();
+        tokio::time::timeout(std::time::Duration::from_secs(2), term.recv()).await.unwrap().unwrap();
         app.recv().await.unwrap();
         hub.publish(Audience::All, "tree:changed", &serde_json::Value::Null)
             .unwrap();
