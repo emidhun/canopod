@@ -229,6 +229,15 @@ async fn stopped(mut receiver: watch::Receiver<bool>) {
     }
 }
 
+fn accept_retry(kind: std::io::ErrorKind, backoff: Duration) -> (Option<Duration>, Duration) {
+    use std::io::ErrorKind::{ConnectionAborted, ConnectionReset, Interrupted};
+    if matches!(kind, ConnectionAborted | ConnectionReset | Interrupted) {
+        (None, backoff)
+    } else {
+        (Some(backoff), (backoff * 2).min(Duration::from_secs(1)))
+    }
+}
+
 pub struct Server {
     listener: TcpListener,
     state: ApiState,
@@ -314,13 +323,15 @@ impl Server {
                     let (stream, _) = match accepted {
                         Ok(value) => { accept_backoff = Duration::from_millis(100); value },
                         Err(error) => {
-                            if matches!(error.kind(), std::io::ErrorKind::ConnectionAborted | std::io::ErrorKind::ConnectionReset | std::io::ErrorKind::Interrupted) { continue; }
-                            log::warn!("accept backend connection: {error}; retrying after {accept_backoff:?}");
+                            // Accept errors never stop the runtime or its supervised children.
+                            let (delay, next) = accept_retry(error.kind(), accept_backoff);
+                            accept_backoff = next;
+                            let Some(delay) = delay else { continue };
+                            log::warn!("accept backend connection: {error}; retrying after {delay:?}");
                             tokio::select! {
                                 _ = stopped(shutdown.clone()) => break Ok(()),
-                                _ = tokio::time::sleep(accept_backoff) => {},
+                                _ = tokio::time::sleep(delay) => {},
                             }
-                            accept_backoff = (accept_backoff * 2).min(Duration::from_secs(1));
                             continue;
                         }
                     };
@@ -510,6 +521,20 @@ mod tests {
                 .unwrap()
                 .unwrap()
                 .unwrap();
+        }
+    }
+
+    #[test]
+    fn accept_errors_retry_with_bounded_backoff() {
+        use std::io::ErrorKind::*;
+        for kind in [ConnectionAborted, ConnectionReset, Interrupted] {
+            assert_eq!(accept_retry(kind, Duration::from_millis(100)), (None, Duration::from_millis(100)));
+        }
+        let mut backoff = Duration::from_millis(100);
+        for expected in [100, 200, 400, 800, 1000, 1000] {
+            let (delay, next) = accept_retry(Other, backoff);
+            assert_eq!(delay, Some(Duration::from_millis(expected)));
+            backoff = next;
         }
     }
 
