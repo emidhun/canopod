@@ -862,6 +862,10 @@ pub fn sweep_orphans(app: &RuntimeContext) {
         }
         let alive = crate::ownership::group_may_be_alive(o.pgid);
         if alive {
+            if crate::services::proc_start_time_changed(o.pgid as u32, o.spawn_time_secs) {
+                log::warn!("forgetting stale process group record {}: start time changed; no process signalled", o.pgid);
+                continue;
+            }
             if o.spawn_time_secs == 0
                 || !crate::services::proc_start_time_matches(o.pgid as u32, o.spawn_time_secs)
                 || !crate::ownership::orphan_owner_gone(o.pgid as u32, o.owner.as_ref()) {
