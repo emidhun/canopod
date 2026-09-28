@@ -16,7 +16,6 @@ pub const LOG_CAP: usize = 160;
 const LOG_FLUSH_MS: u64 = 200;
 const MAX_LOG_TEXT: usize = 8 * 1024;
 const _: () = assert!(MAX_LOG_TEXT * 6 + 1024 < crate::events::MAX_EVENT_BYTES);
-const LOG_BATCH_BYTES: usize = 32 * 1024;
 const TRUNCATED_LOG: &str = " [line truncated]";
 
 fn bounded_log(mut text: String) -> String {
@@ -606,43 +605,7 @@ pub async fn start_service(app: &RuntimeContext, key: &str) -> Result<(), String
         let app = app.clone();
         let key = key.to_string();
         app.executor().spawn(async move {
-            let mut lines = BoundedLines::new(stream);
-            let mut batch: Vec<LogLine> = Vec::new();
-            let mut last_flush = Instant::now();
-            let mut batch_bytes = 0;
-            loop {
-                let line = tokio::select! {
-                    l = lines.next_line() => l,
-                    _ = tokio::time::sleep(Duration::from_millis(LOG_FLUSH_MS)) => {
-                        if !batch.is_empty() { flush_batch(&app, &key, &mut batch); }
-                        last_flush = Instant::now();
-                        batch_bytes = 0;
-                        continue;
-                    }
-                };
-                match line {
-                    Ok(Some(text)) => {
-                        let lv = classify_line(&text, is_err);
-                        let line = LogLine::now(lv, text);
-                        let size = serde_json::to_vec(&line).expect("log line serializes").len() + 1;
-                        if batch_bytes + size > LOG_BATCH_BYTES && !batch.is_empty() {
-                            flush_batch(&app, &key, &mut batch); batch_bytes = 0; last_flush = Instant::now();
-                        }
-                        batch.push(line); batch_bytes += size;
-                        if batch_bytes >= LOG_BATCH_BYTES || last_flush.elapsed().as_millis() as u64 >= LOG_FLUSH_MS {
-                            flush_batch(&app, &key, &mut batch);
-                            last_flush = Instant::now();
-                            batch_bytes = 0;
-                        }
-                    }
-                    _ => {
-                        if !batch.is_empty() {
-                            flush_batch(&app, &key, &mut batch);
-                        }
-                        break;
-                    }
-                }
-            }
+            pump_logs(&app, &key, stream, is_err).await;
         });
     }
 
@@ -686,6 +649,36 @@ pub async fn start_service(app: &RuntimeContext, key: &str) -> Result<(), String
     Ok(())
 }
 
+async fn pump_logs<R: tokio::io::AsyncRead + Unpin>(app: &RuntimeContext, key: &str, stream: R, is_err: bool) {
+    let mut lines = BoundedLines::new(stream);
+    let mut batch = Vec::new();
+    let mut last_flush = tokio::time::Instant::now();
+    loop {
+        tokio::select! {
+            // A ready stream must not starve the fixed deadline. Splitting a
+            // frame belongs to flush_batch, not to the desktop emit cadence.
+            biased;
+            _ = tokio::time::sleep_until(last_flush + Duration::from_millis(LOG_FLUSH_MS)) => {
+                if !batch.is_empty() { flush_batch(app, key, &mut batch); }
+                last_flush = tokio::time::Instant::now();
+            }
+            line = lines.next_line() => match line {
+                Ok(Some(text)) => batch.push(LogLine::now(classify_line(&text, is_err), text)),
+                _ => {
+                    if !batch.is_empty() { flush_batch(app, key, &mut batch); }
+                    return;
+                }
+            }
+        }
+    }
+}
+
+// A conservative JSON estimate avoids serializing every line just to choose
+// frame cuts. Each text byte can expand to at most six bytes (\u00XX).
+fn log_frame_estimate(line: &LogLine) -> usize {
+    (line.text.len() + line.t.len() + line.lv.len()) * 6 + 64
+}
+
 fn flush_batch(app: &RuntimeContext, key: &str, batch: &mut Vec<LogLine>) {
     let table = app.state::<ProcTable>();
     {
@@ -709,7 +702,7 @@ fn flush_batch(app: &RuntimeContext, key: &str, batch: &mut Vec<LogLine>) {
             let mut end = start;
             let mut bytes = overhead;
             while end < batch.len() {
-                let next = serde_json::to_vec(&batch[end]).expect("log serializes").len() + 1;
+                let next = log_frame_estimate(&batch[end]);
                 if end > start && bytes + next > crate::events::MAX_EVENT_BYTES { break; }
                 bytes += next; end += 1;
             }
@@ -1243,8 +1236,67 @@ mod health_probe_tests {
 #[cfg(test)]
 mod bounded_log_tests {
     use super::*;
+    #[test]
+    fn truncation_keeps_multibyte_boundaries() {
+        let line = bounded_log("🦀".repeat(MAX_LOG_TEXT));
+        assert!(line.len() <= MAX_LOG_TEXT);
+        assert!(line.ends_with(TRUNCATED_LOG));
+        assert!(line.trim_end_matches(TRUNCATED_LOG).chars().all(|c| c == '🦀'));
+    }
+
     #[tokio::test]
-    async fn huge_unterminated_lines_are_bounded_and_next_line_survives() {
+    async fn huge_unterminated_line_is_bounded_at_eof() {
+        let input = "x".repeat(2 * 1024 * 1024);
+        let mut reader = BoundedLines::new(input.as_bytes());
+        let line = reader.next_line().await.unwrap().unwrap();
+        assert!(line.len() <= MAX_LOG_TEXT);
+        assert!(line.ends_with(TRUNCATED_LOG));
+        assert!(reader.next_line().await.unwrap().is_none());
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn pump_waits_for_deadline_and_resets_after_each_flush() {
+        use tokio::io::AsyncWriteExt;
+        #[derive(Default)]
+        struct Host(Mutex<Vec<serde_json::Value>>);
+        impl crate::runtime::Host for Host {
+            fn interested(&self, _: crate::runtime::Audience) -> bool { true }
+            fn publish(&self, _: crate::runtime::Audience, _: &str, payload: serde_json::Value) -> Result<(), String> { self.0.lock().push(payload); Ok(()) }
+            fn notify(&self, _: &str, _: &str, _: bool) -> Result<(), String> { Ok(()) }
+            fn badge(&self, _: &str, _: i64) {}
+        }
+        let host = std::sync::Arc::new(Host::default());
+        let dir = std::env::temp_dir().join(format!("canopy-pump-{}", std::process::id()));
+        let app = RuntimeContext::new(AppState::new(Default::default(), Default::default()), crate::runtime::RuntimePaths { config: dir.clone(), data: dir.clone(), logs: dir.clone() }, tokio::runtime::Handle::current(), host.clone());
+        let (mut writer, reader) = tokio::io::duplex(128 * 1024);
+        let pump = tokio::spawn(async move { pump_logs(&app, "web", reader, false).await });
+        let burst = format!("{}\n", "x".repeat(1024)).repeat(64);
+        writer.write_all(burst.as_bytes()).await.unwrap();
+        tokio::task::yield_now().await;
+        assert!(host.0.lock().is_empty(), "byte cuts must not bypass the timer");
+        tokio::time::advance(Duration::from_millis(199)).await;
+        tokio::task::yield_now().await;
+        assert!(host.0.lock().is_empty());
+        tokio::time::advance(Duration::from_millis(1)).await;
+        tokio::task::yield_now().await;
+        let count = host.0.lock().len();
+        assert!(count > 0);
+        writer.write_all(b"next\n").await.unwrap();
+        tokio::task::yield_now().await;
+        assert_eq!(host.0.lock().len(), count);
+        tokio::time::advance(Duration::from_millis(199)).await;
+        tokio::task::yield_now().await;
+        assert_eq!(host.0.lock().len(), count, "last_flush must reset");
+        tokio::time::advance(Duration::from_millis(1)).await;
+        tokio::task::yield_now().await;
+        assert_eq!(host.0.lock().len(), count + 1);
+        drop(writer);
+        tokio::time::timeout(Duration::from_secs(1), pump).await.unwrap().unwrap();
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    #[tokio::test]
+    async fn huge_terminated_lines_are_bounded_and_next_line_survives() {
         let input = format!("{}\nnext\n", "x".repeat(2 * 1024 * 1024));
         let mut reader = BoundedLines::new(input.as_bytes());
         let line = reader.next_line().await.unwrap().unwrap();
@@ -1265,15 +1317,22 @@ mod bounded_log_tests {
         let dir = std::env::temp_dir().join(format!("canopy-log-burst-{}", std::process::id()));
         let app = RuntimeContext::new(AppState::new(Default::default(), Default::default()), crate::runtime::RuntimePaths { config: dir.clone(), data: dir.clone(), logs: dir.clone() }, tokio::runtime::Handle::current(), std::sync::Arc::new(Host));
         let mut client = app.events().subscribe(crate::events::SubscriptionKind::Application).unwrap();
-        let mut lines = (0..1000).map(|_| LogLine::now("info", "x".repeat(200))).collect();
+        let expected: Vec<_> = (0..1000).map(|i| format!("{i:04}:{}", "x".repeat(200))).collect();
+        let mut lines = expected.iter().map(|text| LogLine::now("info", text)).collect();
         flush_batch(&app, "worktree::web", &mut lines);
         assert!(lines.is_empty());
         let mut received = 0;
+        let mut sequence = 0;
         while received < 1000 {
             let frame = tokio::time::timeout(Duration::from_secs(2), client.recv()).await.unwrap().unwrap();
             assert!(frame.json.len() <= crate::events::MAX_EVENT_BYTES);
             let value: serde_json::Value = serde_json::from_str(&frame.json).unwrap();
-            received += value["payload"]["lines"].as_array().unwrap().len();
+            sequence += 1;
+            assert_eq!(value["sequence"].as_u64().unwrap(), sequence);
+            for line in value["payload"]["lines"].as_array().unwrap() {
+                assert_eq!(line["text"], expected[received]);
+                received += 1;
+            }
         }
         drop(app); let _ = std::fs::remove_dir_all(dir);
     }
