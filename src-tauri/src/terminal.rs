@@ -727,25 +727,32 @@ pub fn get_buffer(table: &TermTable, id: &str) -> Option<BufferSnapshot> {
 /// A PTY shell owns a Unix session; job-control children may use other groups
 /// in that same session. Stop each group, rather than only the shell process.
 fn kill_session(sess: &mut PtySession) {
+    kill_session_child(&mut sess.pgid, sess.child.as_mut());
+}
+
+fn kill_session_child(pgid: &mut i32, child: &mut (dyn Child + Send + Sync)) {
+    // A successful wait releases the PID for reuse. Never inspect or signal
+    // that session ID again when the reader later reports EOF.
+    if *pgid == 0 { return; }
     #[cfg(unix)]
     // This entry exclusively owns an unreaped child; its PID cannot be reused.
     // A zombie leader may reject getsid on macOS while background groups still
     // retain its session ID, so inspect session members rather than the leader.
-    if sess.pgid > 1 {
+    if *pgid > 1 {
         use sysinfo::{System, ProcessesToUpdate, ProcessRefreshKind};
         let mut system = System::new();
         system.refresh_processes_specifics(ProcessesToUpdate::All, true, ProcessRefreshKind::nothing());
         let mut groups = std::collections::HashSet::new();
         for pid in system.processes().keys() {
             let pid = pid.as_u32() as i32;
-            if unsafe { libc::getsid(pid) == sess.pgid } {
+            if unsafe { libc::getsid(pid) == *pgid } {
                 let group = unsafe { libc::getpgid(pid) };
                 if group > 1 { groups.insert(group); }
             }
         }
         for group in groups { unsafe { libc::killpg(group, libc::SIGKILL); } }
     }
-    if sess.child.kill().is_ok() { let _ = sess.child.wait(); }
+    if child.kill().is_ok() && child.wait().is_ok() { *pgid = 0; }
 }
 
 /// Kill and drop a session, including any retained output — closing a tab is the
@@ -855,6 +862,10 @@ pub fn sweep_orphans(app: &RuntimeContext) {
         }
         let alive = crate::ownership::group_may_be_alive(o.pgid);
         if alive {
+            if crate::services::proc_start_time_changed(o.pgid as u32, o.spawn_time_secs) {
+                log::warn!("forgetting stale process group record {}: start time changed; no process signalled", o.pgid);
+                continue;
+            }
             if o.spawn_time_secs == 0
                 || !crate::services::proc_start_time_matches(o.pgid as u32, o.spawn_time_secs)
                 || !crate::ownership::orphan_owner_gone(o.pgid as u32, o.owner.as_ref()) {
@@ -929,6 +940,30 @@ pub fn sweep_idle(app: &RuntimeContext, table: &TermTable) {
 #[cfg(test)]
 mod tests {
     use super::{b64, kind_of, looks_like_prompt, strip_ansi};
+
+    #[test]
+    fn a_reaped_session_is_never_killed_again() {
+        #[derive(Debug, Default)]
+        struct Child { kills: usize, waits: usize }
+        impl portable_pty::ChildKiller for Child {
+            fn kill(&mut self) -> std::io::Result<()> { self.kills += 1; Ok(()) }
+            fn clone_killer(&self) -> Box<dyn portable_pty::ChildKiller + Send + Sync> { Box::new(Self::default()) }
+        }
+        impl portable_pty::Child for Child {
+            fn try_wait(&mut self) -> std::io::Result<Option<portable_pty::ExitStatus>> { Ok(None) }
+            fn wait(&mut self) -> std::io::Result<portable_pty::ExitStatus> { self.waits += 1; Ok(portable_pty::ExitStatus::with_exit_code(0)) }
+            fn process_id(&self) -> Option<u32> { None }
+            #[cfg(windows)]
+            fn as_raw_handle(&self) -> Option<std::os::windows::io::RawHandle> { None }
+        }
+        let mut child = Child::default();
+        // PID 1 deliberately skips native group signalling in this fake.
+        let mut pgid = 1;
+        super::kill_session_child(&mut pgid, &mut child);
+        assert_eq!(pgid, 0);
+        super::kill_session_child(&mut pgid, &mut child);
+        assert_eq!((child.kills, child.waits), (1, 1));
+    }
 
     #[test]
     fn answered_input_refreshes_badge_once() {
