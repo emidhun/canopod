@@ -18,6 +18,8 @@ pub enum Audience {
 }
 
 pub trait Host: Send + Sync {
+    /// A human can see the native UI; independent of event subscribers.
+    fn user_present(&self) -> bool { false }
     fn interested(&self, audience: Audience) -> bool;
     fn publish(
         &self,
@@ -181,9 +183,12 @@ mod tests {
     #[derive(Default)]
     struct RecordingHost {
         interested: bool,
+        present: bool,
+        notifications: Mutex<Vec<String>>,
         events: Mutex<Vec<(String, serde_json::Value)>>,
     }
     impl Host for RecordingHost {
+        fn user_present(&self) -> bool { self.present }
         fn interested(&self, _: Audience) -> bool {
             self.interested
         }
@@ -196,7 +201,8 @@ mod tests {
             self.events.lock().push((event.into(), payload));
             Ok(())
         }
-        fn notify(&self, _: &str, _: &str, _: bool) -> Result<(), String> {
+        fn notify(&self, title: &str, _: &str, _: bool) -> Result<(), String> {
+            self.notifications.lock().push(title.into());
             Ok(())
         }
         fn badge(&self, _: &str, _: i64) {}
@@ -213,6 +219,18 @@ mod tests {
             tokio::runtime::Handle::current(),
             host,
         )
+    }
+
+    #[tokio::test]
+    async fn presence_is_independent_of_event_interest() {
+        for (present, interested) in [(false, true), (true, false)] {
+            let host = Arc::new(RecordingHost { present, interested, ..Default::default() });
+            let app = context(host.clone());
+            app.state::<AppState>().settings.write().notifications.service_crash = true;
+            crate::notify::notify(&app, crate::notify::Kind::ServiceCrash, "subject", "crashed", "details");
+            assert_eq!(host.notifications.lock().len(), usize::from(!present));
+            assert_eq!(crate::stats::should_poll(&app), present);
+        }
     }
 
     #[tokio::test]
