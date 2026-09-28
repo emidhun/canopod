@@ -41,6 +41,8 @@ struct Policy {
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 struct RepoBinding {
     registered_path: String,
+    // Reserved for diagnostics/future filesystem identity checks. Authorization
+    // compares registered_path without performing request-time filesystem I/O.
     canonical_path: String,
 }
 
@@ -195,6 +197,10 @@ impl Controller {
     pub(crate) fn available_requests(&self) -> usize {
         self.requests.available_permits()
     }
+    #[cfg(test)]
+    pub(crate) fn admin_guard_for_test(&self) -> parking_lot::MutexGuard<'_, ()> {
+        self.admin.lock()
+    }
     pub fn enabled(&self) -> bool {
         let live = self.live.read();
         live.policy.enabled && live.fault.is_none() && !self.shutdown.is_cancelled()
@@ -310,7 +316,8 @@ impl Controller {
         match persisted {
             Ok(policy) => {
                 live.policy = policy;
-                live.fault = None;
+                // Disabling access does not repair an earlier credential fault.
+                // Explicit enable/rotation clears faults only after validation.
             }
             Err(error) => {
                 live.fault = Some(format!(
@@ -531,8 +538,10 @@ impl Handler {
         // Hold policy through the cached read: rotation/disable linearizes
         // either before this call or after it, never halfway through it.
         let live = self.controller.live.read();
-        if self.controller.shutdown.is_cancelled()
-            || live.fault.is_some()
+        if self.controller.shutdown.is_cancelled() {
+            return Err("stopping");
+        }
+        if live.fault.is_some()
             || self.generation.is_cancelled()
             || !live.policy.enabled
         {
@@ -579,5 +588,25 @@ impl Handler {
         Ok(serde_json::json!({"repoId":repo_id,"source":"cache","cacheAvailable":repo.is_some(),
             "worktrees":repo.map(|r| r.worktrees.len()).unwrap_or(0),
             "services":{"stopped":counts[0],"starting":counts[1],"running":counts[2],"stopping":counts[3],"error":counts[4]}}).to_string())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn a_cached_tool_racing_shutdown_reports_stopping() {
+        let directory = std::env::temp_dir().join(format!("canopy-mcp-shutdown-{}", std::process::id()));
+        std::fs::create_dir_all(&directory).unwrap();
+        let app = crate::backend::open(crate::runtime::RuntimePaths { config: directory.clone(), data: directory.clone(), logs: directory.clone() }).unwrap();
+        let controller = Controller::open(app.clone(), Arc::new(CredentialStore::open(&directory).unwrap()), 12345).unwrap();
+        let handler = Handler { controller: controller.clone(), generation: controller.live.read().generation.clone() };
+        controller.shutdown();
+        assert_eq!(handler.cached_status("allowed"), Err("stopping"));
+        drop(handler);
+        drop(controller);
+        drop(app);
+        std::fs::remove_dir_all(directory).unwrap();
     }
 }
