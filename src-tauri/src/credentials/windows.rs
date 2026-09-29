@@ -274,7 +274,7 @@ mod tests {
     fn credential_directory_junction_is_refused_without_touching_target() {
         let fixture = Fixture::new();
         let target = fixture.0.join("target");
-        drop(prepare_directory(&target).unwrap());
+        drop(prepare_directory(&target, true).unwrap());
         let link = fixture.0.join("credentials");
         let result = std::process::Command::new("cmd").args(["/C", "mklink", "/J"]).arg(&link).arg(&target).output().unwrap();
         assert!(result.status.success(), "{}", String::from_utf8_lossy(&result.stderr));

@@ -17,7 +17,9 @@ fn backend_command(dir: &Directory, action: &str) -> Command {
 struct Started {
     child: ChildGuard,
     reader: std::thread::JoinHandle<()>,
+    #[cfg(unix)]
     lines: Vec<String>,
+    #[cfg(unix)]
     messages: std::sync::mpsc::Receiver<String>,
     attempts: usize,
 }
@@ -43,7 +45,7 @@ fn start_backend(dir: &Directory, initial_port: Option<u16>) -> Started {
             bind_failed |= line.contains("bind backend at");
             let ready = line.contains("running in foreground");
             lines.push(line);
-            if ready { return Started { child, reader, lines, messages, attempts: attempt + 1 }; }
+            if ready { return Started { child, reader, #[cfg(unix)] lines, #[cfg(unix)] messages, attempts: attempt + 1 }; }
         }
         drop(child);
         reader.join().unwrap();
