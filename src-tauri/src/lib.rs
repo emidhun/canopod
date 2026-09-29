@@ -2,6 +2,7 @@
 mod commands;
 pub mod backend;
 pub mod app_api;
+pub mod mcp;
 pub mod credentials;
 #[cfg(test)]
 mod csp;

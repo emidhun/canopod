@@ -58,6 +58,9 @@ zeroize = "1"
 # Loopback application API; protocol-specific MCP handlers remain separate.
 # Pin the reviewed HTTP middleware behavior shared with the MCP transport.
 axum = { version = "=0.8.9", default-features = false, features = ["http1", "json", "tokio"] }
+# Official MCP protocol/transport; stateless requests retain no session history.
+rmcp = { version = "=3.4.0", default-features = false, features = ["server", "transport-streamable-http-server"] }
+tokio-util = { version = "0.7", features = ["rt"] }
 hyper = { version = "1", features = ["server", "http1"] }
 hyper-util = { version = "0.1", features = ["tokio", "service"] }
 # non-poisoning locks: with std, one panic while holding a lock poisons it and

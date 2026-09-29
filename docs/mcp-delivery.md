@@ -187,7 +187,7 @@ revocation and session invalidation belong to its later transport layer.
 `serve --port <nonzero-port>` selects and persists an explicit port in
 `backend.json` in the config directory. A bind failure never chooses another
 port. The application token is loaded or created in private storage after
-binding succeeds; it is never printed. MCP remains disabled and `/mcp` is absent.
+binding succeeds; it is never printed. MCP defaults to disabled; its route returns 404 until explicitly enabled.
 This application listener is independent of future MCP enablement.
 
 `canopy-backend status` and `canopy-backend stop` read the existing private
@@ -224,11 +224,66 @@ connections two seconds to flush while child cleanup proceeds independently.
 The core remains owned until its runtime and connection contexts are released.
 
 These are native application control endpoints, not browser pairing or general
-RPC. Snapshot reconciliation, browser sessions/CSRF, desktop attachment, MCP
-transport and live token-rotation/session invalidation remain later slices.
-This slice does not create an HTTP listener, enable MCP, generate credentials
-at startup, or change permission profiles. Wire authentication, revocation and
-session invalidation through the later application/MCP transport layers.
+RPC. Snapshot reconciliation, browser sessions/CSRF and desktop attachment remain
+later slices. MCP transport is implemented below.
+
+
+## Opt-in MCP transport and cached probe
+
+The independent backend mounts official `rmcp = 3.4.0` Streamable HTTP at `/mcp`
+on the same IPv4 listener. The SDK requires Rust 1.88; Canopy's owner locking
+already requires a newer standard library. Protocol negotiation and metadata
+validation belong to the SDK. Tests exercise legacy `2025-03-26` and current
+`2026-07-28` calls. Stateless JSON responses retain zero sessions. Each bounded
+request gets its own SDK service, including its tool-schema cache: rmcp caches
+unknown tool names, so a process-long service would otherwise grow that cache.
+
+Native controls (also available under the application-authenticated
+`/api/v1/mcp/` routes):
+
+```sh
+canopy-backend mcp status
+canopy-backend mcp enable --repo <registered-repo-id>
+canopy-backend mcp rotate-token
+canopy-backend mcp disable
+canopy-backend mcp enable
+```
+
+Repeating `enable` with `--repo` replaces the allowlist; omitting it preserves the
+previous list. Enable requires a nonempty list of registered IDs. The policy is
+stored separately in `mcp.json`, never in a legacy desktop whole-object save.
+Malformed or externally changed policy is preserved. MCP status reports recovery
+instructions while application control remains available. Enable requires repair;
+disable always revokes live access and reports any persistence failure in status.
+If disable reports a persistence error, repair the policy before restarting: the
+old enabled policy can otherwise become active again. Successful policy writes
+commit before becoming live. Credentials remain in
+the private MCP token file; no control command prints them. Ordinary restart and
+re-enable preserve the token and endpoint. Rotation requires updating the client
+credential. Missing credentials fault MCP without preventing backend startup;
+use application administration to rotate the MCP token.
+
+MCP authorization runs before body collection/SDK dispatch. It rejects app
+credentials, foreign/duplicate Host or Origin, and invalid bearer values; native
+clients may omit Origin. MCP credentials cannot configure their own permissions.
+Eight MCP requests are admitted independently of the eight application requests,
+with 64 KiB bodies, five-second body reads, ten-second dispatch deadlines and the
+shared 32-connection/60-second connection limits. Rotating, disabling or changing
+the allowlist cancels the old authorization generation, including stalled bodies;
+each tool call checks live policy again. Request cancellation cleans up its SDK
+workers. Disabling leaves the application listener and domain runtime running.
+
+`canopy_status` currently requires `repoId` and returns only small cached
+aggregate service/worktree counts, plus `cacheAvailable`. It launches no
+subprocesses and returns no paths, branch names, env values or command text.
+It does not claim readiness or refreshed data. This is the transport acceptance
+probe, not completion of the richer #141 read-tools requirements.
+
+Still required by the epic: desktop/browser controls, read/write/destructive
+permission profiles, private client configuration export, roots inference,
+remaining read tools, jobs, human approvals, packaged client validation on every
+platform, and measured performance budgets. Local debug client checks do not
+substitute for the packaged cross-platform acceptance matrix.
 
 ### Orphan recovery diagnostics
 
@@ -240,3 +295,9 @@ Credential rotation requires the matching `RuntimeOwner` and serializes across a
 The declared Rust minimum is 1.95, matching the locked `sysinfo` dependency; the ownership APIs alone require 1.89.
 
 HTTP review follow-up: silent sockets have an explicit five-second first-byte deadline; retiring connections drain for twenty seconds to cover headers, body and handler deadlines. Shutdown still drains for at most two seconds. Protocol parse errors generated before application middleware may omit the API version header. `stop` acknowledges asynchronous cleanup.
+
+### Transport review corrections
+
+Malformed MCP policy or credential content faults only the MCP endpoint (503); application status, stop and administration remain available. MCP status reports the recovery error. Disable revokes live access even when policy bytes are malformed and preserves those bytes. Back up and repair the named file before explicitly enabling again; a missing path binding in an older enabled policy requires setting enabled=false then enabling the selected repositories. Token rotation repairs malformed token content only after file privacy checks pass.
+
+Policy stores both the registered path and its canonical path for each explicitly selected ID. Cached requests compare the current registration against that binding; removing a repository or reusing its ID for another path does not inherit permission. Administrative filesystem work runs in an owned blocking transaction that publishes committed state even if the requester disconnects. Shutdown returns 503 stopping; token/policy revocation returns 401 authorization_changed.

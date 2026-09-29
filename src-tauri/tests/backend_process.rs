@@ -10,7 +10,7 @@ impl Drop for Directory { fn drop(&mut self) { let _ = std::fs::remove_dir_all(&
 
 fn backend_command(dir: &Directory, action: &str) -> Command {
     let mut command = Command::new(env!("CARGO_BIN_EXE_canopy-backend"));
-    command.arg(action).arg("--data-dir").arg(&dir.0).arg("--config-dir").arg(&dir.0).arg("--log-dir").arg(&dir.0);
+    command.args(action.split_whitespace()).arg("--data-dir").arg(&dir.0).arg("--config-dir").arg(&dir.0).arg("--log-dir").arg(&dir.0);
     command
 }
 
@@ -77,6 +77,7 @@ fn foreground_duplicate_launch_status_and_stop_release_the_owner() {
 fn run_lifecycle(method: &str) {
     let dir = Directory(std::env::temp_dir().join(format!("canopy-backend-process-{}-{method}", std::process::id())));
     std::fs::create_dir_all(&dir.0).unwrap();
+    std::fs::write(dir.0.join("settings.json"), serde_json::to_vec(&serde_json::json!({"repos":[{"id":"fixture","path":dir.0,"name":"fixture"}]})).unwrap()).unwrap();
     let command = |action: &str| backend_command(&dir, action);
     let Started { mut child, reader, .. } = start_backend(&dir, None);
     let second = command("serve").output().unwrap();
@@ -88,6 +89,13 @@ fn run_lifecycle(method: &str) {
     let snapshot: serde_json::Value = serde_json::from_slice(&status.stdout).unwrap();
     assert_eq!(snapshot["pid"], child.0.id());
     assert_eq!(snapshot["apiVersion"], "1");
+    for action in ["mcp status", "mcp enable --repo fixture", "mcp rotate-token", "mcp disable", "mcp enable"] {
+        let result = command(action).output().unwrap();
+        assert!(result.status.success(), "{action}: {}", String::from_utf8_lossy(&result.stderr));
+        let body: serde_json::Value = serde_json::from_slice(&result.stdout).unwrap();
+        assert!(body["enabled"].is_boolean());
+        assert!(body.get("token").is_none(), "control output must never include credentials");
+    }
     if method == "api" {
         let stop = command("stop").output().unwrap();
         assert!(stop.status.success(), "{}", String::from_utf8_lossy(&stop.stderr));
