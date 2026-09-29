@@ -652,7 +652,9 @@ impl Registry {
                     .as_ref()
                     .is_some_and(|e| e.revision != e.persisted_revision)
             }) {
-                return Err(JournalError::busy());
+                return Err(JournalError::storage(
+                    "expired job outcome was not persisted; repair storage and flush the job before retrying",
+                ));
             }
             matching
                 .or_else(|| entries.iter().position(Option::is_none))
@@ -1065,6 +1067,52 @@ mod tests {
     }
     fn plain() -> SecretFilter {
         SecretFilter::default()
+    }
+
+    #[tokio::test]
+    async fn expired_unpersisted_retry_reports_storage_until_repaired() {
+        let fixture = Fixture::new();
+        let registry = Registry::open(&fixture.0).unwrap();
+        let id = registry
+            .admit(request("failed-final-write"))
+            .await
+            .unwrap()
+            .job
+            .record
+            .id;
+        registry.start(&id).await.unwrap();
+        let temporary = fixture.0.join("jobs/job-000.tmp");
+        std::fs::create_dir(&temporary).unwrap();
+        assert_eq!(
+            registry
+                .finish(&id, Status::Succeeded, Outcome::default(), &plain())
+                .await
+                .unwrap_err()
+                .code,
+            "storage"
+        );
+        assert!(registry.get(&id).unwrap().persistence_pending);
+        registry.entries.lock()[0]
+            .as_mut()
+            .unwrap()
+            .snapshot
+            .record
+            .finished_at_ms = Some(0);
+        let error = registry
+            .admit(request("failed-final-write"))
+            .await
+            .unwrap_err();
+        assert_eq!(error.code, "storage");
+        assert_eq!(
+            error.retry_after_ms, None,
+            "storage repair is required, not automatic retry"
+        );
+        std::fs::remove_dir(temporary).unwrap();
+        registry.flush(&id).await.unwrap();
+        let next = registry.admit(request("failed-final-write")).await.unwrap();
+        assert!(!next.reused);
+        assert_ne!(next.job.record.id, id);
+        registry.close().await;
     }
 
     #[tokio::test]
