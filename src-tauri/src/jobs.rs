@@ -24,6 +24,10 @@ const SNAPSHOT_BYTES: usize = OUTPUT_BYTES + 32 * 1024;
 fn bounded_path(path: &str) -> bool {
     !path.is_empty() && serde_json::to_vec(path).is_ok_and(|bytes| bytes.len() <= 4096)
 }
+// Accepted inputs fit below these defensive limits: encoded target <=4 KiB,
+// merged outcome <=20 KiB, and bounded IDs/repo metadata fit the remaining
+// 7 KiB. Output is independently capped at 256 KiB; the final 1 KiB covers the
+// snapshot envelope. These checks guard future fields and hand-edited records.
 fn encode_snapshot(snapshot: &Snapshot) -> Result<Vec<u8>> {
     if serde_json::to_vec(&snapshot.record)
         .map_err(JournalError::storage)?
@@ -981,6 +985,9 @@ impl Registry {
             }
             // A previously checkpointed path is merged after filtering. Reserve
             // 4 KiB for it in addition to the 16 KiB caller outcome budget.
+            // None serializes as null, so replacing it with an encoded path
+            // <=4096 bytes grows the accepted outcome by at most 4092 bytes.
+            // Accepted input therefore cannot hit this defensive 20 KiB check.
             if serde_json::to_vec(&outcome)
                 .map_err(JournalError::storage)?
                 .len()
@@ -1113,6 +1120,37 @@ mod tests {
         assert!(!next.reused);
         assert_ne!(next.job.record.id, id);
         registry.close().await;
+    }
+
+    #[tokio::test]
+    async fn hand_edited_over_limit_paths_are_rejected_and_preserved() {
+        for created in [false, true] {
+            let fixture = Fixture::new();
+            let registry = Registry::open(&fixture.0).unwrap();
+            registry.admit(request("hand-edited")).await.unwrap();
+            registry.close().await;
+            let mut snapshot = registry.entries.lock()[0]
+                .as_ref()
+                .unwrap()
+                .snapshot
+                .clone();
+            // Raw length fits; encoded length exceeds 4096 because of escaping.
+            let path = "\\".repeat(2048);
+            if created {
+                snapshot.record.outcome.created_path = Some(path);
+            } else {
+                snapshot.record.target = path;
+            }
+            let bytes = serde_json::to_vec(&snapshot).unwrap();
+            registry.store.write(0, &bytes).unwrap();
+            drop(registry);
+            let error = Registry::open(&fixture.0).err().unwrap();
+            assert!(error.message.contains("job-000.json"), "{error}");
+            assert_eq!(
+                std::fs::read(fixture.0.join("jobs/job-000.json")).unwrap(),
+                bytes
+            );
+        }
     }
 
     #[tokio::test]
@@ -1498,7 +1536,12 @@ mod tests {
         let blocked = registry.writer.lock().await;
         let clone = registry.clone();
         let client = tokio::spawn(async move { clone.admit(request("cancel-client")).await });
+        let deadline = tokio::time::Instant::now() + Duration::from_secs(5);
         while registry.transactions.available_permits() == 8 {
+            assert!(
+                tokio::time::Instant::now() < deadline,
+                "admission did not acquire a transaction permit"
+            );
             tokio::task::yield_now().await;
         }
         client.abort();
@@ -1555,7 +1598,8 @@ mod tests {
         let registry = Registry::open(&fixture.0).unwrap();
         registry.store.write(0, b"{bad").unwrap();
         drop(registry);
-        assert!(Registry::open(&fixture.0).is_err());
+        let error = Registry::open(&fixture.0).err().unwrap();
+        assert!(error.message.contains("job-000.json"), "{error}");
         assert_eq!(
             std::fs::read(fixture.0.join("jobs/job-000.json")).unwrap(),
             b"{bad"
