@@ -15,6 +15,7 @@
     "core:webview:allow-create-webview-window",
     "opener:default",
     "opener:allow-open-url",
-    "dialog:default"
+    "dialog:default",
+    "notification:default"
   ]
 }

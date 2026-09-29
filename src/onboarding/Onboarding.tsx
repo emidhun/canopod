@@ -23,7 +23,7 @@ import { useEffect, useRef, useState } from "react";
 import { open as openDialog } from "@tauri-apps/plugin-dialog";
 import { getCurrentWebview } from "@tauri-apps/api/webview";
 import "../styles/onboarding.css";
-import { errText, hasBackend, ipc, type ProvisionEntry, type RepoCfg, type RepoDetection, type ServiceCfg } from "../ipc";
+import { errText, hasBackend, ipc, type SetupTask, type ProvisionEntry, type RepoCfg, type RepoDetection, type ServiceCfg } from "../ipc";
 import { useStore } from "../store";
 import { Bolt, Browser, Check, ChevRight, Chevron, Cube, Doc, Download, Fork, Plus, Server, Spinner, Trash } from "../icons";
 
@@ -863,7 +863,11 @@ export default function Onboarding({
     if (!det) return;
     const on = services.filter((s) => s.on);
     const envPairs = cfg.env.filter((e) => e.on && e.key.trim()).map((e) => [e.key, e.value] as [string, string]);
-    const setupCmds = cfg.setup.filter((u) => u.on && u.cmd.trim()).map((u) => u.cmd);
+    // Onboarding writes plain tasks: no working directory, all enabled —
+    // exactly the shape a bare string in the config file parses to.
+    const setupCmds: SetupTask[] = cfg.setup
+      .filter((u) => u.on && u.cmd.trim())
+      .map((u) => ({ cmd: u.cmd, cwd: "", enabled: true }));
 
     const svcCfg = (): ServiceCfg[] =>
       on.map((s) => ({
@@ -874,6 +878,9 @@ export default function Onboarding({
         cwd: s.dir.trim(),
         basePort: s.port.trim() ? parseInt(s.port, 10) || null : null,
         env: {},
+        // Onboarding can't know a repo's readiness path, and guessing one
+        // would hold every service in "starting" until it timed out.
+        health: "",
       }));
 
     if (!hasBackend()) {

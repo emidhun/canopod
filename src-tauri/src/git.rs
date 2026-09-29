@@ -18,11 +18,42 @@ async fn run_git_net(cwd: &str, args: &[&str]) -> Result<String, String> {
     run_git_with_timeout(cwd, args, GIT_NETWORK_TIMEOUT).await
 }
 
+/// The user's configured git credentials, captured once per run.
+///
+/// A process-wide `OnceLock` rather than a lookup per git call: `run_git` has
+/// no `AppHandle`, is called from dozens of places including hot refresh
+/// paths, and threading state through all of them to read two rarely-changed
+/// strings would be a large diff for no behavioural gain. `apply_credentials`
+/// is called at startup and after every settings save.
+static GIT_CREDENTIALS: std::sync::OnceLock<parking_lot::RwLock<(String, String)>> = std::sync::OnceLock::new();
+
+fn credentials() -> &'static parking_lot::RwLock<(String, String)> {
+    GIT_CREDENTIALS.get_or_init(|| parking_lot::RwLock::new((String::new(), String::new())))
+}
+
+/// Publish the configured SSH key and credential helper to every later git
+/// call. Idempotent; safe to call on every settings save.
+pub fn apply_credentials(ssh_key: &str, credential_helper: &str) {
+    *credentials().write() = (ssh_key.trim().to_string(), credential_helper.trim().to_string());
+}
+
 async fn run_git_with_timeout(cwd: &str, args: &[&str], dur: Duration) -> Result<String, String> {
-    let fut = Command::new("git")
-        .arg("-C")
-        .arg(cwd)
-        .args(args)
+    let (ssh_key, helper) = credentials().read().clone();
+    let mut cmd = Command::new("git");
+    // `-c` before the subcommand, so it applies to this invocation only and
+    // never edits the user's repo or global config
+    if !helper.is_empty() {
+        // Clear the inherited multi-valued helper list before selecting one.
+        cmd.args(["-c", "credential.helper="]).arg("-c").arg(format!("credential.helper={helper}"));
+    }
+    cmd.arg("-C").arg(cwd).args(args);
+    if !ssh_key.is_empty() {
+        // IdentitiesOnly stops ssh-agent offering every other key first, which
+        // is what makes "I selected a key and it still used the wrong one"
+        // happen. The path is quoted for the shell git builds from this string.
+        cmd.env("GIT_SSH_COMMAND", format!("ssh -i '{}' -o IdentitiesOnly=yes", ssh_key.replace('\'', "'\\''")));
+    }
+    let fut = cmd
         .kill_on_drop(true) // a timed-out git must not linger
         .output();
     let out = match tokio::time::timeout(dur, fut).await {
@@ -1025,6 +1056,33 @@ mod tests {
         assert_eq!(std::fs::read_to_string(repo.join("a.txt")).unwrap(), "two\n", "restored to HEAD");
 
         let _ = std::fs::remove_dir_all(&repo);
+    }
+
+    /// The add-repo flow (#122) leans on validate_repo to accept a real repo
+    /// and reject a plain folder before it registers anything.
+    #[tokio::test]
+    async fn validate_repo_returns_toplevel_and_rejects_non_repos() {
+        let repo = unique_dir("validate");
+        let _ = std::fs::remove_dir_all(&repo);
+        init_repo(&repo).await;
+        let rp = repo.to_str().unwrap();
+
+        let top = validate_repo(rp).await.unwrap();
+        // git canonicalizes (/var → /private/var on macOS); compare by basename
+        assert_eq!(
+            std::path::Path::new(top.trim()).file_name(),
+            std::path::Path::new(rp).file_name(),
+            "toplevel is the repo dir"
+        );
+
+        // a plain directory that isn't a git repo must error, not return a path
+        let plain = unique_dir("validate-plain");
+        let _ = std::fs::remove_dir_all(&plain);
+        std::fs::create_dir_all(&plain).unwrap();
+        assert!(validate_repo(plain.to_str().unwrap()).await.is_err(), "a non-repo must be rejected");
+
+        let _ = std::fs::remove_dir_all(&repo);
+        let _ = std::fs::remove_dir_all(&plain);
     }
 
     /// Data-loss guard: this report arms `worktree remove --force`, and a

@@ -1054,6 +1054,16 @@
   padding: 1px 5px;
   font-style: normal;
 }
+/* A row waiting for a keystroke: the accent says "this is listening", which
+   is the only state where the app is intercepting the whole keyboard. */
+.cxset-root .kbdk.is-capturing i {
+  color: var(--action-primary);
+  border-color: var(--action-primary);
+  background: var(--accent-dim);
+}
+.cxset-root .kbdk:not(:disabled):hover i {
+  border-color: var(--text-tertiary);
+}
 
 /* test output strip */
 .cxset-root .testout {
@@ -1357,4 +1367,20 @@
   .cxset-root .sbody {
     padding-left: 0;
   }
+}
+
+/* ── a row the save step refused (#43) ────────────────────────────────────
+   Settings used to drop a half-filled service / command / agent row on save
+   without saying so. It is now kept, marked here, and named in the toast. */
+.cxset-root .obj.incomplete {
+  border-color: var(--state-error);
+  background: var(--red-wash);
+}
+.cxset-root .obj.incomplete .ohead .nm {
+  color: var(--state-error);
+}
+.cxset-root .ohead .tag.warn {
+  color: var(--warn);
+  background: var(--warn-dim);
+  border-color: transparent;
 }

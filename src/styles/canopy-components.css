@@ -132,13 +132,23 @@ select.cx-input{appearance:none;cursor:pointer;background-image:linear-gradient(
 .cx-alert--warn .cx-alert__ic,.cx-alert--warn b{color:var(--state-attention)}
 .cx-alert--ok{border:var(--border-w) solid var(--green-border);background:var(--green-dim);color:var(--green-text)}
 .cx-alert--ok .cx-alert__ic{color:var(--state-running)}
-.cx-alert pre{margin:var(--sp-tight) 0 0;font:var(--fs-micro)/1.6 var(--mono);white-space:pre-wrap}
+.cx-alert pre{margin:var(--sp-tight) 0 0;font:var(--fs-micro)/1.6 var(--mono);white-space:pre-wrap;word-break:break-word;max-height:220px;overflow:auto}
 
 /* ── Toast ── */
 .cx-toast{position:absolute;bottom:34px;left:50%;transform:translateX(-50%);background:var(--toast-bg);color:var(--text-primary);padding:var(--sp-row) var(--sp-toast-x);border-radius:var(--r-xl);font-size:var(--fs-body);box-shadow:var(--shadow-toast);border:var(--border-w) solid var(--border);z-index:70;animation:cx-pop var(--dur) ease}
 
 /* ── StepList ── */
-.cx-step{display:flex;align-items:baseline;gap:var(--sp-4);padding:var(--sp-micro) 0;font:var(--fs-small) var(--mono)}
+/* A step is a row plus, on request, its own output. The row keeps the old
+   flex layout; the wrapper stacks it above the disclosure body. */
+.cx-step{display:block;padding:var(--sp-micro) 0;font:var(--fs-small) var(--mono)}
+.cx-step__head{display:flex;align-items:baseline;gap:var(--sp-4)}
+.cx-step__head[role="button"]{cursor:pointer}
+.cx-step__head[role="button"]:hover .cx-step__text{color:var(--text-primary)}
+.cx-step__head:focus-visible{outline:2px solid var(--action-primary);outline-offset:2px;border-radius:var(--r-xs)}
+.cx-step__chev{flex:none;color:var(--text-tertiary);font-size:var(--fs-micro)}
+/* the output a step produced — scrolls rather than growing the dialog */
+.cx-step__body{margin:var(--sp-micro) 0 var(--sp-tight) 17px;display:flex;flex-direction:column;align-items:flex-start;gap:var(--sp-micro)}
+.cx-step__body pre{margin:0;max-height:160px;overflow:auto;width:100%;white-space:pre-wrap;word-break:break-word;font:var(--fs-micro) var(--mono);color:var(--text-secondary)}
 .cx-step__bullet{width:13px;flex:none;text-align:center;color:var(--text-tertiary)}
 .cx-step__text{flex:1;min-width:0;color:var(--text-secondary)}
 .cx-step__meta{font-size:var(--fs-micro);color:var(--text-tertiary);flex:none}
@@ -195,6 +205,17 @@ select.cx-input{appearance:none;cursor:pointer;background-image:linear-gradient(
 .cx-kv dt{color:var(--text-tertiary)}
 .cx-kv dd{margin:0;font:var(--fs-small) var(--mono);color:var(--text-secondary);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .cx-kv dd em{font-style:normal;color:var(--action-primary)}
+/* Resolved service environment: a scrolling list, since a real .env runs to
+   dozens of keys and the modal must not grow past the viewport. */
+.cx-kv--env{max-height:190px;overflow-y:auto;gap:var(--sp-tight) var(--sp-4)}
+.cx-kv--env .cx-kv__row{display:contents}
+.cx-kv--env dt{font:var(--fs-small) var(--mono);color:var(--text-tertiary)}
+/* a withheld value reads as withheld, never as the literal characters */
+.cx-kv__masked{color:var(--text-tertiary);letter-spacing:.5px}
+/* a derived value that already collides — the number is still shown, because
+   knowing WHICH port clashes is the point; red marks the problem, not the fix */
+.cx-kv__bad{color:var(--state-error)}
+.cx-kv dd b{font-weight:var(--fw-medium);color:var(--text-primary)}
 
 /* ── Coming soon ───────────────────────────────────────────────────
    For designed surfaces whose backend does not exist yet. A whole screen
