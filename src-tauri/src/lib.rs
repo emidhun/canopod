@@ -7,6 +7,7 @@ mod diagnostics;
 mod error;
 mod git;
 mod notify;
+mod ownership;
 mod proc;
 mod services;
 mod settings;
@@ -94,7 +95,28 @@ pub fn run() {
     builder
         .setup(|app| {
             let handle = app.handle().clone();
-            tray::init(&handle)?;
+            // Cross-executable ownership must precede every runtime read and
+            // orphan sweep. The desktop single-instance plugin alone cannot
+            // exclude a headless host using the same data directory.
+            let owner = match ownership::RuntimeOwner::acquire(&handle.path().app_data_dir()?) {
+                Ok(owner) => owner,
+                Err(error) => {
+                    use tauri_plugin_dialog::{DialogExt, MessageDialogKind};
+                    log::error!("{error}");
+                    // Keep the event loop alive for the native dialog. A blocking
+                    // dialog in setup deadlocks the main thread on some platforms.
+                    // No webview or runtime may operate without ownership.
+                    let exit = handle.clone();
+                    handle
+                        .dialog()
+                        .message(error)
+                        .title("Canopy could not start")
+                        .kind(MessageDialogKind::Error)
+                        .show(move |_| exit.exit(1));
+                    return Ok(());
+                }
+            };
+            app.manage(owner);
             let loaded = settings::load_settings(&handle);
             // git credentials are process-wide (see git.rs) — publish them
             // before anything can run a git command
@@ -104,6 +126,11 @@ pub fn run() {
             app.manage(TermTable::default());
             app.manage(disk::DiskCache::default());
             app.manage(notify::NotifyState::default());
+            // Configured webviews are deferred until ownership and state exist.
+            for config in deferred_windows(&app.config().app.windows) {
+                tauri::WebviewWindowBuilder::from_config(app, config)?.build()?;
+            }
+            tray::init(&handle)?;
 
             // crash reports + the update check need AppState for their
             // preferences, so both are installed after it is managed
@@ -362,7 +389,13 @@ pub fn run() {
         .expect("error while building tauri application")
         .run(|app, event| {
             // Cmd-Q / app exit: kill every spawned process group before dying
-            if let tauri::RunEvent::ExitRequested { .. } = event {
+            if let tauri::RunEvent::ExitRequested { code, api, .. } = event {
+                if app.try_state::<ownership::RuntimeOwner>().is_none() {
+                    if code.is_none() {
+                        api.prevent_exit();
+                    }
+                    return;
+                }
                 // kill embedded terminal shells before their host process dies
                 if let Some(table) = app.try_state::<TermTable>() {
                     terminal::close_all(&table);
@@ -373,4 +406,23 @@ pub fn run() {
                 });
             }
         });
+}
+
+// Tauri has already built configs with create=true. Only deferred windows
+// belong to the post-ownership initialization path.
+fn deferred_windows(windows: &[tauri::utils::config::WindowConfig]) -> impl Iterator<Item = &tauri::utils::config::WindowConfig> {
+    windows.iter().filter(|config| !config.create)
+}
+
+#[cfg(test)]
+mod window_tests {
+    #[test]
+    fn builds_only_deferred_windows() {
+        let windows = [
+            tauri::utils::config::WindowConfig { label: "automatic".into(), create: true, ..Default::default() },
+            tauri::utils::config::WindowConfig { label: "deferred".into(), create: false, ..Default::default() },
+        ];
+        let labels: Vec<_> = super::deferred_windows(&windows).map(|config| config.label.as_str()).collect();
+        assert_eq!(labels, ["deferred"]);
+    }
 }
