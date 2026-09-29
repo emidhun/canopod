@@ -5,23 +5,72 @@
    while the name is still editable. The agent handoff is optional and
    collapsed, because most worktrees don't need one, but when it's filled in
    it seeds .canopy/context.md and later becomes the PR body. */
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { listen } from "@tauri-apps/api/event";
-import { errText, hasBackend, ipc, type Branches, type OpEvent } from "../ipc";
+import { errText, hasBackend, ipc, type Branches, type OpEvent, type WorktreePreview } from "../ipc";
 import { backgroundOp, useStore } from "../store";
 import { Alert, ChevRight, Fork, Info, Plus, Refresh, Spinner } from "../icons";
 import Modal, { Hint, Spacer, usePrimaryAction } from "./canopy/Modal";
 import RefPick from "./canopy/RefPick";
 import { seedWtContext } from "./WorktreeContext";
 
-/** Mirrors `sanitize_branch` in commands.rs:605 exactly — alphanumerics, `-`
-    and `.` survive, everything else becomes `_`, and CASE IS PRESERVED. An
-    approximation here is worse than nothing: the panel exists to tell you
-    where the worktree lands, so `Feature/foo` must read `Feature_foo`, not
-    `feature-foo`. Rust's is_alphanumeric is Unicode-aware, hence \p{L}\p{N}. */
+/** Slug preview for the NO-BACKEND dev build only. With a backend, every value
+    in the "You'll get" panel comes from `preview_worktree`, which shares its
+    derivation with `create_worktree` — so this approximation can never be what
+    a real user reads. Mirrors `sanitize_branch`: alphanumerics, `-` and `.`
+    survive, everything else becomes `_`, case preserved. */
 const sanitizeBranch = (b: string) => b.replace(/[^\p{L}\p{N}.-]/gu, "_");
 
-export default function NewWorktreeModal({ repoId, onClose }: { repoId: string; onClose: () => void }) {
+/* The first line that belongs to the setup phase rather than to creating the
+   worktree. Creating is this dialog's job — fetching, `git worktree add`,
+   submodules, provisioning — and it ends here. The setup commands are a
+   different thing with a different shape: a numbered step list with per-step
+   output, which the setup runner already renders properly and this dialog can
+   only show as an anonymous four-line tail.
+
+   It matches a numbered step and nothing else, because a numbered step is the
+   only line that promises a step list to hand over to. "setup — skipped
+   (disabled): …" is not one: a repo whose tasks are ALL disabled emits those
+   and then finishes, and handing that over opened a runner with no step to
+   show. Nor is "setup skipped — Run setup when you're ready", which means no
+   commands will run at all. */
+const SETUP_PHASE = /^setup \[/;
+export const isSetupStart = (detail: string) => SETUP_PHASE.test(detail);
+
+/** What a `create` event means to the dialog that is creating a worktree. */
+export type CreateOpAction = "ignore" | "append" | "handoff";
+
+/* Whose create is this?
+
+   A create left running in the background emits on the same channel, so "this
+   dialog is busy" is not enough to claim an event: start A in the background,
+   then create B, and A's first setup marker would close B's dialog and open a
+   runner labelled with B's branch whose Start services targets A.
+
+   `destination` is derived by the same backend function `create_worktree`
+   uses, so where we have it the match is exact. Where we don't — the repo's
+   settings could not be read — two concurrent creates are indistinguishable,
+   so the stream stays in this dialog rather than being handed to a runner that
+   might be watching the wrong worktree. */
+export function createOpAction(
+  ev: { wtKey: string; detail: string },
+  ctx: { destination: string | null; busy: boolean },
+): CreateOpAction {
+  if (ctx.destination && ev.wtKey !== ctx.destination) return "ignore";
+  if (!isSetupStart(ev.detail)) return "append";
+  return ctx.busy && ctx.destination ? "handoff" : "append";
+}
+
+export default function NewWorktreeModal({
+  repoId,
+  onClose,
+  onSetupStarted,
+}: {
+  repoId: string;
+  onClose: () => void;
+  /** hand this creation's provisioning stream over to the setup runner */
+  onSetupStarted: (wtKey: string, branch: string) => void;
+}) {
   const tree = useStore((s) => s.tree);
   const select = useStore((s) => s.select);
   const showToast = useStore((s) => s.showToast);
@@ -43,8 +92,10 @@ export default function NewWorktreeModal({ repoId, onClose }: { repoId: string; 
   const [prDescription, setPrDescription] = useState("");
   const [issue, setIssue] = useState("");
   const [issueDescription, setIssueDescription] = useState("");
-  /** the repo's configured worktree dir; blank means `${repo.path}-worktrees` */
+  /** the repo's configured worktree dir; blank means `${repo.path}/.worktrees` */
   const [worktreeDir, setWorktreeDir] = useState<string | null>(null);
+  /** what creating this branch would actually produce (backend-derived) */
+  const [preview, setPreview] = useState<WorktreePreview | null>(null);
 
   const activeRepo = tree.find((r) => r.repoId === repo);
   // git refuses to check the same branch out twice; show them, disabled
@@ -61,11 +112,19 @@ export default function NewWorktreeModal({ repoId, onClose }: { repoId: string; 
     setBase("");
     setExisting("");
     setExistingKind("local");
-    ipc
-      .listBranches(repo)
-      .then((b) => {
+    // The repo's configured default base wins when it still exists; falling
+    // back to `main` keeps the previous behaviour for repos that have none.
+    Promise.all([ipc.listBranches(repo), ipc.getSettings().catch(() => null)])
+      .then(([b, st]) => {
         setBranches(b);
-        setBase(b.local.includes("main") ? "main" : (b.local[0] ?? ""));
+        const configured = st?.repos.find((r) => r.id === repo)?.defaultBase?.trim();
+        setBase(
+          configured && b.local.includes(configured)
+            ? configured
+            : b.local.includes("main")
+              ? "main"
+              : (b.local[0] ?? ""),
+        );
       })
       .catch(() => setBranches({ local: [], remote: [], tags: [] }));
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -84,12 +143,35 @@ export default function NewWorktreeModal({ repoId, onClose }: { repoId: string; 
     };
   }, [repo]);
 
+  /* The listener is installed once, so it must not close over `branch`,
+     `busy` or `destination` — a ref is re-pointed on every render instead. */
+  const onOp = useRef<(ev: { wtKey: string; detail: string }) => void>(() => {});
+  const handedOff = useRef(false);
+  useEffect(() => {
+    onOp.current = (ev) => {
+      switch (createOpAction(ev, { destination, busy })) {
+        case "ignore":
+          return;
+        case "append":
+          return setProgress((p) => [...p.slice(-30), ev.detail]);
+        case "handoff":
+          if (handedOff.current) return;
+          handedOff.current = true;
+          // The dialog stops watching, exactly as "Run in background" does — so
+          // the outcome is still reported as a notice if the runner is closed too.
+          backgroundOp(opKey);
+          onSetupStarted(ev.wtKey, branch);
+          onClose();
+      }
+    };
+  });
+
   useEffect(() => {
     if (!hasBackend()) return;
     let un: (() => void) | undefined;
     listen<OpEvent>("worktree:op", (e) => {
       if (e.payload.op !== "create") return;
-      setProgress((p) => [...p.slice(-30), e.payload.detail]);
+      onOp.current(e.payload);
     }).then((u) => (un = u));
     return () => un?.();
   }, []);
@@ -134,6 +216,29 @@ export default function NewWorktreeModal({ repoId, onClose }: { repoId: string; 
   }, [mode, picked, base, existing, existingKind, branches]);
 
   const branch = payload.branch;
+
+  /* Ask the backend what this branch would produce. Debounced because it runs
+     on every keystroke of the name field; the command allocates nothing, so a
+     superseded request costs only its own work. It is keyed on the RESOLVED
+     branch — a remote pick lands under its local name, and previewing
+     `origin/foo` would promise a path creation never uses. */
+  useEffect(() => {
+    if (!hasBackend() || !repo || !branch) {
+      setPreview(null);
+      return;
+    }
+    let alive = true;
+    const t = setTimeout(() => {
+      ipc
+        .previewWorktree(repo, branch)
+        .then((p) => alive && setPreview(p))
+        .catch(() => alive && setPreview(null));
+    }, 150);
+    return () => {
+      alive = false;
+      clearTimeout(t);
+    };
+  }, [repo, branch]);
   // Mirror create_worktree's resolution: empty → `<repo>/.worktrees`, a relative
   // dir is taken relative to the repo, an absolute dir is used verbatim.
   const worktreeRoot = (() => {
@@ -143,12 +248,14 @@ export default function NewWorktreeModal({ repoId, onClose }: { repoId: string; 
     return d.startsWith("/") ? d : `${activeRepo.path}/${d}`;
   })();
   const destination =
-    ok && worktreeDir !== null && activeRepo ? `${worktreeRoot}/${sanitizeBranch(branch)}` : null;
+    preview?.path ?? (ok && worktreeDir !== null && activeRepo ? `${worktreeRoot}/${sanitizeBranch(branch)}` : null);
+  const clashingPorts = (preview?.ports ?? []).filter((p) => p.takenBy);
   /* The key the in-progress row and the failure notice are filed under. It is
      the destination when we can predict it — that is what worktree:op events
      are keyed by, so the row can show live steps. When the repo's settings
      could not be read we still create; the row just has no step detail. */
   const opKey = destination ?? `${repo}::${branch}`;
+
 
   async function create() {
     if (!ok) return;
@@ -304,14 +411,38 @@ export default function NewWorktreeModal({ repoId, onClose }: { repoId: string; 
         <dl className="cx-kv">
           <dt>Path</dt>
           <dd title={destination ?? undefined}>{destination ?? "—"}</dd>
-          {/* TODO(#58): ports and the database name are assigned inside
-              create_worktree. Deriving them here would duplicate backend logic
-              that can drift, and a wrong port is worse than a blank one. */}
           <dt>Ports</dt>
-          <dd title="Assigned at creation">—</dd>
+          <dd>
+            {preview?.ports.length ? (
+              preview.ports.map((p, i) => (
+                <span key={p.serviceId} className={p.takenBy ? "cx-kv__bad" : undefined} title={p.takenBy ? `Port ${p.port} is already used by ${p.takenBy}` : undefined}>
+                  {i > 0 && " · "}
+                  {p.name.toLowerCase()} <b>{p.port}</b>
+                </span>
+              ))
+            ) : preview ? (
+              /* the repo declares no service with a base port — there is
+                 nothing to assign, which is different from "not known yet" */
+              <span title="No service in this repo declares a base port">none</span>
+            ) : (
+              "—"
+            )}
+          </dd>
           <dt>Database</dt>
-          <dd title="Assigned at creation">—</dd>
+          <dd title={preview && !preview.dbName ? "This repo's provisioning never references ${WT_DB_NAME}" : undefined}>
+            {preview ? (preview.dbName ?? "none") : "—"}
+          </dd>
         </dl>
+        {preview?.pathExists && (
+          <Hint icon={Alert}>That path already exists — creation will be refused. Pick another branch name.</Hint>
+        )}
+        {clashingPorts.length > 0 && (
+          <Hint icon={Alert}>
+            {clashingPorts.length === 1
+              ? `Port ${clashingPorts[0].port} is already used by ${clashingPorts[0].takenBy} — change it after creating.`
+              : `${clashingPorts.length} derived ports are already in use — change them after creating.`}
+          </Hint>
+        )}
       </div>
 
       <details className="cxm-disc">

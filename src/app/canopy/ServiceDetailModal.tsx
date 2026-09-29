@@ -4,9 +4,9 @@
    sparkline, the port override (Esc reverts), and Restart / Stop. When the
    process died, the failure leads — red marks the problem, and the button
    that fixes it stays teal, because restarting is constructive. */
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Alert, Info, Restart, Server, Stop } from "../../icons";
-import { errText, hasBackend, ipc } from "../../ipc";
+import { errText, hasBackend, ipc, type EnvEntry } from "../../ipc";
 import { useStore } from "../../store";
 import { fmtUptime, type ServiceNode, type WorktreeNode } from "../../types";
 import Modal, { Hint, Spacer, usePrimaryAction } from "./Modal";
@@ -39,6 +39,25 @@ export default function ServiceDetailModal({
   const opened = String(svc?.port ?? "");
   const [port, setPort] = useState(opened);
   const changed = port !== opened;
+  /* The derived port — base + index*10 — is what Esc reverts to and what
+     labels the field. Reverting to "the value the modal happened to open
+     with" was never meaningful: if that value was itself an override, Esc
+     restored the override instead of undoing it. */
+  const derived = svc?.derivedPort != null ? String(svc.derivedPort) : null;
+  const overridden = derived != null && port !== derived;
+
+  const [env, setEnv] = useState<EnvEntry[] | null>(null);
+  useEffect(() => {
+    if (!hasBackend()) return;
+    let alive = true;
+    ipc
+      .serviceEnv(svcKey)
+      .then((e) => alive && setEnv(e))
+      .catch(() => alive && setEnv([]));
+    return () => {
+      alive = false;
+    };
+  }, [svcKey]);
 
   /* Clash detection needs only the tree — every other worktree's ports are
      already known here, so this is real rather than a backend gap. */
@@ -169,7 +188,7 @@ export default function ServiceDetailModal({
           onKeyDown={(e) => {
             if (e.key === "Escape") {
               e.stopPropagation();
-              setPort(opened);
+              setPort(derived ?? opened);
             }
           }}
         />
@@ -177,18 +196,31 @@ export default function ServiceDetailModal({
           <div className="cxm-fhint cxm-fhint--bad">Port {port} is already used by {clash}.</div>
         ) : changed && !portOk ? (
           <div className="cxm-fhint cxm-fhint--bad">Port must be between 1024 and 65535.</div>
-        ) : changed ? (
-          <div className="cxm-fhint cxm-fhint--warn">Overrides the assigned port. Esc reverts to {opened}.</div>
+        ) : overridden ? (
+          <div className="cxm-fhint cxm-fhint--warn">Overrides the derived port. Esc reverts to {derived}.</div>
         ) : (
-          <div className="cxm-fhint">Assigned from the worktree index. Change it only if something else holds the port.</div>
+          <div className="cxm-fhint">
+            Derived: base port + index × 10{derived ? ` = ${derived}` : ""}. Change it only if something else holds the port.
+          </div>
         )}
       </div>
 
-      {/* TODO(#59): the design shows the resolved environment (PORT,
-          DATABASE_URL, TOOLJET_HOST) here. No IPC exposes it, and guessing
-          the values would defeat the panel's entire purpose — it exists to
-          answer "why is this talking to the wrong database?". Omitted until
-          service_env lands. */}
+      {env !== null && env.length > 0 && (
+        <div className="cxm-fld">
+          <div className="cxm-flab">Environment</div>
+          <dl className="cx-kv cx-kv--env">
+            {env.map((e) => (
+              <span className="cx-kv__row" key={`${e.source}:${e.key}`}>
+                <dt title={e.source === "spawn" ? "Set by Canopy when the process starts" : "Read from a provisioned .env"}>{e.key}</dt>
+                <dd className={e.masked ? "cx-kv__masked" : undefined} title={e.masked ? "Value withheld — it looks like a credential" : e.value}>
+                  {e.value || <em>empty</em>}
+                </dd>
+              </span>
+            ))}
+          </dl>
+        </div>
+      )}
+
     </Modal>
   );
 }

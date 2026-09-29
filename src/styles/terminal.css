@@ -417,10 +417,19 @@
   overflow: hidden;
   padding: 6px 8px 8px;
 }
+/* Visual bell: a brief accent wash over the pane. Short enough not to be
+   mistaken for a state change, visible enough to catch peripherally. */
+.xterm-host.is-bell::after{content:"";position:absolute;inset:0;background:var(--accent-dim);pointer-events:none;animation:cx-bell 160ms ease-out}
+@keyframes cx-bell{from{opacity:1}to{opacity:0}}
+
 .xterm-host {
   width: 100%;
   height: 100%;
   color-scheme: dark;
+  /* positioning context for the bell overlay above; xterm builds its own
+     absolutely-positioned layers inside its `.xterm` child, so this is inert
+     for the renderer */
+  position: relative;
 }
 .term-body.hidden {
   visibility: hidden;
