@@ -2,7 +2,7 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::fs;
 use std::path::PathBuf;
-use tauri::{AppHandle, Manager};
+use crate::runtime::RuntimeContext;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", default)]
@@ -409,15 +409,15 @@ pub struct TermOrphan {
     pub spawn_time_secs: u64,
 }
 
-fn settings_path(app: &AppHandle) -> PathBuf {
-    app.path()
+fn settings_path(app: &crate::runtime::RuntimePaths) -> PathBuf {
+    app
         .app_config_dir()
         .expect("no app config dir")
         .join("settings.json")
 }
 
-fn runtime_path(app: &AppHandle) -> PathBuf {
-    app.path()
+fn runtime_path(app: &crate::runtime::RuntimePaths) -> PathBuf {
+    app
         .app_data_dir()
         .expect("no app data dir")
         .join("state.json")
@@ -468,20 +468,20 @@ fn save_json<T: Serialize>(path: &PathBuf, value: &T) -> Result<(), String> {
     fs::rename(&tmp, path).map_err(|e| format!("rename {} → {}: {e}", tmp.display(), path.display()))
 }
 
-pub fn load_settings(app: &AppHandle) -> Settings {
+pub fn load_settings(app: &crate::runtime::RuntimePaths) -> Settings {
     load_json(&settings_path(app))
 }
 
-pub fn save_settings(app: &AppHandle, s: &Settings) -> Result<(), String> {
-    save_json(&settings_path(app), s)
+pub fn save_settings(app: &RuntimeContext, s: &Settings) -> Result<(), String> {
+    save_json(&settings_path(app.path()), s)
 }
 
-pub fn load_runtime(app: &AppHandle) -> RuntimeState {
+pub fn load_runtime(app: &crate::runtime::RuntimePaths) -> RuntimeState {
     load_json(&runtime_path(app))
 }
 
-pub fn save_runtime(app: &AppHandle, s: &RuntimeState) -> Result<(), String> {
-    save_json(&runtime_path(app), s)
+pub fn save_runtime(app: &RuntimeContext, s: &RuntimeState) -> Result<(), String> {
+    save_json(&runtime_path(app.path()), s)
 }
 
 #[cfg(test)]

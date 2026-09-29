@@ -61,4 +61,25 @@ On the starting release commit, macOS Rust tests: 80 passed; frontend tests:
 144 passed; production frontend build passed. Headless, browser, MCP client and
 performance acceptance remain unverified until their implementation slices.
 
+## Runtime context extraction
+
+The Rust library now builds with `--no-default-features` without Tauri, its
+plugins, or its build script. `desktop` remains the default feature so existing
+Tauri development and packaging commands keep working. This is a reusable core
+build, not a standalone backend executable yet.
+
+`RuntimeContext` owns the state, process, terminal, disk and notification tables.
+Its clones share those exact tables and the existing worktree leases. Domain
+commands live in `operations.rs`; Tauri commands are adapters preserving the
+same command names, arguments and awaited results. Hosts supply filesystem
+paths, a Tokio handle and event/native capability callbacks. `DesktopHost`
+preserves the existing event target filters and visibility behavior. The
+subscriber event bus and independent backend lifecycle are subsequent slices.
+
+The service log directory cache belongs to the runtime rather than a
+process-global static. Tests construct and use the context without a Tauri
+application, check shared leases/state, preserve event payloads, skip unobserved
+serialization, and schedule work from a synchronous caller. The `core` CI job
+builds and tests on Linux without installing desktop system libraries.
+
 The declared Rust minimum is 1.95, matching the locked `sysinfo` dependency; the ownership APIs alone require 1.89.

@@ -9,20 +9,20 @@
 // window can rehydrate. Where a service is spawned over pipes and read *by line*
 // on the async runtime, a PTY is raw, bidirectional, byte-oriented I/O — so the
 // read loop lives on a dedicated std thread and streams `terminal:data` events.
+#[cfg(unix)]
+use crate::settings::TermOrphan;
 use base64::Engine;
 use portable_pty::{native_pty_system, Child, CommandBuilder, MasterPty, PtySize};
 use serde::Serialize;
-#[cfg(unix)]
-use crate::settings::TermOrphan;
 // read by the activity detector (agent profile lookup) and the embedded-shell
 // config lookup on every platform, and by the Unix orphan persist/sweep
+use crate::runtime::RuntimeContext;
 use crate::state::AppState;
+use parking_lot::Mutex;
 use std::collections::{HashMap, VecDeque};
 use std::io::{Read, Write};
 use std::sync::atomic::{AtomicU64, Ordering};
-use parking_lot::Mutex;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
-use tauri::{AppHandle, Emitter, Manager};
 
 /// Per-session scrollback cap (bytes). Big enough for a screenful of history on
 /// rehydrate, small enough to stay cheap across many idle worktrees.
@@ -145,17 +145,12 @@ pub struct BufferSnapshot {
     pub seq: u64,
 }
 
-
-/// Terminal bytes go to the windows that render terminals: the main window
-/// and detached `term-*` windows — never the popover.
-fn terminal_windows(t: &tauri::EventTarget) -> bool {
-    matches!(t, tauri::EventTarget::WebviewWindow { label }
-        if label == "main" || label.starts_with("term-"))
-}
-
 /// The user's home directory, for "don't open in the worktree root".
 fn home_dir() -> Option<String> {
-    std::env::var("HOME").ok().or_else(|| std::env::var("USERPROFILE").ok()).filter(|h| !h.is_empty())
+    std::env::var("HOME")
+        .ok()
+        .or_else(|| std::env::var("USERPROFILE").ok())
+        .filter(|h| !h.is_empty())
 }
 
 fn b64(bytes: &[u8]) -> String {
@@ -241,7 +236,9 @@ fn looks_like_prompt(tail: &str, extra: &[String]) -> bool {
         .map(|l| l.trim_matches(|c: char| c.is_whitespace() || "│┃|╎┆>·".contains(c)))
         .filter(|l| !l.is_empty() && !l.chars().all(|c| "─━═-_ ┌┐└┘├┤┬┴┼╭╮╰╯".contains(c)))
         .collect();
-    let Some(last) = lines.last() else { return false };
+    let Some(last) = lines.last() else {
+        return false;
+    };
 
     // A user-configured snippet wins outright — it was written for this CLI.
     let lower_tail = clean.to_lowercase();
@@ -254,7 +251,9 @@ fn looks_like_prompt(tail: &str, extra: &[String]) -> bool {
 
     // The last few lines are where a question lives; a TUI often renders the
     // question above the input box, so look at more than just the final line.
-    let recent = lines[lines.len().saturating_sub(3)..].join("\n").to_lowercase();
+    let recent = lines[lines.len().saturating_sub(3)..]
+        .join("\n")
+        .to_lowercase();
     const ASKS: [&str; 9] = [
         "(y/n)",
         "[y/n]",
@@ -285,8 +284,8 @@ fn looks_like_prompt(tail: &str, extra: &[String]) -> bool {
 /// ones that changed. Cheap by construction: it inspects at most `TAIL_BYTES`
 /// of already-resident scrollback per agent session and allocates only for
 /// sessions that are quiet.
-pub fn poll_states(app: &AppHandle) {
-    let Some(table) = app.try_state::<TermTable>() else { return };
+pub fn poll_states(app: &RuntimeContext) {
+    let table = app.state::<TermTable>();
     let mut changes: Vec<(String, Activity)> = Vec::new();
     {
         let mut sessions = table.sessions.lock();
@@ -318,15 +317,28 @@ pub fn poll_states(app: &AppHandle) {
     let changed = !changes.is_empty();
     for (id, state) in changes {
         if state == Activity::Waiting {
-            crate::notify::notify(app, crate::notify::Kind::AgentWaiting, &id, "An agent is waiting", "Open Canopy to respond to the agent.");
+            crate::notify::notify(
+                app,
+                crate::notify::Kind::AgentWaiting,
+                &id,
+                "An agent is waiting",
+                "Open Canopy to respond to the agent.",
+            );
         }
         let _ = app.emit("terminal:state", &StateEvent { id: &id, state });
     }
-    if changed { crate::notify::refresh_badge(app); }
+    if changed {
+        crate::notify::refresh_badge(app);
+    }
 }
 
 pub fn waiting_count(table: &TermTable) -> usize {
-    table.sessions.lock().values().filter(|session| session.activity == Activity::Waiting).count()
+    table
+        .sessions
+        .lock()
+        .values()
+        .filter(|session| session.activity == Activity::Waiting)
+        .count()
 }
 
 /// Resolve the agent profile a session was launched from, and return its
@@ -337,17 +349,29 @@ pub fn waiting_count(table: &TermTable) -> usize {
 /// prompt, so the profile whose command the launch starts with is the one.
 /// This keeps detection per-profile — as the issue asks — without threading a
 /// new argument through the whole terminal-open call chain.
-fn patterns_for(app: &AppHandle, cwd: &str, command: Option<&str>) -> Vec<String> {
-    let Some(command) = command.map(str::trim).filter(|c| !c.is_empty()) else { return Vec::new() };
-    let Some(state) = app.try_state::<AppState>() else { return Vec::new() };
-    let Some(ctx) = state.wt_context(cwd) else { return Vec::new() };
+fn patterns_for(app: &RuntimeContext, cwd: &str, command: Option<&str>) -> Vec<String> {
+    let Some(command) = command.map(str::trim).filter(|c| !c.is_empty()) else {
+        return Vec::new();
+    };
+    let state = app.state::<AppState>();
+    let Some(ctx) = state.wt_context(cwd) else {
+        return Vec::new();
+    };
     let settings = state.settings.read();
-    let Some(repo) = settings.repos.iter().find(|r| r.id == ctx.repo_id) else { return Vec::new() };
+    let Some(repo) = settings.repos.iter().find(|r| r.id == ctx.repo_id) else {
+        return Vec::new();
+    };
     repo.agents
         .iter()
         .filter(|a| !a.command.trim().is_empty())
         .find(|a| command.starts_with(a.command.trim()))
-        .map(|a| a.waiting_patterns.lines().map(str::to_string).filter(|l| !l.trim().is_empty()).collect())
+        .map(|a| {
+            a.waiting_patterns
+                .lines()
+                .map(str::to_string)
+                .filter(|l| !l.trim().is_empty())
+                .collect()
+        })
         .unwrap_or_default()
 }
 
@@ -359,7 +383,7 @@ fn patterns_for(app: &AppHandle, cwd: &str, command: Option<&str>) -> Vec<String
 /// The whole check→spawn→insert runs under the sessions lock so two concurrent
 /// attaches for one id (StrictMode remount, pop-out) can't both spawn.
 pub fn open(
-    app: &AppHandle,
+    app: &RuntimeContext,
     table: &TermTable,
     id: &str,
     cwd: &str,
@@ -370,22 +394,23 @@ pub fn open(
     // Resolve everything that reads settings BEFORE taking the sessions lock:
     // keeping the two locks disjoint means no path can ever establish a
     // settings→sessions ordering to deadlock against.
-    let waiting_patterns =
-        if kind_of(id) == "agent" { patterns_for(app, cwd, command.as_deref()) } else { Vec::new() };
-    let (term_cfg, provisioned_vars) = match app.try_state::<AppState>() {
-        Some(state) => {
-            let cfg = state.settings.read().embedded_terminal.clone();
-            let vars = if cfg.inherit_env {
-                state
-                    .wt_context(cwd)
-                    .map(|ctx| crate::state::worktree_vars(app, &ctx.repo_id, cwd, ctx.is_main))
-                    .unwrap_or_default()
-            } else {
-                HashMap::new()
-            };
-            (cfg, vars)
-        }
-        None => (crate::settings::TermCfg::default(), HashMap::new()),
+    let waiting_patterns = if kind_of(id) == "agent" {
+        patterns_for(app, cwd, command.as_deref())
+    } else {
+        Vec::new()
+    };
+    let (term_cfg, provisioned_vars) = {
+        let state = app.state::<AppState>();
+        let cfg = state.settings.read().embedded_terminal.clone();
+        let vars = if cfg.inherit_env {
+            state
+                .wt_context(cwd)
+                .map(|ctx| crate::state::worktree_vars(app, &ctx.repo_id, cwd, ctx.is_main))
+                .unwrap_or_default()
+        } else {
+            HashMap::new()
+        };
+        (cfg, vars)
     };
 
     let mut sessions = table.sessions.lock();
@@ -397,7 +422,12 @@ pub fn open(
     table.exited.lock().remove(id);
 
     let pair = native_pty_system()
-        .openpty(PtySize { rows, cols, pixel_width: 0, pixel_height: 0 })
+        .openpty(PtySize {
+            rows,
+            cols,
+            pixel_width: 0,
+            pixel_height: 0,
+        })
         .map_err(|e| format!("openpty failed: {e}"))?;
 
     // An explicit program is run as given, with the user's own arguments; an
@@ -410,7 +440,10 @@ pub fn open(
     };
     let custom_program = !term_cfg.program.trim().is_empty();
     let mut cmd = CommandBuilder::new(&shell);
-    let name = std::path::Path::new(&shell).file_name().and_then(|s| s.to_str()).unwrap_or("");
+    let name = std::path::Path::new(&shell)
+        .file_name()
+        .and_then(|s| s.to_str())
+        .unwrap_or("");
     // on Windows the shell is `bash.exe`; normalize so the family checks below
     // (login flag, and the `-i` interactive flag) match as they do on Unix
     let name = name.strip_suffix(".exe").unwrap_or(name);
@@ -452,7 +485,10 @@ pub fn open(
     // Every agent profile can read the same durable handoff even when it opts
     // out of positional prompts because its CLI has a different interface.
     if kind_of(id) == "agent" {
-        cmd.env("CANOPY_CONTEXT_FILE", std::path::Path::new(cwd).join(".canopy/context.md"));
+        cmd.env(
+            "CANOPY_CONTEXT_FILE",
+            std::path::Path::new(cwd).join(".canopy/context.md"),
+        );
         cmd.env("CANOPY_WORKTREE", cwd);
     }
     if let Some(bin) = crate::toolchain::pinned_node_bin(cwd) {
@@ -467,19 +503,30 @@ pub fn open(
         }
     }
 
-    let child = pair.slave.spawn_command(cmd).map_err(|e| format!("spawn failed: {e}"))?;
+    let child = pair
+        .slave
+        .spawn_command(cmd)
+        .map_err(|e| format!("spawn failed: {e}"))?;
     // the parent doesn't need the slave handle; dropping it lets EOF propagate
     // when the shell/command exits.
     drop(pair.slave);
 
-    let mut reader = pair.master.try_clone_reader().map_err(|e| format!("reader clone failed: {e}"))?;
+    let mut reader = pair
+        .master
+        .try_clone_reader()
+        .map_err(|e| format!("reader clone failed: {e}"))?;
     let writer = std::sync::Arc::new(Mutex::new(
-        pair.master.take_writer().map_err(|e| format!("writer failed: {e}"))?,
+        pair.master
+            .take_writer()
+            .map_err(|e| format!("writer failed: {e}"))?,
     ));
 
     // the child is its own session leader (the pty setsid's it), so pid == pgid
     let pgid = child.process_id().unwrap_or(0) as i32;
-    let started_unix = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_secs();
+    let started_unix = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap()
+        .as_secs();
     let generation = table.next_gen.fetch_add(1, Ordering::Relaxed) + 1;
 
     sessions.insert(
@@ -516,7 +563,8 @@ pub fn open(
                     // the emitted seq always matches a chunk boundary.
                     let mut seq = 0;
                     let mut ours = false;
-                    if let Some(table) = app.try_state::<TermTable>() {
+                    {
+                        let table = app.state::<TermTable>();
                         if let Some(sess) = table.sessions.lock().get_mut(&id) {
                             // Same generation guard the exit path uses: a restart
                             // reopens this id, and bytes this (now stale) reader
@@ -541,8 +589,16 @@ pub fn open(
                     // resyncs from the snapshot on show / on the next chunk's
                     // seq-gap check — the same race-free cursor rehydrate
                     // mechanism it already uses on mount.
-                    if ours && crate::windows_visible() {
-                        let _ = app.emit_filter("terminal:data", &DataEvent { id: &id, data: b64(chunk), seq }, terminal_windows);
+                    if ours && app.interested(crate::runtime::Audience::Terminals) {
+                        let _ = app.emit_to(
+                            crate::runtime::Audience::Terminals,
+                            "terminal:data",
+                            &DataEvent {
+                                id: &id,
+                                data: b64(chunk),
+                                seq,
+                            },
+                        );
                     }
                 }
                 Err(_) => break,
@@ -551,7 +607,8 @@ pub fn open(
         // session ended: drop it and tell the UI — but only if a newer session
         // hasn't already replaced this id (fast reopen), else we'd delete the
         // replacement and emit a false exit.
-        let removed = if let Some(table) = app.try_state::<TermTable>() {
+        let removed = {
+            let table = app.state::<TermTable>();
             let mut sessions = table.sessions.lock();
             match sessions.get(&id) {
                 Some(s) if s.generation == generation => {
@@ -561,25 +618,35 @@ pub fn open(
                     let sess = sessions.remove(&id).unwrap();
                     let mut exited = table.exited.lock();
                     if exited.len() >= EXITED_CAP {
-                        if let Some(oldest) = exited.iter().min_by_key(|(_, b)| b.at).map(|(k, _)| k.clone()) {
+                        if let Some(oldest) = exited
+                            .iter()
+                            .min_by_key(|(_, b)| b.at)
+                            .map(|(k, _)| k.clone())
+                        {
                             exited.remove(&oldest);
                         }
                     }
                     exited.insert(
                         id.clone(),
-                        ExitedBuffer { scrollback: sess.scrollback.into_iter().collect(), seq: sess.seq, at: Instant::now() },
+                        ExitedBuffer {
+                            scrollback: sess.scrollback.into_iter().collect(),
+                            seq: sess.seq,
+                            at: Instant::now(),
+                        },
                     );
                     true
                 }
                 _ => false,
             }
-        } else {
-            false
         };
         if removed {
             crate::notify::refresh_badge(&app);
             persist_orphans(&app);
-            let _ = app.emit_filter("terminal:exit", &ExitEvent { id: &id }, terminal_windows);
+            let _ = app.emit_to(
+                crate::runtime::Audience::TerminalState,
+                "terminal:exit",
+                &ExitEvent { id: &id },
+            );
         }
     });
 
@@ -588,7 +655,7 @@ pub fn open(
 
 /// Write user input (keystrokes, or a command the UI injects such as the agent
 /// CLI) to a session.
-pub fn write(app: &AppHandle, table: &TermTable, id: &str, data: &str) -> Result<(), String> {
+pub fn write(app: &RuntimeContext, table: &TermTable, id: &str, data: &str) -> Result<(), String> {
     // clone the writer handle out, then release the table lock BEFORE the
     // (potentially blocking) write — see the field comment on `writer`.
     let (writer, answered) = {
@@ -627,7 +694,12 @@ pub fn resize(table: &TermTable, id: &str, cols: u16, rows: u16) -> Result<(), S
     let sessions = table.sessions.lock();
     let sess = sessions.get(id).ok_or("no such terminal")?;
     sess.master
-        .resize(PtySize { rows, cols, pixel_width: 0, pixel_height: 0 })
+        .resize(PtySize {
+            rows,
+            cols,
+            pixel_width: 0,
+            pixel_height: 0,
+        })
         .map_err(|e| e.to_string())
 }
 
@@ -638,13 +710,15 @@ pub fn resize(table: &TermTable, id: &str, cols: u16, rows: u16) -> Result<(), S
 pub fn get_buffer(table: &TermTable, id: &str) -> Option<BufferSnapshot> {
     if let Some(s) = table.sessions.lock().get(id) {
         let bytes: Vec<u8> = s.scrollback.iter().copied().collect();
-        return Some(BufferSnapshot { buffer: b64(&bytes), seq: s.seq });
+        return Some(BufferSnapshot {
+            buffer: b64(&bytes),
+            seq: s.seq,
+        });
     }
-    table
-        .exited
-        .lock()
-        .get(id)
-        .map(|b| BufferSnapshot { buffer: b64(&b.scrollback), seq: b.seq })
+    table.exited.lock().get(id).map(|b| BufferSnapshot {
+        buffer: b64(&b.scrollback),
+        seq: b.seq,
+    })
 }
 
 /// Kill and drop a session, including any retained output — closing a tab is the
@@ -657,7 +731,7 @@ pub fn close(table: &TermTable, id: &str) {
 }
 
 /// Close a session and refresh the persisted orphan list (command path).
-pub fn close_and_persist(app: &AppHandle, table: &TermTable, id: &str) {
+pub fn close_and_persist(app: &RuntimeContext, table: &TermTable, id: &str) {
     close(table, id);
     crate::notify::refresh_badge(app);
     persist_orphans(app);
@@ -665,9 +739,15 @@ pub fn close_and_persist(app: &AppHandle, table: &TermTable, id: &str) {
 
 /// Close every terminal belonging to a worktree (called before it's removed, so
 /// no shell/agent lingers with no UI to stop it).
-pub fn close_worktree(app: &AppHandle, table: &TermTable, wt_key: &str) {
+pub fn close_worktree(app: &RuntimeContext, table: &TermTable, wt_key: &str) {
     let prefix = format!("{wt_key}::");
-    let ids: Vec<String> = table.sessions.lock().keys().filter(|k| k.starts_with(&prefix)).cloned().collect();
+    let ids: Vec<String> = table
+        .sessions
+        .lock()
+        .keys()
+        .filter(|k| k.starts_with(&prefix))
+        .cloned()
+        .collect();
     for id in &ids {
         close(table, id);
     }
@@ -691,13 +771,17 @@ pub fn close_all(table: &TermTable) {
 /// cleaned up on next launch (mirrors the service orphan sweep). Unix-only — see
 /// `sweep_orphans`.
 #[cfg(unix)]
-fn persist_orphans(app: &AppHandle) {
+fn persist_orphans(app: &RuntimeContext) {
     let table = app.state::<TermTable>();
     let orphans: Vec<TermOrphan> = table
         .sessions
         .lock()
         .iter()
-        .map(|(id, s)| TermOrphan { id: id.clone(), pgid: s.pgid, spawn_time_secs: s.started_unix })
+        .map(|(id, s)| TermOrphan {
+            id: id.clone(),
+            pgid: s.pgid,
+            spawn_time_secs: s.started_unix,
+        })
         .collect();
     let state = app.state::<AppState>();
     let runtime = {
@@ -709,17 +793,17 @@ fn persist_orphans(app: &AppHandle) {
 }
 
 #[cfg(windows)]
-fn persist_orphans(_app: &AppHandle) {}
+fn persist_orphans(_app: &RuntimeContext) {}
 
 /// Startup: kill terminal process groups left over from a crashed previous run
 /// (only when the group leader still exists and its start time matches). Unix-only
 /// — on Windows portable-pty's ConPTY child is killed directly and there is no
 /// pgid to sweep (a documented limitation: PTY grandchildren may linger).
 #[cfg(windows)]
-pub fn sweep_orphans(_app: &AppHandle) {}
+pub fn sweep_orphans(_app: &RuntimeContext) {}
 
 #[cfg(unix)]
-pub fn sweep_orphans(app: &AppHandle) {
+pub fn sweep_orphans(app: &RuntimeContext) {
     let orphans = {
         let state = app.state::<AppState>();
         let rt = state.runtime.read();
@@ -750,29 +834,31 @@ pub fn sweep_orphans(app: &AppHandle) {
 /// child makes its reader hit EOF, which removes the session and emits
 /// `terminal:exit`. Agent sessions are exempt — a quiet agent may just be
 /// waiting for the user, and killing it would lose work.
-pub fn sweep_idle(app: &AppHandle, table: &TermTable) {
+pub fn sweep_idle(app: &RuntimeContext, table: &TermTable) {
     // Per-repo agent timeout, keyed by the repo's worktree paths. Resolved
     // once per sweep rather than per session — the sweep runs every 5 minutes
     // and this is two lock acquisitions instead of one per open terminal.
-    let agent_limits: HashMap<String, Duration> = app
-        .try_state::<AppState>()
-        .map(|state| {
-            let settings = state.settings.read();
-            let tree = state.tree.read();
-            tree.iter()
-                .filter_map(|r| {
-                    let mins = settings.repos.iter().find(|c| c.id == r.repo_id)?.agent_idle_timeout_min;
-                    (mins > 0).then(|| {
-                        r.worktrees
-                            .iter()
-                            .map(|w| (w.wt_key.clone(), Duration::from_secs(mins as u64 * 60)))
-                            .collect::<Vec<_>>()
-                    })
+    let agent_limits: HashMap<String, Duration> = {
+        let state = app.state::<AppState>();
+        let settings = state.settings.read();
+        let tree = state.tree.read();
+        tree.iter()
+            .filter_map(|r| {
+                let mins = settings
+                    .repos
+                    .iter()
+                    .find(|c| c.id == r.repo_id)?
+                    .agent_idle_timeout_min;
+                (mins > 0).then(|| {
+                    r.worktrees
+                        .iter()
+                        .map(|w| (w.wt_key.clone(), Duration::from_secs(mins as u64 * 60)))
+                        .collect::<Vec<_>>()
                 })
-                .flatten()
-                .collect()
-        })
-        .unwrap_or_default();
+            })
+            .flatten()
+            .collect()
+    };
 
     let mut sessions = table.sessions.lock();
     for (id, sess) in sessions.iter_mut() {
@@ -814,9 +900,21 @@ mod tests {
     #[test]
     fn strip_ansi_removes_csi_and_osc() {
         assert_eq!(strip_ansi("\x1b[31mred\x1b[0m"), "red", "SGR colour codes");
-        assert_eq!(strip_ansi("\x1b[2J\x1b[1;1Hclear"), "clear", "erase + cursor move");
-        assert_eq!(strip_ansi("\x1b]0;title\x07text"), "text", "OSC terminated by BEL");
-        assert_eq!(strip_ansi("\x1b]0;title\x1b\\text"), "text", "OSC terminated by ST");
+        assert_eq!(
+            strip_ansi("\x1b[2J\x1b[1;1Hclear"),
+            "clear",
+            "erase + cursor move"
+        );
+        assert_eq!(
+            strip_ansi("\x1b]0;title\x07text"),
+            "text",
+            "OSC terminated by BEL"
+        );
+        assert_eq!(
+            strip_ansi("\x1b]0;title\x1b\\text"),
+            "text",
+            "OSC terminated by ST"
+        );
         // a CR rewrites the line in a TUI, so it must break "the last line"
         assert_eq!(strip_ansi("first\rsecond"), "first\nsecond");
     }
@@ -826,20 +924,38 @@ mod tests {
         let no_extra: [String; 0] = [];
         // explicit confirmations
         assert!(looks_like_prompt("Overwrite src/main.rs? (y/n)", &no_extra));
-        assert!(looks_like_prompt("Do you want to run this command?", &no_extra));
-        assert!(looks_like_prompt("\x1b[1mProceed?\x1b[0m", &no_extra), "through ANSI");
+        assert!(looks_like_prompt(
+            "Do you want to run this command?",
+            &no_extra
+        ));
+        assert!(
+            looks_like_prompt("\x1b[1mProceed?\x1b[0m", &no_extra),
+            "through ANSI"
+        );
         // a bare input caret inside a TUI box
-        assert!(looks_like_prompt("╭──────────╮\n│ ❯        │\n╰──────────╯", &no_extra));
+        assert!(looks_like_prompt(
+            "╭──────────╮\n│ ❯        │\n╰──────────╯",
+            &no_extra
+        ));
 
         // NOT waiting: ordinary working output, including output that merely
         // mentions a question mark mid-sentence
         assert!(!looks_like_prompt("Running tests…\n  42 passed", &no_extra));
-        assert!(!looks_like_prompt("Edited src/lib.rs (3 additions)", &no_extra));
+        assert!(!looks_like_prompt(
+            "Edited src/lib.rs (3 additions)",
+            &no_extra
+        ));
         assert!(
-            !looks_like_prompt("Checking whether the config? file exists\nnow reading it", &no_extra),
+            !looks_like_prompt(
+                "Checking whether the config? file exists\nnow reading it",
+                &no_extra
+            ),
             "a '?' that isn't at the end of the last line is not a prompt"
         );
-        assert!(!looks_like_prompt("", &no_extra), "empty tail is not a prompt");
+        assert!(
+            !looks_like_prompt("", &no_extra),
+            "empty tail is not a prompt"
+        );
         assert!(
             !looks_like_prompt("the answer is > 5 for all inputs", &no_extra),
             "a caret inside prose is not a bare input caret"
@@ -850,9 +966,15 @@ mod tests {
     fn configured_phrases_extend_the_builtin_shapes() {
         let extra = ["Approve this edit".to_string()];
         // the built-ins alone would not call this waiting
-        assert!(!looks_like_prompt("Approve this edit to continue working", &[] as &[String]));
+        assert!(!looks_like_prompt(
+            "Approve this edit to continue working",
+            &[] as &[String]
+        ));
         // with the profile's phrase it does, case-insensitively
-        assert!(looks_like_prompt("approve this edit to continue working", &extra));
+        assert!(looks_like_prompt(
+            "approve this edit to continue working",
+            &extra
+        ));
         // blank lines in the setting are ignored rather than matching everything
         let blanks = ["".to_string(), "   ".to_string()];
         assert!(!looks_like_prompt("ordinary output", &blanks));
@@ -867,7 +989,10 @@ mod tests {
     fn b64_length_formula_matches_frontend_gap_math() {
         for n in 0..=9usize {
             let s = b64(&vec![0xAB; n]);
-            assert!(!s.contains('\n') && !s.contains('\r'), "must be unwrapped: {s:?}");
+            assert!(
+                !s.contains('\n') && !s.contains('\r'),
+                "must be unwrapped: {s:?}"
+            );
             let pad = if s.ends_with("==") {
                 2
             } else if s.ends_with('=') {

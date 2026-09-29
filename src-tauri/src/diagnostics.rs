@@ -5,7 +5,7 @@
 // rebuild. "Clear caches" never deletes a worktree, a database or a settings
 // file; "Reset all settings" never deletes a repository from disk.
 use serde::Serialize;
-use tauri::{AppHandle, Manager};
+use crate::runtime::RuntimeContext;
 
 /// The experiments this build actually has.
 ///
@@ -33,13 +33,11 @@ pub struct Experiment {
 
 /// Is an experiment turned on? Unknown ids are off, so a settings file naming
 /// an experiment this build dropped behaves as though it never had it.
-pub fn experiment_enabled(app: &AppHandle, id: &str) -> bool {
+pub fn experiment_enabled(app: &RuntimeContext, id: &str) -> bool {
     if !EXPERIMENTS.iter().any(|e| e.id == id) {
         return false;
     }
-    app.try_state::<crate::state::AppState>()
-        .map(|s| s.settings.read().experiments.get(id).copied().unwrap_or(false))
-        .unwrap_or(false)
+    app.state::<crate::state::AppState>().settings.read().experiments.get(id).copied().unwrap_or(false)
 }
 
 /// A copy-pasteable environment summary for a bug report.
@@ -68,7 +66,7 @@ pub struct Diagnostics {
     pub crash_reports: usize,
 }
 
-pub fn gather(app: &AppHandle) -> Diagnostics {
+pub fn gather(app: &RuntimeContext) -> Diagnostics {
     let state = app.state::<crate::state::AppState>();
     let (repos, worktrees, services) = {
         let tree = state.tree.read();
@@ -78,14 +76,8 @@ pub fn gather(app: &AppHandle) -> Diagnostics {
             tree.iter().flat_map(|r| r.worktrees.iter()).map(|w| w.services.len()).sum(),
         )
     };
-    let running = app
-        .try_state::<crate::services::ProcTable>()
-        .map(|t| t.procs.lock().len())
-        .unwrap_or(0);
-    let terminals = app
-        .try_state::<crate::terminal::TermTable>()
-        .map(|t| t.sessions.lock().len())
-        .unwrap_or(0);
+    let running = app.state::<crate::services::ProcTable>().procs.lock().len();
+    let terminals = app.state::<crate::terminal::TermTable>().sessions.lock().len();
 
     Diagnostics {
         app_version: env!("CARGO_PKG_VERSION").to_string(),
@@ -133,7 +125,7 @@ pub struct ClearedCaches {
 /// Scoped by construction — it only ever walks `<app-log-dir>/services`. It
 /// cannot touch a worktree, a database, a repository or a settings file,
 /// because it never looks anywhere else.
-pub fn clear_caches(app: &AppHandle) -> ClearedCaches {
+pub fn clear_caches(app: &RuntimeContext) -> ClearedCaches {
     let mut out = ClearedCaches::default();
     let Ok(log_dir) = app.path().app_log_dir() else { return out };
     let services = log_dir.join("services");
@@ -164,7 +156,7 @@ pub fn clear_caches(app: &AppHandle) -> ClearedCaches {
 /// disproportionate outcome for someone who wanted their editor command and
 /// toggles back. Repositories are *what Canopy manages*, not a preference, so
 /// they survive; everything else returns to defaults.
-pub fn reset_settings(app: &AppHandle) -> Result<(), String> {
+pub fn reset_settings(app: &RuntimeContext) -> Result<(), String> {
     let state = app.state::<crate::state::AppState>();
     let fresh = {
         let mut s = state.settings.write();

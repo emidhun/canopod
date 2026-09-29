@@ -11,6 +11,23 @@ on:
   pull_request:
 
 jobs:
+  core:
+    # No Node build, display server, GTK or WebKit packages: the shared runtime
+    # must compile and exercise domain operations independently of Tauri.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+      - run: cargo check --no-default-features --locked
+        working-directory: src-tauri
+      - run: cargo clippy --no-default-features --all-targets --locked -- -D warnings
+        working-directory: src-tauri
+      - run: cargo test --no-default-features --locked --lib
+        working-directory: src-tauri
+
   linux:
     runs-on: ubuntu-latest
     steps:

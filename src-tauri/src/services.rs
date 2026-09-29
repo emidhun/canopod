@@ -5,7 +5,7 @@ use std::collections::{HashMap, VecDeque};
 use std::process::Stdio;
 use parking_lot::Mutex;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
-use tauri::{AppHandle, Emitter, Manager};
+use crate::runtime::RuntimeContext;
 use tokio::io::{AsyncBufReadExt, BufReader};
 use tokio::process::Command;
 
@@ -113,7 +113,7 @@ struct StatusEvent<'a> {
     exit_code: Option<i32>,
 }
 
-pub fn set_status(app: &AppHandle, key: &str, status: SvcStatus, started_at: Option<u64>, exit_code: Option<i32>) {
+pub fn set_status(app: &RuntimeContext, key: &str, status: SvcStatus, started_at: Option<u64>, exit_code: Option<i32>) {
     let state = app.state::<AppState>();
     let previous = state.statuses.write().insert(key.to_string(), status);
     // patch cached tree so late get_tree calls see fresh statuses
@@ -159,14 +159,7 @@ pub fn set_status(app: &AppHandle, key: &str, status: SvcStatus, started_at: Opt
 }
 
 
-/// Deliver to the main window's listeners only — the popover subscribes to the
-/// shared store but renders no logs/stats, and log bursts are the hottest
-/// event in the app.
-fn main_window_only(t: &tauri::EventTarget) -> bool {
-    matches!(t, tauri::EventTarget::WebviewWindow { label } if label == "main")
-}
-
-pub fn push_log(app: &AppHandle, key: &str, line: LogLine) {
+pub fn push_log(app: &RuntimeContext, key: &str, line: LogLine) {
     let table = app.state::<ProcTable>();
     {
         let mut logs = table.logs.lock();
@@ -186,8 +179,8 @@ pub fn push_log(app: &AppHandle, key: &str, line: LogLine) {
     // ring + disk always record; the emit is skipped while nothing is on
     // screen (the UI re-snapshots the ring via get_logs on tab select,
     // primeLogs, and window focus)
-    if crate::windows_visible() {
-        let _ = app.emit_filter("service:log", &LogEvent { svc_key: key, lines: vec![line] }, main_window_only);
+    if app.interested(crate::runtime::Audience::Main) {
+        let _ = app.emit_to(crate::runtime::Audience::Main, "service:log", &LogEvent { svc_key: key, lines: vec![line] });
     }
 }
 
@@ -208,14 +201,8 @@ pub struct LogSink {
 }
 
 /// `<app-log-dir>/services`, resolved and created once per run.
-fn service_log_dir(app: &AppHandle) -> Option<&'static std::path::PathBuf> {
-    static DIR: std::sync::OnceLock<Option<std::path::PathBuf>> = std::sync::OnceLock::new();
-    DIR.get_or_init(|| {
-        let dir = app.path().app_log_dir().ok()?.join("services");
-        std::fs::create_dir_all(&dir).ok()?;
-        Some(dir)
-    })
-    .as_ref()
+fn service_log_dir(app: &RuntimeContext) -> Option<&std::path::PathBuf> {
+    app.service_log_dir()
 }
 
 /// svc_key (`<wt path>::<service id>`) flattened to a filesystem-safe stem,
@@ -243,7 +230,7 @@ fn log_file_stem(key: &str) -> String {
 /// Append log lines to a per-service file under `<app-log-dir>/services/`.
 /// The in-memory ring keeps only LOG_CAP lines — a crash 500 lines in would
 /// otherwise lose its own cause. Best-effort: log I/O never fails a service op.
-fn persist_log_lines(app: &AppHandle, key: &str, lines: &[LogLine]) {
+fn persist_log_lines(app: &RuntimeContext, key: &str, lines: &[LogLine]) {
     use std::io::Write;
     if lines.is_empty() {
         return;
@@ -284,7 +271,7 @@ fn persist_log_lines(app: &AppHandle, key: &str, lines: &[LogLine]) {
 /// on Windows the Job Object's KILL_ON_JOB_CLOSE makes the OS reap the tree when
 /// Canopy dies, so there is nothing to persist or sweep.
 #[cfg(unix)]
-fn persist_orphans(app: &AppHandle) {
+fn persist_orphans(app: &RuntimeContext) {
     use crate::settings::OrphanProc;
     let table = app.state::<ProcTable>();
     let orphans: Vec<OrphanProc> = table
@@ -307,10 +294,10 @@ fn persist_orphans(app: &AppHandle) {
 }
 
 #[cfg(windows)]
-fn persist_orphans(_app: &AppHandle) {}
+fn persist_orphans(_app: &RuntimeContext) {}
 
 /// Resolve a service's config + worktree env (PORT etc.) from settings.
-fn resolve_service(app: &AppHandle, key: &str) -> Result<(ServiceCfg, String, HashMap<String, String>), String> {
+fn resolve_service(app: &RuntimeContext, key: &str) -> Result<(ServiceCfg, String, HashMap<String, String>), String> {
     let state = app.state::<AppState>();
     let tree = state.tree.read();
     for r in tree.iter() {
@@ -422,7 +409,7 @@ fn mask(key: &str, value: &str) -> (String, bool) {
 /// Every variable a service runs (or would run) with, ordered spawn-first and
 /// masked. Works whether or not the service is running: this is the resolved
 /// configuration, not a snapshot of a live process.
-pub fn resolved_env(app: &AppHandle, key: &str) -> Result<Vec<EnvEntry>, String> {
+pub fn resolved_env(app: &RuntimeContext, key: &str) -> Result<Vec<EnvEntry>, String> {
     let (cfg, wt_path, spawn_env) = resolve_service(app, key)?;
 
     let mut out: Vec<EnvEntry> = Vec::new();
@@ -456,7 +443,7 @@ pub fn resolved_env(app: &AppHandle, key: &str) -> Result<Vec<EnvEntry>, String>
     Ok(out)
 }
 
-pub async fn start_service(app: &AppHandle, key: &str) -> Result<(), String> {
+pub async fn start_service(app: &RuntimeContext, key: &str) -> Result<(), String> {
     {
         let table = app.state::<ProcTable>();
         if table.procs.lock().contains_key(key) {
@@ -536,7 +523,7 @@ pub async fn start_service(app: &AppHandle, key: &str) -> Result<(), String> {
             let app2 = app.clone();
             let key2 = key.to_string();
             let h = health.clone();
-            tauri::async_runtime::spawn(async move {
+            app.executor().spawn(async move {
                 if await_ready(&app2, &key2, p, &h, generation).await {
                     set_status(&app2, &key2, SvcStatus::Running, Some(started_unix), None);
                     push_log(&app2, &key2, LogLine::now("ok", format!("ready — http://localhost:{p}{h}")));
@@ -576,7 +563,7 @@ pub async fn start_service(app: &AppHandle, key: &str) -> Result<(), String> {
         let Some(stream) = stream else { continue };
         let app = app.clone();
         let key = key.to_string();
-        tauri::async_runtime::spawn(async move {
+        app.executor().spawn(async move {
             let mut lines = BufReader::new(stream).lines();
             let mut batch: Vec<LogLine> = Vec::new();
             let mut last_flush = Instant::now();
@@ -613,7 +600,7 @@ pub async fn start_service(app: &AppHandle, key: &str) -> Result<(), String> {
     {
         let app = app.clone();
         let key = key.to_string();
-        tauri::async_runtime::spawn(async move {
+        app.executor().spawn(async move {
             let status = child.wait().await;
             let table = app.state::<ProcTable>();
             {
@@ -649,7 +636,7 @@ pub async fn start_service(app: &AppHandle, key: &str) -> Result<(), String> {
     Ok(())
 }
 
-fn flush_batch(app: &AppHandle, key: &str, batch: &mut Vec<LogLine>) {
+fn flush_batch(app: &RuntimeContext, key: &str, batch: &mut Vec<LogLine>) {
     let table = app.state::<ProcTable>();
     {
         let mut logs = table.logs.lock();
@@ -669,8 +656,8 @@ fn flush_batch(app: &AppHandle, key: &str, batch: &mut Vec<LogLine>) {
         lines: Vec<LogLine>,
     }
     // see push_log: recorded always, emitted only when someone can see it
-    if crate::windows_visible() {
-        let _ = app.emit_filter("service:log", &LogEvent { svc_key: key, lines: std::mem::take(batch) }, main_window_only);
+    if app.interested(crate::runtime::Audience::Main) {
+        let _ = app.emit_to(crate::runtime::Audience::Main, "service:log", &LogEvent { svc_key: key, lines: std::mem::take(batch) });
     } else {
         batch.clear();
     }
@@ -696,7 +683,7 @@ fn classify_line(text: &str, _from_stderr: bool) -> &'static str {
     }
 }
 
-pub async fn stop_service(app: &AppHandle, key: &str) -> Result<(), String> {
+pub async fn stop_service(app: &RuntimeContext, key: &str) -> Result<(), String> {
     // graceful terminate under the lock (we need the group handle); capture the
     // generation so a restart during the grace window isn't hard-killed by us.
     let generation = {
@@ -716,7 +703,7 @@ pub async fn stop_service(app: &AppHandle, key: &str) -> Result<(), String> {
     // grace period, then hard kill if the *same* process is still tracked
     let app2 = app.clone();
     let key2 = key.to_string();
-    tauri::async_runtime::spawn(async move {
+    app.executor().spawn(async move {
         tokio::time::sleep(STOP_GRACE).await;
         let table = app2.state::<ProcTable>();
         let procs = table.procs.lock();
@@ -730,7 +717,7 @@ pub async fn stop_service(app: &AppHandle, key: &str) -> Result<(), String> {
 }
 
 /// Wait up to `ticks * 150ms` for the waiter task to reap `key`.
-async fn wait_reaped(app: &AppHandle, key: &str, ticks: u32) -> bool {
+async fn wait_reaped(app: &RuntimeContext, key: &str, ticks: u32) -> bool {
     for _ in 0..ticks {
         tokio::time::sleep(Duration::from_millis(150)).await;
         let table = app.state::<ProcTable>();
@@ -741,7 +728,7 @@ async fn wait_reaped(app: &AppHandle, key: &str, ticks: u32) -> bool {
     false
 }
 
-pub async fn restart_service(app: &AppHandle, key: &str) -> Result<(), String> {
+pub async fn restart_service(app: &RuntimeContext, key: &str) -> Result<(), String> {
     let was_running = {
         let table = app.state::<ProcTable>();
         let procs = table.procs.lock();
@@ -775,7 +762,7 @@ pub async fn restart_service(app: &AppHandle, key: &str) -> Result<(), String> {
 }
 
 /// Stop everything; returns once all process groups are reaped or grace expires.
-pub async fn stop_all(app: &AppHandle) {
+pub async fn stop_all(app: &RuntimeContext) {
     let keys: Vec<String> = {
         let table = app.state::<ProcTable>();
         let procs = table.procs.lock();
@@ -795,13 +782,13 @@ pub async fn stop_all(app: &AppHandle) {
 }
 
 /// Worktree-level: collect svc keys of one worktree.
-pub fn worktree_svc_keys(app: &AppHandle, wt_key: &str) -> Vec<String> {
+pub fn worktree_svc_keys(app: &RuntimeContext, wt_key: &str) -> Vec<String> {
     app.state::<AppState>().wt_service_keys(wt_key)
 }
 
 /// Reset DB: runs the repo's resetDb command in the worktree root; output goes
 /// to the first server-kind service's log buffer.
-pub async fn reset_db(app: &AppHandle, wt_key: &str) -> Result<(), String> {
+pub async fn reset_db(app: &RuntimeContext, wt_key: &str) -> Result<(), String> {
     let (cmd_str, log_key) = {
         let state = app.state::<AppState>();
         let tree = state.tree.read();
@@ -883,7 +870,7 @@ pub async fn reset_db(app: &AppHandle, wt_key: &str) -> Result<(), String> {
 /// (avoids killing a recycled PID). Unix-only — on Windows KILL_ON_JOB_CLOSE
 /// makes the OS reap the tree when Canopy dies, so there are no orphans to sweep.
 #[cfg(unix)]
-pub fn sweep_orphans(app: &AppHandle) {
+pub fn sweep_orphans(app: &RuntimeContext) {
     let orphans = {
         let state = app.state::<AppState>();
         let rt = state.runtime.read();
@@ -911,7 +898,7 @@ pub fn sweep_orphans(app: &AppHandle) {
 }
 
 #[cfg(windows)]
-pub fn sweep_orphans(_app: &AppHandle) {}
+pub fn sweep_orphans(_app: &RuntimeContext) {}
 
 /// Compare recorded spawn time against the process's actual start time (±5s).
 /// This is the guard against PID recycling: after a reboot (or enough process
@@ -982,7 +969,7 @@ async fn probe_once(port: u32, path: &str) -> Result<bool, String> {
 /// The process check matters: without it, a service that crashes two seconds
 /// after spawning would sit in `Starting` for the full two minutes instead of
 /// reporting the failure immediately.
-pub async fn await_ready(app: &AppHandle, key: &str, port: u32, path: &str, generation: u64) -> bool {
+pub async fn await_ready(app: &RuntimeContext, key: &str, port: u32, path: &str, generation: u64) -> bool {
     let started = Instant::now();
     let mut announced = false;
     while started.elapsed() < READY_TIMEOUT {

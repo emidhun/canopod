@@ -1,9 +1,9 @@
 // Headless end-to-end test suite (WTM_SUITE=<repoId>) that drives the real
 // command/service code paths and prints [suite] lines. Used to validate flows
 // without clicking the UI. Not part of normal operation.
-use crate::{commands, services, setup, state};
+use crate::{services, setup, state};
 use std::time::{Duration, Instant};
-use tauri::{AppHandle, Manager};
+use crate::runtime::RuntimeContext;
 
 fn pass(case: &str, detail: impl AsRef<str>) {
     eprintln!("[suite] PASS  {case} — {}", detail.as_ref());
@@ -26,19 +26,19 @@ fn port_bound(port: u32) -> bool {
         .unwrap_or(false)
 }
 
-fn proc_running(app: &AppHandle, key: &str) -> bool {
+fn proc_running(app: &RuntimeContext, key: &str) -> bool {
     let t = app.state::<services::ProcTable>();
     let p = t.procs.lock();
     p.contains_key(key)
 }
-fn log_count(app: &AppHandle, key: &str) -> usize {
+fn log_count(app: &RuntimeContext, key: &str) -> usize {
     let t = app.state::<services::ProcTable>();
     let l = t.logs.lock();
     l.get(key).map(|b| b.len()).unwrap_or(0)
 }
 
-pub fn run(app: AppHandle, repo_id: String) {
-    tauri::async_runtime::spawn(async move {
+pub fn run(app: RuntimeContext, repo_id: String) {
+    app.executor().spawn(async move {
         // wait for initial scan
         tokio::time::sleep(Duration::from_secs(3)).await;
         eprintln!("[suite] ===== START repo={repo_id} =====");
@@ -167,7 +167,7 @@ pub fn run(app: AppHandle, repo_id: String) {
                 } else {
                     info(format!("running setup (npm install) on {branch} — several minutes…"));
                     let started = Instant::now();
-                    match commands::run_worktree_setup(app.clone(), wt_key.clone(), false).await {
+                    match crate::operations::run_worktree_setup(app.clone(), wt_key.clone(), false).await {
                         Ok(()) => {
                             let deps = std::path::Path::new(wt_key).join("frontend/node_modules").exists();
                             if deps {
@@ -190,7 +190,7 @@ pub fn run(app: AppHandle, repo_id: String) {
         let moved = std::fs::rename(&cfg, &cfg_bak).is_ok();
         let new_branch = "wtm/suite-check".to_string();
         info(format!("creating worktree {new_branch} (submodules; auto-setup disabled for speed)…"));
-        let created = commands::create_worktree(
+        let created = crate::operations::create_worktree(
             app.clone(),
             repo_id.clone(),
             new_branch.clone(),
@@ -216,7 +216,7 @@ pub fn run(app: AppHandle, repo_id: String) {
 
                 // ── Case 6: remove the worktree we created ──
                 info("removing the created worktree…");
-                match commands::remove_worktree(app.clone(), wt_path.clone(), true, true).await {
+                match crate::operations::remove_worktree(app.clone(), wt_path.clone(), true, true).await {
                     Ok(()) => {
                         let gone = !std::path::Path::new(wt_path).exists();
                         let in_tree = {
@@ -252,7 +252,7 @@ pub fn run(app: AppHandle, repo_id: String) {
             let branch = "wtm/full-check".to_string();
             info(format!("FULL: creating {branch} with auto-setup (npm install — several minutes)…"));
             let started = Instant::now();
-            match commands::create_worktree(app.clone(), repo_id.clone(), branch.clone(), Some("HEAD".to_string()), true).await {
+            match crate::operations::create_worktree(app.clone(), repo_id.clone(), branch.clone(), Some("HEAD".to_string()), true).await {
                 Err(e) => fail("full-create+setup", format!("{e}")),
                 Ok(wt_path) => {
                     let deps = std::path::Path::new(&wt_path).join("frontend/node_modules").exists();
@@ -289,7 +289,7 @@ pub fn run(app: AppHandle, repo_id: String) {
                         tokio::time::sleep(Duration::from_secs(4)).await;
                     }
                     info("FULL: removing the worktree…");
-                    match commands::remove_worktree(app.clone(), wt_path.clone(), true, true).await {
+                    match crate::operations::remove_worktree(app.clone(), wt_path.clone(), true, true).await {
                         Ok(()) => pass("full-remove", "cleaned up"),
                         Err(e) => fail("full-remove", format!("{e}")),
                     }
