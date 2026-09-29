@@ -82,4 +82,25 @@ application, check shared leases/state, preserve event payloads, skip unobserved
 serialization, and schedule work from a synchronous caller. The `core` CI job
 builds and tests on Linux without installing desktop system libraries.
 
+## Runtime event subscribers
+
+The runtime event hub admits at most 16 subscribers, with 32 queued events per
+subscriber and a 64 KiB encoded-event limit. Consumers share encoded frames.
+Publishing never awaits a consumer; sequence allocation and enqueueing occur
+under one short coordinator lock. A full queue or oversized event invalidates
+that subscription, whose next read requires a fresh snapshot. Its subscriber
+slot remains occupied until it disconnects, bounding memory even when a stalled
+transport retains an invalid queue.
+
+Application subscriptions exclude PTY bytes. Terminal streams require a
+separate subscription kind, to be authenticated by the future host. Native
+desktop delivery remains independent of subscriber backpressure. With no native
+or subscribed consumer, event payloads are not serialized; process monitoring
+and the existing log buffers continue normally.
+
+This is an internal delivery primitive, not a network API. It has no replay
+buffer and makes no atomic snapshot guarantee. The authenticated application
+API still needs the #157 snapshot/event reconciliation and connection timeouts
+before exposing it to browsers. A reconnect must load a new authoritative
+snapshot; a cursor alone cannot recover dropped history.
 The declared Rust minimum is 1.95, matching the locked `sysinfo` dependency; the ownership APIs alone require 1.89.

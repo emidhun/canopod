@@ -8,6 +8,7 @@ mod desktop_host;
 pub mod diagnostics;
 pub mod disk;
 pub mod error;
+pub mod events;
 pub mod git;
 pub mod notify;
 pub mod operations;
