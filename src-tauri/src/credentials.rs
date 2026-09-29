@@ -146,6 +146,73 @@ impl CredentialStore {
     }
 }
 
+/// Fixed-slot private snapshots for the job journal. The runtime owner must
+/// outlive this store and every writer; writes to a slot must be serialized.
+/// Reuses exactly the credential ACL/handle checks, without a token format.
+pub(crate) struct PrivateSnapshots { directory: PathBuf, anchor: platform::Directory }
+impl PrivateSnapshots {
+    pub(crate) fn open(data: &Path) -> io::Result<Self> {
+        let directory = fs::canonicalize(data)?.join("jobs");
+        let anchor = platform::prepare_directory(&directory, true)?;
+        Ok(Self { directory, anchor })
+    }
+    fn path(&self, slot: usize, temporary: bool) -> PathBuf {
+        self.directory.join(format!("job-{slot:03}.{}", if temporary { "tmp" } else { "json" }))
+    }
+    #[cfg(test)]
+    pub(crate) fn create_temporary_for_test(&self, slot: usize, bytes: &[u8]) -> io::Result<()> {
+        let mut file = platform::create(&self.anchor, &self.path(slot, true))?;
+        file.write_all(bytes)?;
+        platform::sync_file(&file)
+    }
+    pub(crate) fn recover_temporary(&self, slot: usize) -> io::Result<()> {
+        let path = self.path(slot, true);
+        match platform::open(&self.anchor, &path) {
+            Ok(file) => { drop(file); platform::remove(&self.anchor, &path) },
+            Err(error) if error.kind() == io::ErrorKind::NotFound => Ok(()),
+            Err(error) => Err(error),
+        }
+    }
+    pub(crate) fn read(&self, slot: usize, limit: usize) -> io::Result<Option<Vec<u8>>> {
+        platform::check_directory(&self.anchor)?;
+        let file = match platform::open(&self.anchor, &self.path(slot, false)) {
+            Ok(file) => file,
+            Err(error) if error.kind() == io::ErrorKind::NotFound => return Ok(None),
+            Err(error) => return Err(error),
+        };
+        let mut bytes = Vec::new();
+        file.take(limit as u64 + 1).read_to_end(&mut bytes)?;
+        if bytes.len() > limit { return Err(io::Error::new(io::ErrorKind::InvalidData, "job snapshot exceeds retention limit")) }
+        Ok(Some(bytes))
+    }
+    pub(crate) fn write(&self, slot: usize, bytes: &[u8]) -> io::Result<Option<io::Error>> {
+        platform::check_directory(&self.anchor)?;
+        let path = self.path(slot, false);
+        match platform::open(&self.anchor, &path) {
+            Ok(_) => {},
+            Err(error) if error.kind() == io::ErrorKind::NotFound => {},
+            Err(error) => return Err(error),
+        }
+        let temporary = self.path(slot, true);
+        let mut file = platform::create(&self.anchor, &temporary)?;
+        let outcome = (|| {
+            file.write_all(bytes)?;
+            platform::sync_file(&file)?;
+            drop(file);
+            platform::replace(&self.anchor, &temporary, &path)?;
+            Ok(platform::sync_directory(&self.anchor).err())
+        })();
+        if outcome.is_err() { let _ = platform::remove(&self.anchor, &temporary); }
+        outcome
+    }
+    pub(crate) fn remove(&self, slot: usize) -> io::Result<()> {
+        let path = self.path(slot, false);
+        let file = platform::open(&self.anchor, &path)?;
+        drop(file);
+        platform::remove(&self.anchor, &path)
+    }
+}
+
 #[cfg(test)]
 thread_local! { static FAIL_CREATE: std::cell::Cell<bool> = const { std::cell::Cell::new(false) }; }
 #[cfg(test)]

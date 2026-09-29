@@ -55,6 +55,10 @@ dirs = "6"
 getrandom = "0.4"
 subtle = "2.6"
 zeroize = "1"
+# Stable job retry identities and bounded log secret filtering.
+sha2 = "0.10"
+regex = "1"
+aho-corasick = "1"
 # Loopback application API; protocol-specific MCP handlers remain separate.
 # Pin the reviewed HTTP middleware behavior shared with the MCP transport.
 axum = { version = "=0.8.9", default-features = false, features = ["http1", "json", "tokio"] }

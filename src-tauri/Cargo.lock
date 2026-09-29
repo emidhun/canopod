@@ -481,6 +481,7 @@ dependencies = [
 name = "canopy"
 version = "0.5.0"
 dependencies = [
+ "aho-corasick",
  "axum",
  "base64 0.23.1",
  "dirs",
@@ -492,10 +493,12 @@ dependencies = [
  "log",
  "parking_lot",
  "portable-pty",
+ "regex",
  "reqwest",
  "rmcp",
  "serde",
  "serde_json",
+ "sha2",
  "subtle",
  "sysinfo",
  "tauri",
