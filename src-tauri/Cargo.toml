@@ -12,6 +12,10 @@ name = "canopy"
 path = "src/main.rs"
 required-features = ["desktop"]
 
+[[bin]]
+name = "canopy-backend"
+path = "src/backend_main.rs"
+
 [lib]
 name = "canopy_lib"
 crate-type = ["staticlib", "cdylib", "rlib"]
@@ -31,7 +35,7 @@ tauri-build = { version = "2", features = [], optional = true }
 tauri = { version = "2", features = ["tray-icon", "image-png", "macos-private-api"], optional = true }
 tauri-plugin-opener = { version = "2", optional = true }
 # rolling file log in the app log dir — the thing a bug report can attach.
-# `log` macros everywhere; eprintln! is reserved for the headless test harness.
+# Desktop uses `log`; the backend CLI logger and test harness write stderr.
 log = "0.4"
 tauri-plugin-log = { version = "2", optional = true }
 tauri-plugin-positioner = { version = "2", features = ["tray-icon"], optional = true }
@@ -40,11 +44,13 @@ serde = { version = "1", features = ["derive"] }
 # preserve_order: provision `keys` and user config files round-trip in the
 # order the user wrote them instead of being alphabetized
 serde_json = { version = "1", features = ["preserve_order"] }
-tokio = { version = "1", features = ["process", "io-util", "sync", "time", "macros", "rt-multi-thread"] }
+tokio = { version = "1", features = ["process", "io-util", "sync", "time", "macros", "rt-multi-thread", "signal"] }
 # rev-pinned: an unpinned git dependency isn't reproducible and a force-push
 # upstream would silently change what we ship
 fix-path-env = { git = "https://github.com/tauri-apps/fix-path-env-rs", rev = "c4c45d503ea115a839aae718d02f79e7c7f0f673", optional = true }
 sysinfo = "0.39.3"
+# Match Tauri's platform paths without linking a desktop runtime.
+dirs = "6"
 # non-poisoning locks: with std, one panic while holding a lock poisons it and
 # every later .unwrap() panics forever — the app survives as a zombie window.
 parking_lot = "0.12"

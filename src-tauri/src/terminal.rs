@@ -617,7 +617,8 @@ pub fn open(
                     // Keep what it printed: the UI shows an exited tab read-only
                     // until it's closed or restarted, and without this the output
                     // would die with the session the moment the process ended.
-                    let sess = sessions.remove(&id).unwrap();
+                    let mut sess = sessions.remove(&id).unwrap();
+                    kill_session(&mut sess);
                     let mut exited = table.exited.lock();
                     if exited.len() >= EXITED_CAP {
                         if let Some(oldest) = exited
@@ -723,11 +724,42 @@ pub fn get_buffer(table: &TermTable, id: &str) -> Option<BufferSnapshot> {
     })
 }
 
+/// A PTY shell owns a Unix session; job-control children may use other groups
+/// in that same session. Stop each group, rather than only the shell process.
+fn kill_session(sess: &mut PtySession) {
+    kill_session_child(&mut sess.pgid, sess.child.as_mut());
+}
+
+fn kill_session_child(pgid: &mut i32, child: &mut (dyn Child + Send + Sync)) {
+    // A successful wait releases the PID for reuse. Never inspect or signal
+    // that session ID again when the reader later reports EOF.
+    if *pgid == 0 { return; }
+    #[cfg(unix)]
+    // This entry exclusively owns an unreaped child; its PID cannot be reused.
+    // A zombie leader may reject getsid on macOS while background groups still
+    // retain its session ID, so inspect session members rather than the leader.
+    if *pgid > 1 {
+        use sysinfo::{System, ProcessesToUpdate, ProcessRefreshKind};
+        let mut system = System::new();
+        system.refresh_processes_specifics(ProcessesToUpdate::All, true, ProcessRefreshKind::nothing());
+        let mut groups = std::collections::HashSet::new();
+        for pid in system.processes().keys() {
+            let pid = pid.as_u32() as i32;
+            if unsafe { libc::getsid(pid) == *pgid } {
+                let group = unsafe { libc::getpgid(pid) };
+                if group > 1 { groups.insert(group); }
+            }
+        }
+        for group in groups { unsafe { libc::killpg(group, libc::SIGKILL); } }
+    }
+    if child.kill().is_ok() && child.wait().is_ok() { *pgid = 0; }
+}
+
 /// Kill and drop a session, including any retained output — closing a tab is the
 /// point at which the user is done with it.
 pub fn close(table: &TermTable, id: &str) {
     if let Some(mut sess) = table.sessions.lock().remove(id) {
-        let _ = sess.child.kill();
+        kill_session(&mut sess);
     }
     table.exited.lock().remove(id);
 }
@@ -761,21 +793,25 @@ pub fn close_worktree(app: &RuntimeContext, table: &TermTable, wt_key: &str) {
 }
 
 /// Kill every session (app quit).
-pub fn close_all(table: &TermTable) {
+pub fn close_all(app: &RuntimeContext) {
+    let table = app.state::<TermTable>();
     let mut sessions = table.sessions.lock();
     for (_, mut sess) in sessions.drain() {
-        let _ = sess.child.kill();
+        kill_session(&mut sess);
     }
     table.exited.lock().clear();
+    drop(sessions);
+    persist_orphans(app);
 }
 
 /// Snapshot live sessions' pgids into persisted runtime state, so a crash can be
 /// cleaned up on next launch (mirrors the service orphan sweep). Unix-only — see
 /// `sweep_orphans`.
 #[cfg(unix)]
-fn persist_orphans(app: &RuntimeContext) {
+pub(crate) fn persist_orphans(app: &RuntimeContext) {
     let table = app.state::<TermTable>();
-    let orphans: Vec<TermOrphan> = table
+    let owner = crate::ownership::current_process_owner();
+    let mut orphans: Vec<TermOrphan> = table
         .sessions
         .lock()
         .iter()
@@ -783,9 +819,15 @@ fn persist_orphans(app: &RuntimeContext) {
             id: id.clone(),
             pgid: s.pgid,
             spawn_time_secs: s.started_unix,
+            owner: owner.clone(),
         })
         .collect();
     let state = app.state::<AppState>();
+    {
+        let mut retained = state.retained_terminal_orphans.lock();
+        retained.retain(|o| crate::ownership::group_may_be_alive(o.pgid));
+        orphans.extend(retained.iter().cloned());
+    }
     let runtime = {
         let mut rt = state.runtime.write();
         rt.terminal_orphans = orphans;
@@ -795,7 +837,7 @@ fn persist_orphans(app: &RuntimeContext) {
 }
 
 #[cfg(windows)]
-fn persist_orphans(_app: &RuntimeContext) {}
+pub(crate) fn persist_orphans(_app: &RuntimeContext) {}
 
 /// Startup: kill terminal process groups left over from a crashed previous run
 /// (only when the group leader still exists and its start time matches). Unix-only
@@ -811,25 +853,36 @@ pub fn sweep_orphans(app: &RuntimeContext) {
         let rt = state.runtime.read();
         rt.terminal_orphans.clone()
     };
+    let mut retained = Vec::new();
     for o in &orphans {
+        // A caller can already have started a child before entering serve.
+        if app.state::<TermTable>().sessions.lock().values().any(|p| p.pgid == o.pgid) { continue }
         if o.pgid <= 1 {
             continue;
         }
-        let alive = unsafe { libc::killpg(o.pgid, 0) == 0 };
-        if alive && crate::services::proc_start_time_matches(o.pgid as u32, o.spawn_time_secs) {
+        let alive = crate::ownership::group_may_be_alive(o.pgid);
+        if alive {
+            if crate::services::proc_start_time_changed(o.pgid as u32, o.spawn_time_secs) {
+                log::warn!("forgetting stale process group record {}: start time changed; no process signalled", o.pgid);
+                continue;
+            }
+            if o.spawn_time_secs == 0
+                || !crate::services::proc_start_time_matches(o.pgid as u32, o.spawn_time_secs)
+                || !crate::ownership::orphan_owner_gone(o.pgid as u32, o.owner.as_ref()) {
+                log::warn!("leaving process group {} alone: identity or orphan parent is unverified", o.pgid);
+                retained.push(o.clone());
+                continue;
+            }
             log::warn!("sweeping terminal orphan pgid {} ({})", o.pgid, o.id);
             unsafe {
                 libc::killpg(o.pgid, libc::SIGTERM);
             }
+            // Retain until a later probe proves it exited, including TERM refusal.
+            if crate::ownership::group_may_be_alive(o.pgid) { retained.push(o.clone()); }
         }
     }
-    let state = app.state::<AppState>();
-    let runtime = {
-        let mut rt = state.runtime.write();
-        rt.terminal_orphans.clear();
-        rt.clone()
-    };
-    let _ = crate::settings::save_runtime(app, &runtime);
+    *app.state::<AppState>().retained_terminal_orphans.lock() = retained;
+    persist_orphans(app);
 }
 
 /// Sweep idle SHELL sessions (bounds long-run resource growth). Killing the
@@ -866,7 +919,7 @@ pub fn sweep_idle(app: &RuntimeContext, table: &TermTable) {
     for (id, sess) in sessions.iter_mut() {
         let kind = kind_of(id);
         if kind == "shell" && sess.last_activity.elapsed() > IDLE_LIMIT {
-            let _ = sess.child.kill();
+            kill_session(sess);
             continue;
         }
         // Agents are exempt unless the repo opted in: a quiet agent may just
@@ -877,7 +930,7 @@ pub fn sweep_idle(app: &RuntimeContext, table: &TermTable) {
             if let Some(limit) = agent_limits.get(wt) {
                 if sess.last_activity.elapsed() > *limit {
                     log::info!("closing idle agent {id} after {}s", limit.as_secs());
-                    let _ = sess.child.kill();
+                    kill_session(sess);
                 }
             }
         }
@@ -887,6 +940,30 @@ pub fn sweep_idle(app: &RuntimeContext, table: &TermTable) {
 #[cfg(test)]
 mod tests {
     use super::{b64, kind_of, looks_like_prompt, strip_ansi};
+
+    #[test]
+    fn a_reaped_session_is_never_killed_again() {
+        #[derive(Debug, Default)]
+        struct Child { kills: usize, waits: usize }
+        impl portable_pty::ChildKiller for Child {
+            fn kill(&mut self) -> std::io::Result<()> { self.kills += 1; Ok(()) }
+            fn clone_killer(&self) -> Box<dyn portable_pty::ChildKiller + Send + Sync> { Box::new(Self::default()) }
+        }
+        impl portable_pty::Child for Child {
+            fn try_wait(&mut self) -> std::io::Result<Option<portable_pty::ExitStatus>> { Ok(None) }
+            fn wait(&mut self) -> std::io::Result<portable_pty::ExitStatus> { self.waits += 1; Ok(portable_pty::ExitStatus::with_exit_code(0)) }
+            fn process_id(&self) -> Option<u32> { None }
+            #[cfg(windows)]
+            fn as_raw_handle(&self) -> Option<std::os::windows::io::RawHandle> { None }
+        }
+        let mut child = Child::default();
+        // PID 1 deliberately skips native group signalling in this fake.
+        let mut pgid = 1;
+        super::kill_session_child(&mut pgid, &mut child);
+        assert_eq!(pgid, 0);
+        super::kill_session_child(&mut pgid, &mut child);
+        assert_eq!((child.kills, child.waits), (1, 1));
+    }
 
     #[test]
     fn answered_input_refreshes_badge_once() {

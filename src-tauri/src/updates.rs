@@ -143,7 +143,7 @@ pub async fn check_now(app: &RuntimeContext) -> UpdateStatus {
 /// Background loop honouring `Settings.updates.auto_check`. The preference is
 /// re-read every tick rather than captured, so turning it off takes effect
 /// without a restart.
-pub fn spawn_check_task(app: RuntimeContext) {
+pub fn spawn_check_task(app: RuntimeContext) -> tokio::task::JoinHandle<()> {
     app.executor().spawn(async move {
         // let the app finish starting before spending anything on the network
         tokio::time::sleep(std::time::Duration::from_secs(20)).await;
@@ -154,7 +154,7 @@ pub fn spawn_check_task(app: RuntimeContext) {
             }
             tokio::time::sleep(CHECK_INTERVAL).await;
         }
-    });
+    })
 }
 
 // ── crash reports ─────────────────────────────────────────────────────

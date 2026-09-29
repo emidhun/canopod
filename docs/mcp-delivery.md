@@ -21,7 +21,7 @@ and browser available.
 Claude recommended staged context extraction, a headless host, ownership,
 bounded events, then client attachment. The ownership guard is small and has no
 dependency on that extraction, so it is implemented first to protect the
-subsequent transition. There is no headless executable or attach protocol yet.
+subsequent transition. The foreground headless executable is described below; the attach protocol is still pending.
 
 | Issue | Implementation and verification gates |
 | --- | --- |
@@ -66,7 +66,7 @@ performance acceptance remain unverified until their implementation slices.
 The Rust library now builds with `--no-default-features` without Tauri, its
 plugins, or its build script. `desktop` remains the default feature so existing
 Tauri development and packaging commands keep working. This is a reusable core
-build, not a standalone backend executable yet.
+build. The foreground backend below uses this core.
 
 `RuntimeContext` owns the state, process, terminal, disk and notification tables.
 Its clones share those exact tables and the existing worktree leases. Domain
@@ -103,4 +103,51 @@ buffer and makes no atomic snapshot guarantee. The authenticated application
 API still needs the #157 snapshot/event reconciliation and connection timeouts
 before exposing it to browsers. A reconnect must load a new authoritative
 snapshot; a cursor alone cannot recover dropped history.
+
+## Foreground backend lifecycle
+
+Build with `cargo build --manifest-path src-tauri/Cargo.toml --no-default-features
+--bin canopy-backend`. Run `src-tauri/target/debug/canopy-backend serve` under a
+process supervisor. Directory defaults match Tauri's platform paths and bundle
+identifier. `--config-dir`, `--data-dir`, and `--log-dir` accept existing directories
+for isolated installations; invalid paths and duplicate flags fail explicitly.
+There is no network listener in this slice, so it is not yet usable through MCP
+or a browser. The desktop still hosts its own runtime and must be closed first.
+
+Startup acquires the data-directory lock before reading state. It also refuses
+startup if a known legacy Canopy desktop process is visible. This conservative
+name check can reject a desktop using another directory; it is not a proof of
+process identity or protection against launching an old incompatible binary
+later. Unlike one suggestion in Claude's plan, detecting a legacy owner refuses
+startup entirely: merely disabling sweeping would still permit duplicate state
+writers. Existing invalid/unreadable settings or runtime JSON abort startup
+without quarantine or replacement.
+
+Unix recovery checks each recorded live group before any sweep. New records
+include the spawning owner's PID and raw kernel start identity; after that owner
+dies, verified groups can be recovered even under a Linux subreaper. Legacy
+records require a recognized init parent and matching group birth time. Both
+hosts retain unverified or inaccessible live records through later state writes;
+headless startup reports the exact record requiring manual recovery.
+
+The foreground host owns periodic refresh, statistics, update and terminal
+monitor tasks. An unexpected loop exit triggers cleanup and a nonzero exit,
+allowing an external supervisor to report or restart it. Ctrl-C and Unix SIGTERM
+use the same stop path; Windows console close/shutdown are handled subject to OS
+time limits. Cleanup aborts periodic loops, closes PTYs and stops/reaps services.
+Every task context retains the ownership lock, so a detached waiter cannot
+release ownership while it is still using state. Client subscription drop has
+no shutdown effect. Tests exercise a real long-running service across client
+detach and explicit shutdown, and an actual backend subprocess through duplicate
+launch and SIGTERM. Windows console-signal runtime testing remains pending.
+
+Application authentication, versioned status/stop/bootstrap, MCP transport,
+service installation and moving the desktop to client-only operation remain
+acceptance gates for #156; the foreground binary alone does not complete it.
+
+### Orphan recovery diagnostics
+
+The backend logs to stderr (`RUST_LOG=debug` increases detail; this CLI accepts a level, not module directives), so supervisors can capture sweep warnings. New process records include the spawning backend PID and start identity: adopted children are recoverable after that owner dies, including under Linux subreapers. Legacy records without that identity only recover automatically under a recognized init process and with a matching group birth time. Unverified live records survive subsequent service and terminal state writes.
+
+If startup names an unverifiable `state.json` record, stop Canopy, preserve a backup, inspect the named `orphans` or `terminalOrphans` entry and the running PID identity, then remove only an entry confirmed stale. Do not kill an unrelated process merely because its PID matches an old record. Library hosts and CLI hosts with both config and data explicitly isolated do not reject an unrelated default-directory desktop; shared-default CLI hosts retain the legacy-desktop exclusion check.
 The declared Rust minimum is 1.95, matching the locked `sysinfo` dependency; the ownership APIs alone require 1.89.

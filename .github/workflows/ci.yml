@@ -25,7 +25,7 @@ jobs:
         working-directory: src-tauri
       - run: cargo clippy --no-default-features --all-targets --locked -- -D warnings
         working-directory: src-tauri
-      - run: cargo test --no-default-features --locked --lib
+      - run: cargo test --no-default-features --locked
         working-directory: src-tauri
 
   linux:

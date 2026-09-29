@@ -61,27 +61,26 @@ struct Inner {
     host: Arc<dyn Host>,
     service_logs: std::sync::OnceLock<Option<PathBuf>>,
     events: crate::events::EventHub,
+    _owner: Option<crate::ownership::RuntimeOwner>,
 }
 
 #[derive(Clone)]
 pub struct RuntimeContext(Arc<Inner>);
 
 impl RuntimeContext {
-    pub fn new(
-        state: AppState,
-        paths: RuntimePaths,
-        executor: tokio::runtime::Handle,
-        host: Arc<dyn Host>,
-    ) -> Self {
+    pub fn new(state: AppState, paths: RuntimePaths, executor: tokio::runtime::Handle, host: Arc<dyn Host>) -> Self {
+        Self::construct(state, paths, executor, host, None)
+    }
+
+    pub fn with_owner(state: AppState, paths: RuntimePaths, executor: tokio::runtime::Handle, host: Arc<dyn Host>, owner: crate::ownership::RuntimeOwner) -> Self {
+        Self::construct(state, paths, executor, host, Some(owner))
+    }
+
+    fn construct(state: AppState, paths: RuntimePaths, executor: tokio::runtime::Handle, host: Arc<dyn Host>, owner: Option<crate::ownership::RuntimeOwner>) -> Self {
         Self(Arc::new(Inner {
-            state,
-            paths,
-            executor,
-            host,
-            processes: ProcTable::default(),
-            terminals: TermTable::default(),
-            disk: DiskCache::default(),
-            notifications: NotifyState::default(),
+            state, paths, executor, host, _owner: owner,
+            processes: ProcTable::default(), terminals: TermTable::default(),
+            disk: DiskCache::default(), notifications: NotifyState::default(),
             service_logs: std::sync::OnceLock::new(),
             events: crate::events::EventHub::default(),
         }))

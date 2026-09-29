@@ -24,7 +24,7 @@ struct StatsEvent {
 
 /// 2s poll: aggregate CPU/MEM over each service's descendant process tree
 /// (the spawned zsh wrapper's children are the real node processes).
-pub fn spawn_stats_task(app: RuntimeContext) {
+pub fn spawn_stats_task(app: RuntimeContext) -> tokio::task::JoinHandle<()> {
     app.executor().spawn(async move {
         let mut sys = System::new();
         loop {
@@ -87,7 +87,7 @@ pub fn spawn_stats_task(app: RuntimeContext) {
             }
             let _ = app.emit_to(crate::runtime::Audience::Main, "service:stats", &StatsEvent { entries });
         }
-    });
+    })
 }
 
 // Event interest can come from a machine client; only a visible UI needs

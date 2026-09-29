@@ -81,6 +81,155 @@ impl Drop for RuntimeOwner {
     }
 }
 
+/// Legacy desktops predate runtime.lock. Refuse a second engine while one is
+/// visible in the process table for the default-directory CLI host. Library
+/// hosts and explicitly isolated directories do not run this global check.
+pub fn refuse_legacy_desktop() -> Result<(), String> {
+    use sysinfo::{Pid, ProcessRefreshKind, ProcessesToUpdate, System};
+    let own = Pid::from_u32(std::process::id());
+    let mut system = System::new();
+    system.refresh_processes_specifics(
+        ProcessesToUpdate::All,
+        true,
+        ProcessRefreshKind::nothing().with_exe(sysinfo::UpdateKind::Always),
+    );
+    if system.process(own).is_none() {
+        return Err("cannot inspect the process table; refusing backend takeover".into());
+    }
+    for (pid, process) in system.processes() {
+        if *pid != own && legacy_name(&process.name().to_string_lossy()) {
+            return Err(format!("a Canopy desktop may still own runtime state (pid {pid}); quit it before starting the backend"));
+        }
+    }
+    Ok(())
+}
+
+fn legacy_name(name: &str) -> bool {
+    name.eq_ignore_ascii_case("canopy") || name.eq_ignore_ascii_case("canopy.exe")
+}
+
+/// Raw kernel creation identity, stable when the system clock is stepped.
+#[cfg(target_os = "linux")]
+fn process_start_token(pid: u32) -> Option<u64> {
+    let stat = std::fs::read_to_string(format!("/proc/{pid}/stat")).ok()?;
+    stat.rsplit_once(')')?.1.split_whitespace().nth(19)?.parse().ok()
+}
+#[cfg(target_os = "macos")]
+fn process_start_token(pid: u32) -> Option<u64> {
+    let mut info = std::mem::MaybeUninit::<libc::proc_bsdinfo>::uninit();
+    let size = std::mem::size_of::<libc::proc_bsdinfo>() as i32;
+    if unsafe { libc::proc_pidinfo(pid as i32, libc::PROC_PIDTBSDINFO, 0, info.as_mut_ptr().cast(), size) } != size { return None }
+    let info = unsafe { info.assume_init() };
+    info.pbi_start_tvsec.checked_mul(1_000_000)?.checked_add(info.pbi_start_tvusec)
+}
+#[cfg(all(unix, not(any(target_os = "linux", target_os = "macos"))))]
+fn process_start_token(_: u32) -> Option<u64> { None }
+
+#[cfg(unix)]
+pub(crate) fn current_process_owner() -> Option<crate::settings::ProcessOwner> {
+    let pid = std::process::id(); let started = process_start_token(pid)?;
+    (started > 0).then_some(crate::settings::ProcessOwner { pid, started })
+}
+
+#[cfg(unix)]
+pub(crate) fn group_may_be_alive(pgid: i32) -> bool {
+    pgid > 1 && (unsafe { libc::killpg(pgid, 0) } == 0
+        || std::io::Error::last_os_error().raw_os_error() != Some(libc::ESRCH))
+}
+
+#[cfg(unix)]
+pub(crate) fn orphan_owner_gone(pid: u32, owner: Option<&crate::settings::ProcessOwner>) -> bool {
+    use sysinfo::{Pid, ProcessRefreshKind, ProcessesToUpdate, System};
+    if let Some(owner) = owner {
+        if owner.pid <= 1 || owner.pid > i32::MAX as u32 || owner.started == 0 {
+            return false;
+        }
+        // ESRCH proves absence; access denied or incomplete metadata does not.
+        if unsafe { libc::kill(owner.pid as i32, 0) } != 0
+            && std::io::Error::last_os_error().raw_os_error() == Some(libc::ESRCH)
+        {
+            return true;
+        }
+        let mut system = System::new();
+        system.refresh_processes_specifics(
+            ProcessesToUpdate::Some(&[Pid::from_u32(owner.pid)]),
+            false,
+            ProcessRefreshKind::nothing(),
+        );
+        return system.process(Pid::from_u32(owner.pid)).is_some_and(|p| p.status() == sysinfo::ProcessStatus::Zombie)
+            || process_start_token(owner.pid).is_some_and(|started| started > 0 && started != owner.started);
+    }
+    orphan_parent_verified(pid)
+}
+
+/// Old records have no owner identity. Only known init/reaper processes qualify;
+/// new records recover under arbitrary subreapers by proving their owner died.
+#[cfg(unix)]
+pub(crate) fn orphan_parent_verified(pid: u32) -> bool {
+    use sysinfo::{Pid, ProcessRefreshKind, ProcessesToUpdate, System};
+    let pid = Pid::from_u32(pid);
+    let mut system = System::new();
+    system.refresh_processes_specifics(
+        ProcessesToUpdate::Some(&[pid]),
+        false,
+        ProcessRefreshKind::nothing(),
+    );
+    let Some(parent) = system.process(pid).and_then(|p| p.parent()) else {
+        return false;
+    };
+    if parent.as_u32() == 1 {
+        return true;
+    }
+    system.refresh_processes_specifics(
+        ProcessesToUpdate::Some(&[parent]),
+        false,
+        ProcessRefreshKind::nothing().with_exe(sysinfo::UpdateKind::Always),
+    );
+    system
+        .process(parent)
+        .and_then(|p| p.exe())
+        .is_some_and(legacy_reaper)
+}
+
+#[cfg(unix)]
+fn legacy_reaper(path: &Path) -> bool {
+    matches!(path.to_str(), Some("/usr/lib/systemd/systemd" | "/lib/systemd/systemd" | "/sbin/init" | "/sbin/tini" | "/usr/bin/tini" | "/usr/bin/dumb-init"))
+}
+
+/// Check all recorded candidates before either sweeper writes state.json.
+/// PID identity checks alone cannot distinguish legacy live children.
+pub fn verify_recovery(state: &crate::settings::RuntimeState) -> Result<(), String> {
+    #[cfg(unix)]
+    for (kind, pid, started, owner) in state
+        .orphans
+        .iter()
+        .map(|o| ("orphans", o.pgid, o.spawn_time_secs, o.owner.as_ref()))
+        .chain(state.terminal_orphans.iter().map(|o| {
+            (
+                "terminalOrphans",
+                o.pgid,
+                o.spawn_time_secs,
+                o.owner.as_ref(),
+            )
+        }))
+    {
+        if pid <= 1 {
+            continue;
+        }
+        let live = group_may_be_alive(pid);
+        if live
+            && (started == 0
+                || (crate::services::proc_start_time_matches(pid as u32, started)
+                    && !orphan_owner_gone(pid as u32, owner)))
+        {
+            return Err(format!("cannot verify state.json {kind} record for process group {pid}; no process was signalled. Inspect the saved record and running process identity. If the record is stale, preserve a backup and remove only that record before restarting; do not kill an unrelated process"));
+        }
+    }
+    #[cfg(not(unix))]
+    let _ = state;
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -96,6 +245,26 @@ mod tests {
         ));
         fs::create_dir_all(&path).unwrap();
         path
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn legacy_reaper_paths_are_explicit() {
+        for path in ["/usr/lib/systemd/systemd", "/lib/systemd/systemd", "/sbin/init", "/sbin/tini", "/usr/bin/tini", "/usr/bin/dumb-init"] {
+            assert!(super::legacy_reaper(Path::new(path)), "{path}");
+        }
+        for path in ["/tmp/systemd", "/usr/bin/canopy", "/usr/bin/canopy-backend", "/tmp/tini", "/sbin/init-extra"] {
+            assert!(!super::legacy_reaper(Path::new(path)), "{path}");
+        }
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn macos_process_start_identity_is_stable() {
+        let first = super::process_start_token(std::process::id()).unwrap();
+        assert!(first > 0);
+        assert_eq!(super::process_start_token(std::process::id()), Some(first));
+        assert_eq!(super::process_start_token(u32::MAX), None);
     }
 
     #[test]

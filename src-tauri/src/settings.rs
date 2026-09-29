@@ -399,6 +399,7 @@ pub struct OrphanProc {
     pub svc_key: String,
     pub pgid: i32,
     pub spawn_time_secs: u64,
+    pub owner: Option<ProcessOwner>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
@@ -407,7 +408,14 @@ pub struct TermOrphan {
     pub id: String,
     pub pgid: i32,
     pub spawn_time_secs: u64,
+    pub owner: Option<ProcessOwner>,
 }
+
+/// The spawning backend identity, independent of the process that later adopts
+/// its children (PID 1, systemd --user, or a container subreaper).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ProcessOwner { pub pid: u32, pub started: u64 }
 
 fn settings_path(app: &crate::runtime::RuntimePaths) -> PathBuf {
     app
@@ -466,6 +474,18 @@ fn save_json<T: Serialize>(path: &PathBuf, value: &T) -> Result<(), String> {
         f.sync_all().map_err(|e| format!("sync {}: {e}", tmp.display()))?;
     }
     fs::rename(&tmp, path).map_err(|e| format!("rename {} → {}: {e}", tmp.display(), path.display()))
+}
+
+/// Backend startup must distinguish a fresh install from unreadable/corrupt
+/// existing state. In particular, never quarantine or overwrite another host's
+/// files while deciding whether it is safe to take ownership.
+pub fn load_checked<T: for<'a> Deserialize<'a> + Default>(path: &std::path::Path) -> Result<T, String> {
+    match fs::read(path) {
+        Ok(bytes) => serde_json::from_slice(&bytes)
+            .map_err(|e| format!("parse {}: {e}; repair the file before starting the backend", path.display())),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(T::default()),
+        Err(e) => Err(format!("read {}: {e}", path.display())),
+    }
 }
 
 pub fn load_settings(app: &crate::runtime::RuntimePaths) -> Settings {

@@ -434,6 +434,7 @@ name = "canopy"
 version = "0.5.0"
 dependencies = [
  "base64 0.23.1",
+ "dirs",
  "fix-path-env",
  "libc",
  "log",
