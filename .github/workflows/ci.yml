@@ -103,6 +103,10 @@ jobs:
         working-directory: src-tauri
       - run: cargo test --locked
         working-directory: src-tauri
+      - name: Test the Windows regression proof runner
+        run: python -B -m unittest discover -s scripts -p test_windows_junction.py
+      - name: Prove Windows junction regression coverage
+        run: python scripts/check-windows-junction.py
 
   macos:
     runs-on: macos-latest

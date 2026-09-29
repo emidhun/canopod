@@ -145,9 +145,47 @@ Application authentication, versioned status/stop/bootstrap, MCP transport,
 service installation and moving the desktop to client-only operation remain
 acceptance gates for #156; the foreground binary alone does not complete it.
 
+## Private credential storage
+
+The credential primitive keeps application and MCP secrets in separate files
+under the data directory's `credentials` directory. Each token has 32 bytes of
+OS entropy, encoded as exactly 64 lowercase hexadecimal bytes. Bearer checks
+use `subtle` constant-time comparison; secret types have no Debug/Serialize
+implementation and zeroize their owned buffers on drop. Export is explicitly
+named `expose()` for the later private client-config flow.
+
+Unix creation uses directory mode 0700 and file mode 0600, refusing foreign
+ownership, public permissions, symlinks, hard links and non-regular files.
+Operations use openat/renameat/unlinkat against the retained directory handle,
+so replacing its pathname cannot redirect an existing store. Windows installs
+a protected, current-user-only DACL at creation and checks owner/ACL/reparse
+attributes through opened handles. It pins directory path components without
+delete sharing to prevent replacement between validation and later operations.
+Root/Administrators and processes using this same user identity are trusted;
+confidentiality against them is not claimed. The protection is against other
+unprivileged local users. On Windows the pinned ancestor handles prevent rename
+or deletion of that path chain while the store is open (ordinary read/write
+access is unaffected). Stop the backend before relocating the data directory or
+its ancestors. This conservative tradeoff closes redirection even for an
+explicitly supplied data path; it is not narrowed to a presumed safe ancestor.
+
+Rotation writes a fixed private temporary per credential kind, flushes it, and atomically replaces the
+selected token. A pre-commit failure preserves the previous token. Unix flushes
+the directory after rename (macOS also uses F_FULLFSYNC on the written file);
+Windows renames the validated temporary by handle with POSIX replacement semantics, preserving existing readers of the previous token. It does not promise power-loss durability for directory metadata. A post-rename directory-flush error is
+returned alongside the committed new token as a durability warning, so callers
+cannot accidentally retain an old in-memory token after committing a new file.
+The matching runtime ownership guard enforces serialized rotations across stores; process-local generation numbers let concurrent publishers reject stale results.
+
+This slice does not create an HTTP listener, enable MCP, generate credentials
+at startup, or change permission profiles. Wire authentication, revocation and
+session invalidation through the later application/MCP transport layers.
+
 ### Orphan recovery diagnostics
 
 The backend logs to stderr (`RUST_LOG=debug` increases detail; this CLI accepts a level, not module directives), so supervisors can capture sweep warnings. New process records include the spawning backend PID and start identity: adopted children are recoverable after that owner dies, including under Linux subreapers. Legacy records without that identity only recover automatically under a recognized init process and with a matching group birth time. Unverified live records survive subsequent service and terminal state writes.
 
 If startup names an unverifiable `state.json` record, stop Canopy, preserve a backup, inspect the named `orphans` or `terminalOrphans` entry and the running PID identity, then remove only an entry confirmed stale. Do not kill an unrelated process merely because its PID matches an old record. Library hosts and CLI hosts with both config and data explicitly isolated do not reject an unrelated default-directory desktop; shared-default CLI hosts retain the legacy-desktop exclusion check.
+
+Credential rotation requires the matching `RuntimeOwner` and serializes across all stores using that guard. Read-only opens never clean files. A writer validates and removes private crash leftovers under the ownership guard; new rotations use one fixed temporary name per credential kind, bounding crash debris. Unsafe leftovers are preserved.
 The declared Rust minimum is 1.95, matching the locked `sysinfo` dependency; the ownership APIs alone require 1.89.
