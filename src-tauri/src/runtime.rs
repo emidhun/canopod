@@ -89,6 +89,9 @@ impl RuntimeContext {
     pub fn state<T: RuntimeState>(&self) -> &T {
         T::get(self)
     }
+    pub fn owner(&self) -> Result<&crate::ownership::RuntimeOwner, String> {
+        self.0._owner.as_ref().ok_or_else(|| "runtime ownership required for credential mutation".into())
+    }
     pub fn path(&self) -> &RuntimePaths {
         &self.0.paths
     }

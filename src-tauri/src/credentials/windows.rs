@@ -61,12 +61,16 @@ fn attributes(sd: &Allocation) -> SECURITY_ATTRIBUTES {
 // cannot be swapped between validation and a later Win32 path-based open or
 // rename while these handles live. The leaf DACL remains owner-only.
 pub(super) struct Directory { handles: Vec<File>, descriptor: Allocation }
-pub(super) fn prepare_directory(path: &Path) -> io::Result<Directory> {
+pub(super) fn prepare_directory(path: &Path, create: bool) -> io::Result<Directory> {
     let sd = descriptor()?;
     let mut handles = Vec::new();
     let mut parents: Vec<_> = path.parent().ok_or_else(|| denied("credential parent missing"))?.ancestors().collect();
     parents.reverse();
     for parent in parents { handles.push(open_handle(parent, false, true, false, &sd)?); }
+    if !create {
+        handles.push(open_handle(path, false, true, true, &sd)?);
+        return Ok(Directory { handles, descriptor: sd });
+    }
     let path_w = wide(path)?;
     let created = unsafe { CreateDirectoryW(PCWSTR(path_w.as_ptr()), Some(&attributes(&sd))) };
     if let Err(error) = created {
@@ -270,7 +274,7 @@ mod tests {
     fn credential_directory_junction_is_refused_without_touching_target() {
         let fixture = Fixture::new();
         let target = fixture.0.join("target");
-        drop(prepare_directory(&target).unwrap());
+        drop(prepare_directory(&target, true).unwrap());
         let link = fixture.0.join("credentials");
         let result = std::process::Command::new("cmd").args(["/C", "mklink", "/J"]).arg(&link).arg(&target).output().unwrap();
         assert!(result.status.success(), "{}", String::from_utf8_lossy(&result.stderr));

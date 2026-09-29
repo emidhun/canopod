@@ -1,6 +1,7 @@
 #[cfg(feature = "desktop")]
 mod commands;
 pub mod backend;
+pub mod app_api;
 pub mod credentials;
 #[cfg(test)]
 mod csp;
