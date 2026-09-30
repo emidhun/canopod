@@ -316,20 +316,20 @@ Manual setup exposes individually copyable endpoint, transport, bearer token and
 Authorization value fields. Complete Claude JSON / Codex TOML snippets are also
 available; only deliberate Copy actions retrieve secrets, and those snippets
 contain a static token that must be refreshed after rotation. No secret is shown
-in the on-screen preview. MCP remains limited to the cached read-only
-`canopy_status` tool; this UI does not add write tools or permission profiles.
+in the on-screen preview. Reads include `canopy_status`, `canopy_worktrees`,
+and `canopy_job`. Worktree creation and setup require an explicit write grant.
 
 Still required by the epic: browser controls, read/write/destructive
 permission profiles, private client configuration export, roots inference,
-remaining read tools, jobs, human approvals, packaged client validation on every
+remaining read tools, broader job operations, human approvals, packaged client validation on every
 platform, and measured performance budgets. Local debug client checks do not
 substitute for the packaged cross-platform acceptance matrix.
 
 ## Durable job journal foundation
 
-`jobs::Registry` is additive and is not yet wired into production operations.
-The next slice owns execution and migrates the seven awaited UI operations;
-this journal does not change an accepted job into a completed UI command.
+`jobs::Registry` owns durable records for MCP worktree creation and setup.
+Existing UI operations retain their awaited completion behavior. An accepted MCP
+job is not yet a completed operation; clients must poll `canopy_job`.
 
 A registry retains at most 128 jobs, with four queued/running jobs and eight
 owned journal transactions at once. Busy responses include a 500 ms retry hint.
@@ -401,3 +401,56 @@ HTTP review follow-up: silent sockets have an explicit five-second first-byte de
 Malformed MCP policy or credential content faults only the MCP endpoint (503); application status, stop and administration remain available. MCP status reports the recovery error. Disable revokes live access even when policy bytes are malformed and preserves those bytes. Back up and repair the named file before explicitly enabling again; a missing path binding in an older enabled policy requires setting enabled=false then enabling the selected repositories. Token rotation repairs malformed token content only after file privacy checks pass.
 
 Policy stores both the registered path and its canonical path for each explicitly selected ID. Cached requests compare the current registration against that binding; removing a repository or reusing its ID for another path does not inherit permission. Administrative filesystem work runs in an owned blocking transaction that publishes committed state even if the requester disconnects. Shutdown returns 503 stopping; token/policy revocation returns 401 authorization_changed.
+
+
+## MCP worktree creation and setup
+
+Both the desktop host and headless backend expose the same tools. Settings →
+MCP and the onboarding Connect to agent page offer **Allow worktree creation
+and setup** for the selected repository allowlist. Existing policies default to
+read-only. Headless administrators can use:
+
+```sh
+canopy-backend mcp enable --repo REPO_ID --allow-worktree-write
+canopy-backend mcp enable --read-only
+```
+
+Omitting a permission flag preserves the existing grant. The authenticated
+application endpoint `POST /api/v1/mcp/enable` accepts `allowWorktreeWrite`;
+MCP credentials cannot alter their own permissions.
+
+| Tool | Arguments | Result |
+| --- | --- | --- |
+| `canopy_status` | `repoId` | Cached repository counts |
+| `canopy_worktrees` | `repoId`, optional `cursor`, `limit` | Cached worktree keys, branch, main/setup flags, next cursor |
+| `canopy_job` | `repoId`, `jobId` | Status, timestamps, created path, safe error code |
+| `canopy_create_worktree` | `repoId`, `branch`, `requestKey`, optional `base`, `createBranch` | Durable job admission |
+| `canopy_run_setup` | `repoId`, `worktreeKey`, `requestKey`, optional `dryRun` | Durable job admission |
+
+The last two tools are listed only with write access. Creation uses the configured
+worktree directory and provisioning/setup/service defaults. `createBranch`
+defaults to true; an omitted `base` uses HEAD. Setup accepts a current, linked,
+non-main Git worktree from the allowed repository. Both operations share the
+same worktree leases as the UI. They accept no arbitrary command or environment
+arguments, but configured scripts can modify files and databases.
+
+Clients should reuse the exact arguments and request key when retrying an
+uncertain submission. Matching retained jobs are returned without rerunning;
+different arguments for the same operation/repository/target/key are rejected.
+A new intentional setup run needs a new request key. Retention is bounded as
+described above. Responses contain no raw setup output, commands or environment.
+Progress still appears through Canopy's normal operation events.
+
+Accepted work survives an HTTP disconnect. Permission changes prevent new work
+and jobs that have not passed their execution authorization check; already
+executing work continues. Host shutdown cancels active Git/setup process groups,
+records interrupted jobs, and drains journal writes before runtime cleanup.
+Startup never replays interrupted work. Creation checkpoints the new path after
+Git reports successful creation, before submodules and setup; later failures
+preserve that path. A crash during Git creation can precede this checkpoint, so
+clients should reconcile worktrees before submitting a new request key.
+
+MCP setup runs serially even when the UI parallel-setup experiment is enabled,
+so cancellation covers every active setup subprocess. A damaged journal leaves
+read tools available and reports an execution error; write grants require a
+healthy journal.

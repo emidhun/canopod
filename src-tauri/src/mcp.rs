@@ -1,5 +1,7 @@
 //! Opt-in MCP transport. Application credentials exclusively control policy;
-//! MCP credentials can only use the explicitly allowed read surface.
+//! MCP credentials can use reads and explicitly granted worktree creation and setup.
+#[path = "mcp_execution.rs"]
+mod execution;
 use crate::{
     credentials::{Bearer, CredentialKind, CredentialStore},
     runtime::RuntimeContext,
@@ -34,6 +36,7 @@ const MAX_REQUESTS: usize = 8;
 struct Policy {
     enabled: bool,
     repo_ids: Vec<String>,
+    allow_worktree_write: bool,
     repo_bindings: BTreeMap<String, RepoBinding>,
 }
 
@@ -135,6 +138,7 @@ struct Live {
 }
 pub struct Controller {
     app: RuntimeContext,
+    execution: execution::Executor,
     credentials: Arc<CredentialStore>,
     live: RwLock<Live>,
     admin: Mutex<()>,
@@ -171,8 +175,10 @@ impl Controller {
                 "MCP credential missing; rotate the MCP token using the application API".into(),
             );
         }
+        let execution = execution::Executor::open(&app.path().data);
         Ok(Arc::new(Self {
             app,
+            execution,
             credentials,
             live: RwLock::new(Live {
                 policy,
@@ -190,7 +196,9 @@ impl Controller {
     pub fn status(&self) -> serde_json::Value {
         let live = self.live.read();
         serde_json::json!({"enabled": live.policy.enabled && live.fault.is_none() && !self.shutdown.is_cancelled(), "error": live.fault,
-            "repoIds": live.policy.repo_ids, "permissions": ["read"],
+            "repoIds": live.policy.repo_ids, "allowWorktreeWrite": live.policy.allow_worktree_write,
+            "permissions": if live.policy.allow_worktree_write { vec!["read", "worktree_write"] } else { vec!["read"] },
+            "executionError": self.execution.error,
             "endpoint": format!("{}/mcp", self.origin), "transport": "streamable-http", "sessions": 0})
     }
     #[cfg(test)]
@@ -222,6 +230,15 @@ impl Controller {
         enabled: bool,
         repo_ids: Option<Vec<String>>,
     ) -> Result<(), String> {
+        self.configure_permissions(enabled, repo_ids, None).await
+    }
+
+    pub async fn configure_permissions(
+        self: &Arc<Self>, enabled: bool, repo_ids: Option<Vec<String>>, allow_worktree_write: Option<bool>,
+    ) -> Result<(), String> {
+        if allow_worktree_write == Some(true) && self.execution.error.is_some() {
+            return Err("Repair the job journal before allowing worktree creation and setup".into());
+        }
         let controller = self.clone();
         // The owned blocking task completes disk commit AND publication even
         // when the HTTP caller disconnects or its request deadline expires.
@@ -234,12 +251,12 @@ impl Controller {
             } else {
                 controller.admin.lock()
             };
-            controller.configure_sync(enabled, repo_ids)
+            controller.configure_sync(enabled, repo_ids, allow_worktree_write)
         })
         .await
         .map_err(|e| e.to_string())?
     }
-    fn configure_sync(&self, enabled: bool, repo_ids: Option<Vec<String>>) -> Result<(), String> {
+    fn configure_sync(&self, enabled: bool, repo_ids: Option<Vec<String>>, allow_worktree_write: Option<bool>) -> Result<(), String> {
         if self.shutdown.is_cancelled() {
             return Err("backend stopping".into());
         }
@@ -256,6 +273,7 @@ impl Controller {
         }
         let mut policy = previous.clone();
         policy.enabled = enabled;
+        if let Some(allow) = allow_worktree_write { policy.allow_worktree_write = allow; }
         if let Some(ids) = repo_ids {
             policy.repo_ids = ids;
             policy.repo_ids.sort();
@@ -383,6 +401,11 @@ impl Controller {
         self.shutdown.cancel();
     }
 
+    pub async fn drain_writes(&self) {
+        self.shutdown();
+        self.execution.drain().await;
+    }
+
     pub async fn handle(self: Arc<Self>, request: Request) -> Response {
         let mut response = self.dispatch(request).await;
         response
@@ -500,13 +523,43 @@ fn status_tool() -> Tool {
 struct StatusArgs {
     repo_id: String,
 }
+fn tools(write: bool) -> Vec<Tool> {
+    let string = |max| serde_json::json!({"type":"string","minLength":1,"maxLength":max});
+    let mut tools = vec![status_tool()];
+    let schema = serde_json::json!({"type":"object","properties":{"repoId":string(256),"cursor":{"type":"integer","minimum":0},"limit":{"type":"integer","minimum":1,"maximum":100}},"required":["repoId"],"additionalProperties":false});
+    tools.push(Tool::new("canopy_worktrees", "List cached worktree keys for an allowed repository, without commands, environment or logs. Pagination may change after a refresh; restart from cursor 0 to reconcile.", schema.as_object().unwrap().clone())
+        .with_annotations(ToolAnnotations::new().read_only(true).destructive(false).idempotent(true).open_world(false)));
+    let schema = serde_json::json!({"type":"object","properties":{"repoId":string(256),"jobId":{"type":"string","pattern":"^[a-fA-F0-9]{32}$"}},"required":["repoId","jobId"],"additionalProperties":false});
+    tools.push(Tool::new("canopy_job", "Read a durable worktree job's status and any created path. An accepted job is not a completed operation. Poll until succeeded, failed or interrupted. Interrupted jobs are never automatically replayed.", schema.as_object().unwrap().clone())
+        .with_annotations(ToolAnnotations::new().read_only(true).destructive(false).idempotent(true).open_world(false)));
+    if write {
+        let schema = serde_json::json!({"type":"object","properties":{"repoId":string(256),"branch":string(256),"base":string(256),"createBranch":{"type":"boolean","default":true},"requestKey":string(256)},"required":["repoId","branch","requestKey"],"additionalProperties":false});
+        tools.push(Tool::new("canopy_create_worktree", "Create a worktree using the repository's configured directory, setup and service defaults. Requires explicit worktree-write permission. Returns a job immediately; reuse the same requestKey and arguments after transport failures to avoid duplicate work. Retry identity is retained for at most seven days and can expire with journal eviction. No arbitrary command input.", schema.as_object().unwrap().clone())
+            .with_annotations(ToolAnnotations::new().read_only(false).destructive(true).idempotent(false).open_world(true)));
+        let schema = serde_json::json!({"type":"object","properties":{"repoId":string(256),"worktreeKey":string(4096),"dryRun":{"type":"boolean","default":false},"requestKey":string(256)},"required":["repoId","worktreeKey","requestKey"],"additionalProperties":false});
+        tools.push(Tool::new("canopy_run_setup", "Run configured provisioning and setup for an existing non-main worktree. Use a key from canopy_worktrees. Requires worktree-write permission, including dry runs. Returns a durable job; use the same requestKey for retries. Setup can execute repository scripts and write files/databases. No arbitrary command input.", schema.as_object().unwrap().clone())
+            .with_annotations(ToolAnnotations::new().read_only(false).destructive(true).idempotent(false).open_world(true)));
+    }
+    tools
+}
+fn default_limit() -> usize { 50 }
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct WorktreesArgs { repo_id: String, #[serde(default)] cursor: usize, #[serde(default = "default_limit")] limit: usize }
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct JobArgs { repo_id: String, job_id: String }
+fn parse<T: serde::de::DeserializeOwned>(args: serde_json::Value) -> Result<T, String> {
+    serde_json::from_value(args).map_err(|_| "invalid_arguments".into())
+}
+
 impl ServerHandler for Handler {
     fn get_info(&self) -> ServerConfig {
         ServerConfig::new(ServerCapabilities::builder().enable_tools().build())
             .with_server_info(Implementation::new("canopy-mcp", env!("CARGO_PKG_VERSION")))
     }
     fn get_tool(&self, name: &str) -> Option<Tool> {
-        (name == "canopy_status").then(status_tool)
+        tools(true).into_iter().find(|tool| tool.name == name)
     }
     async fn list_tools(
         &self,
@@ -516,7 +569,8 @@ impl ServerHandler for Handler {
         if self.generation.is_cancelled() {
             return Err(ErrorData::internal_error("authorization changed", None));
         }
-        Ok(ListToolsResult::with_all_items(vec![status_tool()])
+        let write = self.controller.live.read().policy.allow_worktree_write;
+        Ok(ListToolsResult::with_all_items(tools(write))
             .with_ttl_ms(0)
             .with_cache_scope(CacheScope::Private))
     }
@@ -525,17 +579,23 @@ impl ServerHandler for Handler {
         request: CallToolRequestParams,
         _: RequestContext<RoleServer>,
     ) -> Result<CallToolResponse, ErrorData> {
-        if request.name != "canopy_status" {
-            return Err(ErrorData::invalid_params("unknown tool", None));
-        }
-        let args = serde_json::from_value::<StatusArgs>(serde_json::Value::Object(
-            request.arguments.unwrap_or_default(),
-        ));
-        let outcome = match args {
-            Ok(args) if !args.repo_id.is_empty() && args.repo_id.len() <= 256 => {
-                self.cached_status(&args.repo_id)
-            }
-            _ => Err("invalid_arguments"),
+        let arguments = serde_json::Value::Object(request.arguments.unwrap_or_default());
+        let outcome: Result<String, String> = match request.name.as_ref() {
+            "canopy_status" => parse::<StatusArgs>(arguments).and_then(|args| self.cached_status(&args.repo_id).map_err(str::to_owned)),
+            "canopy_worktrees" => parse::<WorktreesArgs>(arguments).and_then(|args| execution::worktrees(&self.controller, &self.generation, &args.repo_id, args.cursor, args.limit)).map(|v| v.to_string()),
+            "canopy_job" => parse::<JobArgs>(arguments).and_then(|args| {
+                self.controller.authorized_repo(&self.generation, &args.repo_id, false)?;
+                self.controller.execution.get(&args.repo_id, &args.job_id)
+            }).map(|v| v.to_string()),
+            "canopy_create_worktree" => match parse::<execution::CreateArgs>(arguments) {
+                Ok(args) => execution::Executor::submit(self.controller.clone(), self.generation.clone(), execution::Request::Create(args)).await.map(|v| v.to_string()),
+                Err(error) => Err(error),
+            },
+            "canopy_run_setup" => match parse::<execution::SetupArgs>(arguments) {
+                Ok(args) => execution::Executor::submit(self.controller.clone(), self.generation.clone(), execution::Request::Setup(args)).await.map(|v| v.to_string()),
+                Err(error) => Err(error),
+            },
+            _ => return Err(ErrorData::invalid_params("unknown tool", None)),
         };
         Ok(match outcome {
             Ok(value) => CallToolResult::success(vec![ContentBlock::text(value)]),
@@ -546,6 +606,7 @@ impl ServerHandler for Handler {
 }
 impl Handler {
     fn cached_status(&self, repo_id: &str) -> Result<String, &'static str> {
+        if repo_id.is_empty() || repo_id.len() > 256 { return Err("invalid_arguments"); }
         // Hold policy through the cached read: rotation/disable linearizes
         // either before this call or after it, never halfway through it.
         let live = self.controller.live.read();

@@ -89,12 +89,17 @@ fn run_lifecycle(method: &str) {
     let snapshot: serde_json::Value = serde_json::from_slice(&status.stdout).unwrap();
     assert_eq!(snapshot["pid"], child.0.id());
     assert_eq!(snapshot["apiVersion"], "1");
-    for action in ["mcp status", "mcp enable --repo fixture", "mcp rotate-token", "mcp disable", "mcp enable"] {
+    for action in ["mcp status", "mcp enable --repo fixture", "mcp enable --allow-worktree-write", "mcp rotate-token", "mcp disable", "mcp enable", "mcp enable --read-only"] {
         let result = command(action).output().unwrap();
         assert!(result.status.success(), "{action}: {}", String::from_utf8_lossy(&result.stderr));
         let body: serde_json::Value = serde_json::from_slice(&result.stdout).unwrap();
         assert!(body["enabled"].is_boolean());
         assert!(body.get("token").is_none(), "control output must never include credentials");
+        assert_eq!(body["allowWorktreeWrite"], matches!(action, "mcp enable --allow-worktree-write" | "mcp rotate-token" | "mcp disable" | "mcp enable"));
+    }
+    for action in ["mcp enable --read-only --allow-worktree-write", "mcp status --allow-worktree-write"] {
+        let result = command(action).output().unwrap();
+        assert!(!result.status.success(), "{action} should reject invalid permission flags");
     }
     if method == "api" {
         let stop = command("stop").output().unwrap();

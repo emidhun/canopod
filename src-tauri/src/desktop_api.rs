@@ -186,6 +186,8 @@ mod tests {
                 serde_json::from_str(body["result"]["content"][0]["text"].as_str().unwrap())
                     .unwrap();
             assert_eq!(result["repoId"], "desktop-repo");
+            assert_eq!(server.mcp.status()["allowWorktreeWrite"], false);
+            server.mcp.configure_permissions(true, None, Some(true)).await.unwrap();
             server.shutdown().await;
             assert!(!exited.load(Ordering::Acquire));
         }
@@ -196,6 +198,7 @@ mod tests {
         .await
         .unwrap();
         assert!(credential(&app, CredentialKind::Mcp).matches(mcp.expose()));
+        assert_eq!(restarted.mcp.status()["allowWorktreeWrite"], true);
         let response = client
             .post(format!("{origin}/mcp"))
             .bearer_auth(mcp.expose())

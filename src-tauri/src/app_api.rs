@@ -219,6 +219,7 @@ async fn status(State(state): State<ApiState>) -> Json<serde_json::Value> {
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 struct McpEnable {
     repo_ids: Option<Vec<String>>,
+    allow_worktree_write: Option<bool>,
 }
 async fn mcp_status(State(state): State<ApiState>) -> Json<serde_json::Value> {
     Json(state.mcp.status())
@@ -234,7 +235,7 @@ fn mcp_control_result(state: &ApiState, result: Result<(), String>) -> Response 
     }
 }
 async fn mcp_enable(State(state): State<ApiState>, Json(input): Json<McpEnable>) -> Response {
-    mcp_control_result(&state, state.mcp.configure(true, input.repo_ids).await)
+    mcp_control_result(&state, state.mcp.configure_permissions(true, input.repo_ids, input.allow_worktree_write).await)
 }
 async fn mcp_disable(State(state): State<ApiState>) -> Response {
     mcp_control_result(&state, state.mcp.configure(false, None).await)
@@ -438,6 +439,7 @@ impl Server {
         self.state.stop.send_replace(true);
         self.state.mcp.shutdown();
         while connections.join_next().await.is_some() {}
+        self.state.mcp.drain_writes().await;
         outcome
     }
 }
@@ -450,7 +452,7 @@ pub async fn serve(
     signal: impl Future<Output = Result<(), String>>,
 ) -> Result<(), String> {
     let shutdown = server.state.stop.clone();
-    let runtime_stop = shutdown.subscribe();
+    let (runtime_shutdown, runtime_stop) = watch::channel(false);
     let cleanup = app.clone();
     let mut network = tokio::spawn(server.run());
     let mut runtime = tokio::spawn(crate::backend::serve(app, async {
@@ -470,6 +472,9 @@ pub async fn serve(
     } else {
         network.await.map_err(|e| e.to_string()).and_then(|r| r)
     };
+    // Finish accepted writes before child cleanup, so no job can spawn a
+    // service after the process supervisor has already swept it.
+    runtime_shutdown.send_replace(true);
     let runtime_result = if runtime_done {
         Ok(())
     } else {
@@ -917,6 +922,164 @@ mod tests {
                 .json(&serde_json::json!({"jsonrpc":"2.0","id":1,"method":method,"params":params}))
         }
     }
+    impl Running {
+        async fn write_fixture(&self, setup: &str) -> (Bearer, String) {
+            let bearer = self.enable_mcp().await;
+            let path = self.app.state::<AppState>().settings.read().repos[0].path.clone();
+            for args in [
+                vec!["init", "-b", "main"],
+                vec!["-c", "user.name=Test", "-c", "user.email=test@example.invalid", "commit", "--allow-empty", "-m", "initial"],
+            ] {
+                crate::git::run_git(&path, &args).await.unwrap();
+            }
+            std::fs::write(Path::new(&path).join(".worktreemanager.json"),
+                serde_json::json!({"setup":[setup]}).to_string()).unwrap();
+            (bearer, path)
+        }
+        async fn grant_writes(&self, enabled: bool) {
+            let response = self.request(reqwest::Method::POST, "mcp/enable")
+                .json(&serde_json::json!({"repoIds":["allowed"],"allowWorktreeWrite":enabled}))
+                .send().await.unwrap();
+            assert_eq!(response.status(), StatusCode::OK);
+        }
+        async fn tool(&self, bearer: &Bearer, name: &str, args: serde_json::Value) -> serde_json::Value {
+            self.rpc(bearer, "tools/call", serde_json::json!({"name":name,"arguments":args}))
+                .send().await.unwrap().json::<serde_json::Value>().await.unwrap()["result"].clone()
+        }
+        async fn job_done(&self, bearer: &Bearer, id: &str) -> serde_json::Value {
+            tokio::time::timeout(Duration::from_secs(20), async {
+                loop {
+                    let result = self.tool(bearer, "canopy_job", serde_json::json!({"repoId":"allowed","jobId":id})).await;
+                    assert_ne!(result["isError"], true, "{result}");
+                    let job: serde_json::Value = serde_json::from_str(result["content"][0]["text"].as_str().unwrap()).unwrap();
+                    if !matches!(job["status"].as_str().unwrap(), "queued" | "running") && job["persistencePending"] == false { break job; }
+                    tokio::time::sleep(Duration::from_millis(20)).await;
+                }
+            }).await.unwrap()
+        }
+    }
+    fn tool_data(result: &serde_json::Value) -> serde_json::Value {
+        assert_ne!(result["isError"], true, "{result}");
+        serde_json::from_str(result["content"][0]["text"].as_str().unwrap()).unwrap()
+    }
+
+    #[tokio::test]
+    async fn mcp_worktree_create_setup_permissions_retries_and_scope() {
+        let running = Running::start().await;
+        let (bearer, path) = running.write_fixture("echo configured > setup-ran").await;
+        let args = serde_json::json!({"repoId":"allowed","branch":"agent-test","base":"main","requestKey":"create-one"});
+        let denied = running.tool(&bearer, "canopy_create_worktree", args.clone()).await;
+        assert_eq!(denied["isError"], true, "{denied}");
+        assert!(!Path::new(&path).join(".worktrees/agent-test").exists());
+        running.grant_writes(true).await;
+        let listing: serde_json::Value = running.rpc(&bearer, "tools/list", serde_json::json!({})).send().await.unwrap().json().await.unwrap();
+        assert_eq!(listing["result"]["tools"].as_array().unwrap().len(), 5);
+        let accepted = tool_data(&running.tool(&bearer, "canopy_create_worktree", args.clone()).await);
+        let id = accepted["job"]["jobId"].as_str().unwrap();
+        let job = running.job_done(&bearer, id).await;
+        assert_eq!(job["status"], "succeeded", "{job}");
+        let created = job["createdPath"].as_str().unwrap();
+        assert_eq!(std::fs::read_to_string(Path::new(created).join("setup-ran")).unwrap().trim(), "configured");
+        let retry = tool_data(&running.tool(&bearer, "canopy_create_worktree", args.clone()).await);
+        assert_eq!(retry["reused"], true);
+        assert_eq!(retry["job"]["jobId"], id);
+        let mut changed = args.clone();
+        changed["base"] = "HEAD".into();
+        let conflict = running.tool(&bearer, "canopy_create_worktree", changed).await;
+        assert_eq!(conflict["isError"], true, "{conflict}");
+        let denied = running.tool(&bearer, "canopy_job", serde_json::json!({"repoId":"other","jobId":id})).await;
+        assert_eq!(denied["isError"], true);
+        let worktrees = tool_data(&running.tool(&bearer, "canopy_worktrees", serde_json::json!({"repoId":"allowed"})).await);
+        assert!(worktrees["worktrees"].as_array().unwrap().iter().any(|w| w["worktreeKey"] == created));
+        std::fs::remove_file(Path::new(created).join("setup-ran")).unwrap();
+        for dry_run in [true, false] {
+            let result = tool_data(&running.tool(&bearer, "canopy_run_setup", serde_json::json!({
+                "repoId":"allowed","worktreeKey":created,"dryRun":dry_run,"requestKey":format!("setup-{dry_run}")
+            })).await);
+            let job = running.job_done(&bearer, result["job"]["jobId"].as_str().unwrap()).await;
+            assert_eq!(job["status"], "succeeded", "{job}");
+            assert_eq!(Path::new(created).join("setup-ran").exists(), !dry_run);
+        }
+        let result = tool_data(&running.tool(&bearer, "canopy_run_setup", serde_json::json!({
+            "repoId":"allowed","worktreeKey":path,"requestKey":"main-denied"
+        })).await);
+        assert_eq!(running.job_done(&bearer, result["job"]["jobId"].as_str().unwrap()).await["status"], "failed");
+        let denied = running.tool(&bearer, "canopy_run_setup", serde_json::json!({
+            "repoId":"allowed","worktreeKey":created,"requestKey":"arbitrary","command":"echo unsafe"
+        })).await;
+        assert_eq!(denied["isError"], true);
+        running.grant_writes(false).await;
+        assert_eq!(running.tool(&bearer, "canopy_create_worktree", args).await["isError"], true);
+        running.finish().await;
+    }
+
+    #[tokio::test]
+    async fn mcp_failed_setup_preserves_created_worktree_and_job_checkpoint() {
+        let running = Running::start().await;
+        let (bearer, _) = running.write_fixture("exit 23").await;
+        running.grant_writes(true).await;
+        let accepted = tool_data(&running.tool(&bearer, "canopy_create_worktree", serde_json::json!({
+            "repoId":"allowed","branch":"failed-setup","base":"main","requestKey":"partial"
+        })).await);
+        let job = running.job_done(&bearer, accepted["job"]["jobId"].as_str().unwrap()).await;
+        assert_eq!(job["status"], "failed", "{job}");
+        assert_eq!(job["error"], "setup_failed");
+        assert!(Path::new(job["createdPath"].as_str().unwrap()).join(".git").exists());
+        assert_eq!(job["persistencePending"], false);
+        running.finish().await;
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn mcp_shutdown_interrupts_setup_and_flushes_job() {
+        let running = Running::start().await;
+        let (bearer, path) = running.write_fixture("sleep 60 & echo $! > setup-child; echo started > setup-started; wait; echo escaped > setup-escaped").await;
+        running.grant_writes(true).await;
+        let accepted = tool_data(&running.tool(&bearer, "canopy_create_worktree", serde_json::json!({
+            "repoId":"allowed","branch":"shutdown","base":"main","requestKey":"shutdown"
+        })).await);
+        let id = accepted["job"]["jobId"].as_str().unwrap();
+        let created = Path::new(&path).join(".worktrees/shutdown");
+        tokio::time::timeout(Duration::from_secs(20), async {
+            while !created.join("setup-started").exists() { tokio::time::sleep(Duration::from_millis(20)).await; }
+        }).await.unwrap();
+        let child: i32 = std::fs::read_to_string(created.join("setup-child")).unwrap().trim().parse().unwrap();
+        running.shutdown.send_replace(true);
+        tokio::time::timeout(Duration::from_secs(5), running.task).await.unwrap().unwrap().unwrap();
+        let journal = crate::jobs::Registry::open(&running.directory.0).unwrap();
+        let job = journal.get(id).unwrap();
+        assert_eq!(job.record.status, crate::jobs::Status::Interrupted);
+        assert_eq!(job.record.outcome.created_path.as_deref(), created.to_str());
+        assert!(!created.join("setup-escaped").exists());
+        tokio::time::timeout(Duration::from_secs(3), async {
+            while unsafe { libc::kill(child, 0) } == 0 { tokio::time::sleep(Duration::from_millis(20)).await; }
+        }).await.expect("setup descendant survived shutdown");
+        assert!(running.app.state::<AppState>().retained_orphans.lock().is_empty());
+        journal.close().await;
+    }
+
+    #[tokio::test]
+    async fn mcp_corrupt_journal_preserves_reads_and_refuses_write_grant() {
+        let directory = Directory::new();
+        let journal = crate::jobs::Registry::open(&directory.0).unwrap();
+        journal.close().await;
+        drop(journal);
+        let file = directory.0.join("jobs/job-000.json");
+        std::fs::write(&file, "{invalid").unwrap();
+        #[cfg(unix)] {
+            use std::os::unix::fs::PermissionsExt;
+            std::fs::set_permissions(&file, std::fs::Permissions::from_mode(0o600)).unwrap();
+        }
+        let running = Running::with_directory(directory, Duration::from_secs(60)).await;
+        let bearer = running.enable_mcp().await;
+        assert!(running.mcp.status()["executionError"].is_string());
+        assert_ne!(running.tool(&bearer, "canopy_status", serde_json::json!({"repoId":"allowed"})).await["isError"], true);
+        assert!(running.mcp.configure_permissions(true, None, Some(true)).await.is_err());
+        assert_eq!(running.mcp.status()["allowWorktreeWrite"], false);
+        assert_eq!(std::fs::read_to_string(file).unwrap(), "{invalid");
+        running.finish().await;
+    }
+
     #[tokio::test]
     async fn mcp_off_by_default_and_app_credentials_cannot_access_tools() {
         let running = Running::start().await;
@@ -991,7 +1154,7 @@ mod tests {
         let body: serde_json::Value = response.json().await.unwrap();
         assert_eq!(
             body["result"]["tools"].as_array().unwrap().len(),
-            1,
+            3,
             "{body}"
         );
         assert_eq!(body["result"]["tools"][0]["name"], "canopy_status");

@@ -53,18 +53,21 @@ async fn run_git_with_timeout(cwd: &str, args: &[&str], dur: Duration) -> Result
         // happen. The path is quoted for the shell git builds from this string.
         cmd.env("GIT_SSH_COMMAND", format!("ssh -i '{}' -o IdentitiesOnly=yes", ssh_key.replace('\'', "'\\''")));
     }
-    let fut = cmd
-        .kill_on_drop(true) // a timed-out git must not linger
-        .output();
-    let out = match tokio::time::timeout(dur, fut).await {
-        Ok(res) => res.map_err(|e| format!("failed to run git: {e}"))?,
-        Err(_) => {
-            return Err(format!(
-                "git {} timed out after {}s",
-                args.first().copied().unwrap_or(""),
-                dur.as_secs()
-            ))
-        }
+    if crate::jobs::is_cancelled() { return Err("operation interrupted by shutdown".into()); }
+    cmd.kill_on_drop(true).stdout(std::process::Stdio::piped()).stderr(std::process::Stdio::piped());
+    crate::proc::prepare_group_command(&mut cmd);
+    let mut child = cmd.spawn().map_err(|e| format!("failed to run git: {e}"))?;
+    let mut group = match crate::proc::CommandGroup::attach(child.id().unwrap_or(0)) {
+        Ok(group) => group,
+        Err(error) => { let _ = child.kill().await; return Err(error); }
+    };
+    let out = tokio::select! {
+        biased;
+        _ = crate::jobs::cancelled() => return Err("operation interrupted by shutdown".into()),
+        result = tokio::time::timeout(dur, child.wait_with_output()) => match result {
+            Ok(res) => { group.disarm(); res.map_err(|e| format!("failed to run git: {e}"))? },
+            Err(_) => return Err(format!("git {} timed out after {}s", args.first().copied().unwrap_or(""), dur.as_secs())),
+        },
     };
     if out.status.success() {
         Ok(String::from_utf8_lossy(&out.stdout).into_owned())
@@ -609,14 +612,23 @@ pub async fn create_worktree(
     branch: &str,
     base: Option<&str>,
     create_branch: bool,
-    mut progress: impl FnMut(String),
+    progress: impl FnMut(String),
+) -> Result<(), String> {
+    create_worktree_tracked(repo_path, wt_path, branch, base, create_branch, progress, None).await
+}
+
+pub(crate) async fn create_worktree_tracked(
+    repo_path: &str, wt_path: &str, branch: &str, base: Option<&str>, create_branch: bool,
+    mut progress: impl FnMut(String), tracking: Option<&crate::jobs::Tracking>,
 ) -> Result<(), String> {
     progress(format!("git worktree add {wt_path}"));
     if create_branch {
         let base = base.unwrap_or("HEAD");
         run_git(repo_path, &["worktree", "add", wt_path, "-b", branch, base]).await?;
+        if let Some(tracking) = tracking { tracking.created(wt_path).await.map_err(|e| e.to_string())?; }
     } else {
         run_git(repo_path, &["worktree", "add", wt_path, branch]).await?;
+        if let Some(tracking) = tracking { tracking.created(wt_path).await.map_err(|e| e.to_string())?; }
         // A remote pick reusing an existing local branch passes the origin ref
         // as `base`. Fast-forward the checkout to it so the worktree (and the
         // submodule commits it pins) reflect origin rather than a stale local

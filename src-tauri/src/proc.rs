@@ -38,6 +38,33 @@ pub use imp::group_key;
 /// Local UTC offset in seconds, for log timestamps (no chrono dependency).
 pub use imp::local_utc_offset_secs;
 
+/// Kills an isolated command tree when its future is cancelled or times out.
+/// Disarm after an ordinary wait so a reaped PID can never be killed later.
+pub(crate) struct CommandGroup {
+    group: Option<ProcGroup>,
+    #[cfg(unix)]
+    record: Option<crate::jobs::CommandRecord>,
+}
+impl CommandGroup {
+    pub fn attach(pid: u32) -> Result<Self, String> {
+        let group = attach_group(pid)?;
+        #[cfg(unix)]
+        let record = crate::jobs::track_group(&group);
+        Ok(Self { group: Some(group), #[cfg(unix)] record })
+    }
+    pub fn disarm(&mut self) {
+        self.group.take();
+        #[cfg(unix)]
+        self.record.take();
+    }
+    pub fn kill(&mut self) {
+        if let Some(group) = self.group.take() { kill_group(&group); }
+        #[cfg(unix)]
+        self.record.take();
+    }
+}
+impl Drop for CommandGroup { fn drop(&mut self) { self.kill(); } }
+
 // ───────────────────────────── Unix ─────────────────────────────
 #[cfg(unix)]
 mod imp {

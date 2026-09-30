@@ -13,6 +13,7 @@ export default function McpPage({ preferredRepoPath }: { preferredRepoPath?: str
   const [status, setStatus] = useState<McpStatus | null>(null);
   const [repos, setRepos] = useState<RepoCfg[]>([]);
   const [selected, setSelected] = useState<string[]>([]);
+  const [allowWrite, setAllowWrite] = useState(false);
   const [client, setClient] = useState<Client>("claude");
   const [busy, setBusy] = useState(false);
   const [loading, setLoading] = useState(true);
@@ -29,6 +30,7 @@ export default function McpPage({ preferredRepoPath }: { preferredRepoPath?: str
     try {
       const [next, settings] = await Promise.all([ipc.mcpStatus(), ipc.getSettings()]);
       setStatus(next);
+      setAllowWrite(next.allowWorktreeWrite);
       setRepos(settings.repos);
       const allowed = next.repoIds.filter((id) => settings.repos.some((r) => r.id === id));
       const preferred = settings.repos.find((r) => r.path === preferredRepoPath);
@@ -58,8 +60,9 @@ export default function McpPage({ preferredRepoPath }: { preferredRepoPath?: str
     setBusy(true); setError(""); setNotice("");
     try {
       const next = action === "rotate" ? await ipc.mcpRotateToken()
-        : await ipc.mcpConfigure(action === "enable", action === "enable" ? selected : undefined);
+        : await ipc.mcpConfigure(action === "enable", action === "enable" ? selected : undefined, action === "enable" ? allowWrite : undefined);
       setStatus(next);
+      setAllowWrite(next.allowWorktreeWrite);
       setRotate(false);
       setNotice(action === "rotate" ? "Token rotated. Reconnect agents configured here. For manual setup, copy the new token into your agent."
         : action === "disable" ? "MCP access disabled." : "MCP access saved. Connect your agent below.");
@@ -83,7 +86,7 @@ export default function McpPage({ preferredRepoPath }: { preferredRepoPath?: str
   }
 
   if (!native) return <div className="mcp-panel"><p>MCP configuration is available in the Canopy desktop app.</p></div>;
-  const changed = status && [...selected].sort().join("\n") !== [...status.repoIds].sort().join("\n");
+  const changed = status && (allowWrite !== status.allowWorktreeWrite || [...selected].sort().join("\n") !== [...status.repoIds].sort().join("\n"));
   return <div className="mcp-panel" aria-busy={busy || loading}>
     {(error || notice) && <div className="mcp-feedback">
       {error && <p role="alert" className="mcp-error">{error}</p>}
@@ -91,7 +94,7 @@ export default function McpPage({ preferredRepoPath }: { preferredRepoPath?: str
     </div>}
     <section className="mcp-section">
       <div className="mcp-heading"><h3>MCP access</h3><span className={`mcp-status ${status?.enabled ? "enabled" : ""}`}>{loading ? "Loading…" : status?.error ? "Needs attention" : status?.enabled ? "Enabled" : "Disabled"}</span></div>
-      <p>Let an agent read cached worktree and service counts for repositories you choose. Available tool: <code>canopy_status</code>. Write actions are not available yet.</p>
+      <p>Let an agent read repository status, list worktrees, and check jobs for repositories you choose. Enable write access below to let it create worktrees and run setup.</p>
       {status?.error && <p role="alert" className="mcp-error">{status.error}</p>}
       <div className="mcp-actions"><button className="btn" disabled={busy || loading} onClick={() => void load()}>Refresh status</button></div>
       {status && <>
@@ -99,8 +102,11 @@ export default function McpPage({ preferredRepoPath }: { preferredRepoPath?: str
           {repos.length === 0 && <p>Add a repository before enabling MCP.</p>}
           {repos.map((repo) => <label key={repo.id} className="mcp-repo"><input type="checkbox" checked={selected.includes(repo.id)} onChange={(e) => setSelected((ids) => e.target.checked ? [...ids, repo.id] : ids.filter((id) => id !== repo.id))} /><span>{repo.name}<small>{repo.path}</small></span></label>)}
         </fieldset>
+        <label className="mcp-repo"><input type="checkbox" checked={allowWrite} disabled={busy || loading || (!!status.executionError && !allowWrite)} onChange={(e) => setAllowWrite(e.target.checked)} /><span>Allow worktree creation and setup</span></label>
+        <p className="mcp-hint">Applies to all allowed repositories. Agents can run configured setup scripts; creation follows repository defaults, including service startup. Setup reruns are limited to linked worktrees. Write access is off by default.</p>
+        {status.executionError && <p role="alert" className="mcp-error">Worktree jobs unavailable: {status.executionError}</p>}
         <div className="mcp-actions">
-          <button className="btn pri" disabled={busy || loading || selected.length === 0 || (!!status.enabled && !changed)} onClick={() => void change("enable")}>{status.enabled ? "Apply repository access" : "Enable MCP"}</button>
+          <button className="btn pri" disabled={busy || loading || selected.length === 0 || (!!status.enabled && !changed)} onClick={() => void change("enable")}>{status.enabled ? "Apply MCP access" : "Enable MCP"}</button>
           <button className="btn" disabled={busy || loading || (!status.enabled && !status.error)} onClick={() => void change("disable")}>Disable MCP</button>
         </div>
         <p className="mcp-hint">Changes apply immediately. Access stays available while Canopy is in the tray and ends when the app quits.</p>

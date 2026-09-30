@@ -1254,19 +1254,18 @@ async fn run_commands_in(
         }
         let wrapped = crate::toolchain::with_pinned_node(cwd, cmd);
         let (shell, shargs) = crate::toolchain::shell_argv(&wrapped);
-        let mut child = Command::new(shell)
-            .args(&shargs)
-            .current_dir(cwd)
-            .envs(vars) // WT_*/WM_* etc.
-            .env("WTM_REPO", repo_path)
-            .env("WTM_WORKTREE", wt_path)
-            .env("REPO_PATH", repo_path)
-            .env("WT_PATH", wt_path)
-            .stdin(Stdio::null())
-            .stdout(Stdio::piped())
-            .stderr(Stdio::piped())
-            .spawn()
-            .map_err(|e| format!("{label} spawn failed: {e}"))?;
+        if crate::jobs::is_cancelled() { return Err("operation interrupted by shutdown".into()); }
+        let mut command = Command::new(shell);
+        command.args(&shargs).current_dir(cwd).envs(vars)
+            .env("WTM_REPO", repo_path).env("WTM_WORKTREE", wt_path)
+            .env("REPO_PATH", repo_path).env("WT_PATH", wt_path)
+            .stdin(Stdio::null()).stdout(Stdio::piped()).stderr(Stdio::piped()).kill_on_drop(true);
+        crate::proc::prepare_group_command(&mut command);
+        let mut child = command.spawn().map_err(|e| format!("{label} spawn failed: {e}"))?;
+        let mut group = match crate::proc::CommandGroup::attach(child.id().unwrap_or(0)) {
+            Ok(group) => group,
+            Err(error) => { let _ = child.kill().await; return Err(error); }
+        };
 
         let mut out_lines = BufReader::new(child.stdout.take().unwrap()).lines();
         let mut err_lines = BufReader::new(child.stderr.take().unwrap()).lines();
@@ -1322,14 +1321,24 @@ async fn run_commands_in(
             }
             child.wait().await
         };
-        let status = match tokio::time::timeout(step_timeout, run_fut).await {
+        let outcome = tokio::select! {
+            biased;
+            _ = crate::jobs::cancelled() => {
+                group.kill();
+                let _ = child.kill().await;
+                return Err("operation interrupted by shutdown".into());
+            },
+            result = tokio::time::timeout(step_timeout, run_fut) => result,
+        };
+        let status = match outcome {
             Ok(res) => res.map_err(|e| format!("{label} wait failed: {e}"))?,
             Err(_) => {
-                // kills the shell; its own children get EOF on the shared pipes
+                group.kill();
                 let _ = child.kill().await;
                 return Err(format!("{label} step timed out after {}s: {cmd}", step_timeout.as_secs()));
             }
         };
+        group.disarm();
         if !status.success() {
             // surface the first real error line plus the tail, so messages like
             // "Cannot find module" aren't buried under a stack.

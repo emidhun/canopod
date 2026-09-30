@@ -1,5 +1,5 @@
 //! Bounded durable job journal. Execution/leases remain in shared operations.
-//! This foundation does not submit production commands yet. The runtime owner
+//! MCP creation/setup uses this journal. The runtime owner
 //! must outlive the registry and all flush tasks; only one registry may write it.
 use crate::credentials::PrivateSnapshots;
 use parking_lot::Mutex;
@@ -16,6 +16,51 @@ use std::{
     time::{Duration, SystemTime, UNIX_EPOCH},
 };
 use tokio::sync::{Mutex as AsyncMutex, Notify, Semaphore};
+
+// Scoped to an owned MCP job. Ordinary UI operations have no cancellation token.
+tokio::task_local! { static EXECUTION_CANCEL: (crate::runtime::RuntimeContext, tokio_util::sync::CancellationToken); }
+pub(crate) async fn with_cancellation<T>(app: crate::runtime::RuntimeContext, token: tokio_util::sync::CancellationToken, work: impl std::future::Future<Output = T>) -> T {
+    EXECUTION_CANCEL.scope((app, token), work).await
+}
+pub(crate) fn is_cancelled() -> bool {
+    EXECUTION_CANCEL.try_with(|(_, token)| token.is_cancelled()).unwrap_or(false)
+}
+pub(crate) async fn cancelled() {
+    match EXECUTION_CANCEL.try_with(|(_, token)| token.clone()) {
+        Ok(token) => token.cancelled().await,
+        Err(_) => std::future::pending::<()>().await,
+    }
+}
+pub(crate) fn is_tracked() -> bool { EXECUTION_CANCEL.try_with(|_| ()).is_ok() }
+
+#[cfg(unix)]
+pub(crate) struct CommandRecord { app: crate::runtime::RuntimeContext, key: String, pgid: i32 }
+#[cfg(unix)]
+pub(crate) fn track_group(group: &crate::proc::ProcGroup) -> Option<CommandRecord> {
+    let app = EXECUTION_CANCEL.try_with(|(app, _)| app.clone()).ok()?;
+    let pgid = crate::proc::group_key(group) as i32;
+    let key = format!("mcp-job-process::{pgid}");
+    app.state::<crate::state::AppState>().retained_orphans.lock().push(crate::settings::OrphanProc {
+        svc_key: key.clone(), pgid, spawn_time_secs: now() / 1000, owner: crate::ownership::current_process_owner(),
+    });
+    crate::services::persist_orphans(&app);
+    Some(CommandRecord { app, key, pgid })
+}
+#[cfg(unix)]
+impl Drop for CommandRecord {
+    fn drop(&mut self) {
+        self.app.state::<crate::state::AppState>().retained_orphans.lock().retain(|record| record.svc_key != self.key || record.pgid != self.pgid);
+        crate::services::persist_orphans(&self.app);
+    }
+}
+
+#[derive(Clone)]
+pub(crate) struct Tracking { pub registry: Arc<Registry>, pub id: String }
+impl Tracking {
+    pub async fn created(&self, path: &str) -> Result<()> {
+        self.registry.created(&self.id, path.to_owned()).await
+    }
+}
 
 pub const RETAINED_JOBS: usize = 128;
 pub const ACTIVE_JOBS: usize = 4;

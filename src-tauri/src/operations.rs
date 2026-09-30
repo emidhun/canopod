@@ -926,6 +926,14 @@ pub async fn create_worktree(
             .cloned()
             .ok_or_else(|| CanopyError::not_found("unknown repo"))?
     };
+    create_worktree_for_repo(app, repo, branch, base, create_branch, None).await
+}
+
+pub(crate) async fn create_worktree_for_repo(
+    app: RuntimeContext, repo: RepoCfg, branch: String, base: Option<String>, create_branch: bool,
+    tracking: Option<crate::jobs::Tracking>,
+) -> Result<String, CanopyError> {
+    let repo_id = repo.id.clone();
     // Resolve the worktree root: empty falls back to `<repo>/.worktrees`, a
     // relative dir (e.g. ".worktrees") is taken relative to the repo — so it
     // lands inside the repo instead of wherever the process CWD happens to be —
@@ -980,13 +988,14 @@ pub async fn create_worktree(
 
     let app2 = app.clone();
     let wt_path2 = wt_path.clone();
-    let result = git::create_worktree(
+    let result = git::create_worktree_tracked(
         &repo.path,
         &wt_path,
         &branch,
         base.as_deref(),
         create_branch,
         move |line| emit_op(&app2, &wt_path2, "create", "progress", line),
+        tracking.as_ref(),
     )
     .await;
 
@@ -999,7 +1008,7 @@ pub async fn create_worktree(
     // Assign the worktree's ports first so .env overrides can reference them.
     let vars = crate::state::worktree_vars(&app, &repo_id, &wt_path, false);
     // The worktree exists either way; surface setup failure but keep the tree fresh.
-    let parallel = crate::diagnostics::experiment_enabled(&app, "parallel-setup");
+    let parallel = !crate::jobs::is_tracked() && crate::diagnostics::experiment_enabled(&app, "parallel-setup");
     let setup_result = if repo.worktree_defaults.run_setup {
         let app3 = app.clone();
         let wt_path3 = wt_path.clone();
@@ -1036,7 +1045,7 @@ pub async fn create_worktree(
         Ok(()) => {
             // Starting services is only meaningful once provisioning has run;
             // booting a service against an unprovisioned worktree just crashes it.
-            if repo.worktree_defaults.start_services && repo.worktree_defaults.run_setup {
+            if !crate::jobs::is_cancelled() && repo.worktree_defaults.start_services && repo.worktree_defaults.run_setup {
                 emit_op(&app, &wt_path, "create", "progress", "starting services…");
                 for key in services::worktree_svc_keys(&app, &wt_path) {
                     if let Err(e) = services::start_service(&app, &key).await {
@@ -1100,7 +1109,7 @@ pub async fn run_worktree_setup(
             "running setup…"
         },
     );
-    let parallel = crate::diagnostics::experiment_enabled(&app, "parallel-setup");
+    let parallel = !crate::jobs::is_tracked() && crate::diagnostics::experiment_enabled(&app, "parallel-setup");
     let result = crate::setup::run_setup(&wt_key, &repo_path, &vars, dry_run, parallel, move |p| {
         emit_progress(&app3, &wt3, "create", p)
     })

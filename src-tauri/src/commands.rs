@@ -799,9 +799,9 @@ pub fn mcp_status(app: AppHandle) -> Result<serde_json::Value, String> {
 }
 
 #[tauri::command]
-pub async fn mcp_configure(app: AppHandle, enabled: bool, repo_ids: Option<Vec<String>>) -> Result<serde_json::Value, String> {
+pub async fn mcp_configure(app: AppHandle, enabled: bool, repo_ids: Option<Vec<String>>, allow_worktree_write: Option<bool>) -> Result<serde_json::Value, String> {
     let controller = mcp_controller(&app)?;
-    controller.configure(enabled, repo_ids).await?;
+    controller.configure_permissions(enabled, repo_ids, allow_worktree_write).await?;
     Ok(controller.status())
 }
 

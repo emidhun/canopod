@@ -9,7 +9,7 @@ vi.mock("../../../ipc", () => ({
   errText: (e: unknown) => String(e),
   ipc: { mcpAgentTarget: vi.fn(), mcpConnectAgent: vi.fn(), mcpStatus: vi.fn(), getSettings: vi.fn(), mcpConfigure: vi.fn(), mcpRotateToken: vi.fn(), mcpConnection: vi.fn() },
 }));
-const disabled: McpStatus = { enabled: false, error: null, endpoint: "http://127.0.0.1:47831/mcp", repoIds: [], permissions: ["read"], transport: "streamable-http" };
+const disabled: McpStatus = { allowWorktreeWrite: false, executionError: null, enabled: false, error: null, endpoint: "http://127.0.0.1:47831/mcp", repoIds: [], permissions: ["read"], transport: "streamable-http" };
 const enabled = { ...disabled, enabled: true, repoIds: ["repo"] };
 beforeEach(() => {
   vi.clearAllMocks();
@@ -26,15 +26,30 @@ describe("MCP settings and onboarding controls", () => {
     const user = userEvent.setup(); render(<McpPage />);
     expect(await screen.findByRole("button", { name: "Enable MCP" })).toBeDisabled();
     expect(ipc.mcpConnection).not.toHaveBeenCalled();
-    await user.click(screen.getByRole("checkbox"));
+    await user.click(screen.getByRole("checkbox", { name: /My repo/ }));
     await user.click(screen.getByRole("button", { name: "Enable MCP" }));
-    expect(ipc.mcpConfigure).toHaveBeenCalledWith(true, ["repo"]);
+    expect(ipc.mcpConfigure).toHaveBeenCalledWith(true, ["repo"], false);
     expect(await screen.findByText("Enabled")).toBeInTheDocument();
   });
   it("preselects the onboarding repository without enabling MCP", async () => {
     render(<McpPage preferredRepoPath="/repo" />);
-    expect(await screen.findByRole("checkbox")).toBeChecked();
+    expect(await screen.findByRole("checkbox", { name: /My repo/ })).toBeChecked();
     expect(ipc.mcpConfigure).not.toHaveBeenCalled();
+  });
+  it("requires an explicit grant and supports revoking write access", async () => {
+    const user = userEvent.setup();
+    vi.mocked(ipc.mcpStatus).mockResolvedValue(enabled);
+    vi.mocked(ipc.mcpConfigure).mockResolvedValueOnce({ ...enabled, allowWorktreeWrite: true }).mockResolvedValueOnce(enabled);
+    render(<McpPage />);
+    const permission = await screen.findByRole("checkbox", { name: "Allow worktree creation and setup" });
+    expect(permission).not.toBeChecked();
+    await user.click(permission);
+    await user.click(screen.getByRole("button", { name: "Apply MCP access" }));
+    await waitFor(() => expect(ipc.mcpConfigure).toHaveBeenLastCalledWith(true, ["repo"], true));
+    await waitFor(() => expect(screen.getByRole("button", { name: "Apply MCP access" })).toBeDisabled());
+    await user.click(permission);
+    await user.click(screen.getByRole("button", { name: "Apply MCP access" }));
+    await waitFor(() => expect(ipc.mcpConfigure).toHaveBeenLastCalledWith(true, ["repo"], false));
   });
   it("only exports secrets on copy and creates the selected agent configuration", async () => {
     const user = userEvent.setup(); vi.mocked(ipc.mcpStatus).mockResolvedValue(enabled);
@@ -68,7 +83,7 @@ describe("MCP settings and onboarding controls", () => {
   it("does not claim success after an enable failure and supports disabling", async () => {
     const user = userEvent.setup(); vi.mocked(ipc.mcpConfigure).mockRejectedValueOnce(new Error("policy changed"));
     render(<McpPage preferredRepoPath="/repo" />);
-    await screen.findByRole("checkbox");
+    await screen.findByRole("checkbox", { name: /My repo/ });
     await user.click(screen.getByRole("button", { name: "Enable MCP" }));
     expect(await screen.findByRole("alert")).toHaveTextContent("policy changed");
     expect(screen.getByRole("button", { name: "Copy token" })).toBeDisabled();
@@ -76,7 +91,7 @@ describe("MCP settings and onboarding controls", () => {
     await screen.findByText("Enabled");
     vi.mocked(ipc.mcpConfigure).mockResolvedValue(disabled);
     await user.click(screen.getByRole("button", { name: "Disable MCP" }));
-    await waitFor(() => expect(ipc.mcpConfigure).toHaveBeenLastCalledWith(false, undefined));
+    await waitFor(() => expect(ipc.mcpConfigure).toHaveBeenLastCalledWith(false, undefined, undefined));
     expect(await screen.findByText("Disabled")).toBeInTheDocument();
   });
   it("connects the selected agent only on request and copies individual fields", async () => {
