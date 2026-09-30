@@ -230,13 +230,27 @@ later slices. MCP transport is implemented below.
 
 ## Opt-in MCP transport and cached probe
 
-The independent backend mounts official `rmcp = 3.4.0` Streamable HTTP at `/mcp`
+Both the desktop app and independent backend mount official `rmcp = 3.4.0` Streamable HTTP at `/mcp`
 on the same IPv4 listener. The SDK requires Rust 1.88; Canopy's owner locking
 already requires a newer standard library. Protocol negotiation and metadata
 validation belong to the SDK. Tests exercise legacy `2025-03-26` and current
 `2026-07-28` calls. Stateless JSON responses retain zero sessions. Each bounded
 request gets its own SDK service, including its tool-schema cache: rmcp caches
 unknown tool names, so a process-long service would otherwise grow that cache.
+
+The desktop app starts this listener against its existing runtime, so GUI and
+MCP clients see the same registered repositories and cached state. Closing the
+main window hides it to the tray and keeps MCP available. Quitting the app drains
+the listener and stops child processes; `canopy-backend stop` also quits the
+running desktop app. Desktop and headless hosts use the same default directories,
+endpoint, credentials and policy; run only one host for those directories.
+
+To use MCP with the headed build, launch Canopy, then run the controls below
+without starting `canopy-backend serve`. The CLI attaches to either host. MCP is
+still disabled until explicitly enabled. A saved enabled policy is restored when
+switching between headed and headless mode. Desktop reads the port from
+`backend.json` (default 47831); configuration or bind failures fail startup rather
+than silently moving the endpoint.
 
 Native controls (also available under the application-authenticated
 `/api/v1/mcp/` routes):
@@ -279,7 +293,33 @@ subprocesses and returns no paths, branch names, env values or command text.
 It does not claim readiness or refreshed data. This is the transport acceptance
 probe, not completion of the richer #141 read-tools requirements.
 
-Still required by the epic: desktop/browser controls, read/write/destructive
+### Desktop setup
+
+Settings → MCP and the optional Connect to agent step after repository onboarding
+share live MCP controls. Select registered repositories, enable or disable access,
+refresh status, or rotate the token. These changes apply immediately and remain
+separate from the Settings save button. Ordinary page loads never export a token.
+
+Connect Claude Code / Connect Codex merges a user-level `canopy` entry into
+`~/.claude.json` or `$CODEX_HOME/config.toml` (default `~/.codex/config.toml`). The
+UI shows the resolved target before writing. Malformed files and unrelated
+servers already named `canopy` are refused; other settings are preserved. Custom
+`CLAUDE_CONFIG_DIR` setups use the manual fields. No agent is launched and no
+successful remote connection is claimed: restart/reconnect the agent afterward.
+The configuration uses [Claude Code's `headersHelper`](https://code.claude.com/docs/en/mcp#use-dynamic-headers-for-custom-authentication)
+and [Codex's `http_headers_helper`](https://developers.openai.com/codex/mcp/)
+to read Canopy's private token on reconnect. This requires current clients and
+avoids storing another token copy in agent configuration. Configuration replacement
+uses a private temporary file and refuses a detected concurrent edit.
+
+Manual setup exposes individually copyable endpoint, transport, bearer token and
+Authorization value fields. Complete Claude JSON / Codex TOML snippets are also
+available; only deliberate Copy actions retrieve secrets, and those snippets
+contain a static token that must be refreshed after rotation. No secret is shown
+in the on-screen preview. MCP remains limited to the cached read-only
+`canopy_status` tool; this UI does not add write tools or permission profiles.
+
+Still required by the epic: browser controls, read/write/destructive
 permission profiles, private client configuration export, roots inference,
 remaining read tools, jobs, human approvals, packaged client validation on every
 platform, and measured performance budgets. Local debug client checks do not

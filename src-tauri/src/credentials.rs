@@ -407,3 +407,8 @@ mod tests {
         assert_eq!(fs::read_dir(&store.directory).unwrap().count(), 1);
     }
 }
+
+#[cfg(all(feature = "desktop", windows))]
+pub(crate) fn create_private_config(path: &Path) -> io::Result<File> {
+    platform::create_private_config(path)
+}

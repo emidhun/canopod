@@ -38,6 +38,7 @@ import CommandsPage from "./pages/CommandsPage";
 import FilesPage from "./pages/FilesPage";
 import SetupPage from "./pages/SetupPage";
 import RepoGeneralPage from "./pages/RepoGeneralPage";
+import McpPage from "./pages/McpPage";
 import GeneralPage from "./pages/GeneralPage";
 import TerminalPage from "./pages/TerminalPage";
 import NotificationsPage from "./pages/NotificationsPage";
@@ -390,6 +391,7 @@ export default function SettingsView({ onClose }: { onClose: () => void }) {
       return <div role="status">Repo config has not loaded yet. If loading fails, use Discard to retry.</div>;
     }
     switch (page) {
+      case "mcp": return <McpPage />;
       case "services": return <ServicesPage {...pageProps} />;
       case "agents": return <AgentsPage {...pageProps} />;
       case "commands": return <CommandsPage {...pageProps} />;

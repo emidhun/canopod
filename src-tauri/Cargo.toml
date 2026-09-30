@@ -6,6 +6,7 @@ authors = ["Midhun Kumar"]
 license = "AGPL-3.0-only"
 edition = "2021"
 rust-version = "1.95"
+default-run = "canopy"
 
 [[bin]]
 name = "canopy"
@@ -22,7 +23,7 @@ crate-type = ["staticlib", "cdylib", "rlib"]
 
 [features]
 default = ["desktop"]
-desktop = ["dep:tauri", "dep:tauri-build", "dep:tauri-plugin-opener", "dep:tauri-plugin-log", "dep:tauri-plugin-positioner", "dep:tauri-plugin-dialog", "dep:tauri-plugin-single-instance", "dep:tauri-plugin-notification", "dep:tauri-nspanel", "dep:fix-path-env"]
+desktop = ["dep:toml_edit", "dep:tauri", "dep:tauri-build", "dep:tauri-plugin-opener", "dep:tauri-plugin-log", "dep:tauri-plugin-positioner", "dep:tauri-plugin-dialog", "dep:tauri-plugin-single-instance", "dep:tauri-plugin-notification", "dep:tauri-nspanel", "dep:fix-path-env"]
 # Headless test harness (WTM_SUITE / WTM_SELFTEST / WTM_SELFTEST_CREATE).
 # Excluded from release builds: it ships ~400 lines of env-var-triggered code
 # that can create/remove worktrees and panics on malformed input.
@@ -32,6 +33,7 @@ devtools = []
 tauri-build = { version = "2", features = [], optional = true }
 
 [dependencies]
+toml_edit = { version = "0.25", optional = true }
 tauri = { version = "2", features = ["tray-icon", "image-png", "macos-private-api"], optional = true }
 tauri-plugin-opener = { version = "2", optional = true }
 # rolling file log in the app log dir — the thing a bug report can attach.

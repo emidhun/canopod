@@ -23,6 +23,7 @@ import { useEffect, useRef, useState } from "react";
 import { open as openDialog } from "@tauri-apps/plugin-dialog";
 import { getCurrentWebview } from "@tauri-apps/api/webview";
 import "../styles/onboarding.css";
+import McpPage from "../app/settings/pages/McpPage";
 import { errText, hasBackend, ipc, type SetupTask, type ProvisionEntry, type RepoCfg, type RepoDetection, type ServiceCfg } from "../ipc";
 import { useStore } from "../store";
 import { Bolt, Browser, Check, ChevRight, Chevron, Cube, Doc, Download, Fork, Plus, Server, Spinner, Trash } from "../icons";
@@ -671,7 +672,7 @@ function Provisioning({ name, steps, onDone, onError, onCancel }: { name: string
 }
 
 /* ── D · ready — ends on the next action, not a dead end ──────────── */
-function Ready({ det, services, cfg, onCreate, onGoToCanopy, onRestart }: { det: RepoDetection; services: WizSvc[]; cfg: Cfg; onCreate: () => void; onGoToCanopy: () => void; onRestart: () => void }) {
+function Ready({ det, services, cfg, onCreate, onGoToCanopy, onRestart, onConnect }: { det: RepoDetection; services: WizSvc[]; cfg: Cfg; onCreate: () => void; onGoToCanopy: () => void; onRestart: () => void; onConnect: () => void }) {
   const on = services.filter((s) => s.on);
   const svcSummary = on.map((s) => (s.port ? `${s.name} :${s.port}` : s.name)).join(" · ") || "none";
   const envOn = cfg.env.filter((e) => e.on).length;
@@ -684,6 +685,7 @@ function Ready({ det, services, cfg, onCreate, onGoToCanopy, onRestart }: { det:
         <p>Canopy is watching this repo. Create a worktree to check out a branch with its own services, ports and database.</p>
         <div className="doneacts">
           <button className="btn pri lg" onClick={onCreate}><Plus size={13} />Create first worktree<span className="k">⌘N</span></button>
+          <button className="btn lg" onClick={onConnect}>Connect to agent</button>
           <button className="btn lg" onClick={onGoToCanopy}>Go to Canopy</button>
         </div>
         <div className="donefacts">
@@ -702,7 +704,7 @@ function Ready({ det, services, cfg, onCreate, onGoToCanopy, onRestart }: { det:
 }
 
 /* ── shell ────────────────────────────────────────────────────────── */
-type View = "empty" | "add" | "run" | "done";
+type View = "empty" | "add" | "run" | "done" | "connect";
 
 export default function Onboarding({
   onClose,
@@ -1033,7 +1035,7 @@ export default function Onboarding({
         <Provisioning
           name={det?.name ?? "repository"}
           steps={runSteps}
-          onDone={() => setView("done")}
+          onDone={() => setView("connect")}
           onError={(msg) => {
             showToast(`Couldn't add repo — ${msg}`);
             setView("add");
@@ -1041,6 +1043,13 @@ export default function Onboarding({
           onCancel={() => setView("add")}
         />
       )}
+      {view === "connect" && <><div className="mcp-onboarding"><div className="mcp-onboarding-inner">
+        <h1>Connect to agent</h1>
+        <p>Give your coding agent access to Canopy. This step is optional and can be changed later in Settings → MCP.</p>
+        <McpPage preferredRepoPath={det?.top} />
+        </div></div>
+        <div className="mcp-onboarding-footer"><button className="btn" onClick={() => setView("done")}>Skip for now</button><button className="btn pri" onClick={() => setView("done")}>Continue</button></div>
+      </>}
       {view === "done" && det && (
         <Ready
           det={det}
@@ -1052,6 +1061,7 @@ export default function Onboarding({
           }}
           onGoToCanopy={goToCanopy}
           onRestart={restart}
+          onConnect={() => setView("connect")}
         />
       )}
 

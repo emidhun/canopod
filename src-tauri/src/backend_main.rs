@@ -4,7 +4,7 @@ use canopy_lib::{
 };
 use std::path::PathBuf;
 
-const USAGE: &str = "canopy-backend <serve|status|stop|mcp> [--config-dir PATH] [--data-dir PATH] [--log-dir PATH]\ncanopy-backend serve [--port PORT]\n\nServe runs in the foreground; use a supervisor for persistence. Status/stop attach\nto the authenticated loopback backend without launching a GUI. MCP defaults to disabled. Stop acknowledges asynchronous process cleanup.\ncanopy-backend mcp <status|enable|disable|rotate-token> [--repo ID]...\nEnable requires explicit registered repository IDs on first use. Re-enable without\n--repo preserves the allowlist. Credentials remain in private files; commands never print them.\n--port accepts 1024..65535 and persists for subsequent serve/status/stop commands.";
+const USAGE: &str = "canopy-backend <serve|status|stop|mcp> [--config-dir PATH] [--data-dir PATH] [--log-dir PATH]\ncanopy-backend serve [--port PORT]\n\nServe runs in the foreground; use a supervisor for persistence. Status/stop attach\nto the authenticated loopback backend hosted by Canopy or canopy-backend, without launching a GUI. MCP defaults to disabled. Stop acknowledges asynchronous process cleanup.\ncanopy-backend mcp <status|enable|disable|rotate-token> [--repo ID]...\nEnable requires explicit registered repository IDs on first use. Re-enable without\n--repo preserves the allowlist. Credentials remain in private files; commands never print them.\n--port accepts 1024..65535 and persists for subsequent serve/status/stop commands.";
 
 struct StderrLogger;
 impl log::Log for StderrLogger {
@@ -166,11 +166,11 @@ async fn attach(
 ) -> Result<(), String> {
     let config = app_api::Config::load(&paths.config)?;
     let store = CredentialStore::open_existing(&paths.data)
-        .map_err(|e| format!("read backend credentials: {e}; start canopy-backend serve first"))?;
+        .map_err(|e| format!("read backend credentials: {e}; launch Canopy or start canopy-backend serve first"))?;
     let bearer = store
         .load(CredentialKind::Application)
         .map_err(|e| e.to_string())?
-        .ok_or("application credential is absent; start canopy-backend serve first")?;
+        .ok_or("application credential is absent; launch Canopy or start canopy-backend serve first")?;
     let client = reqwest::Client::builder()
         .no_proxy()
         .redirect(reqwest::redirect::Policy::none())
@@ -198,7 +198,7 @@ async fn attach(
         .header("x-canopy-api-version", app_api::API_VERSION)
         .send()
         .await
-        .map_err(|e| format!("backend unavailable: {e}; run canopy-backend serve"))?;
+        .map_err(|e| format!("backend unavailable: {e}; launch Canopy or run canopy-backend serve"))?;
     if response
         .headers()
         .get("x-canopy-api-version")

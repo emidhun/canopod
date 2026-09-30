@@ -784,3 +784,45 @@ pub async fn fetch_branches(app: AppHandle, repo_id: String) -> Result<git::Bran
     let context = runtime(&app);
     crate::operations::fetch_branches(context.clone(), repo_id).await
 }
+
+// These native controls share the live HTTP controller. Policy remains outside
+// whole-object settings saves, and credentials leave Rust only on explicit copy.
+fn mcp_controller(app: &AppHandle) -> Result<std::sync::Arc<crate::mcp::Controller>, String> {
+    app.try_state::<crate::desktop_api::DesktopApi>()
+        .map(|server| server.mcp.clone())
+        .ok_or_else(|| "MCP server is unavailable".into())
+}
+
+#[tauri::command]
+pub fn mcp_status(app: AppHandle) -> Result<serde_json::Value, String> {
+    Ok(mcp_controller(&app)?.status())
+}
+
+#[tauri::command]
+pub async fn mcp_configure(app: AppHandle, enabled: bool, repo_ids: Option<Vec<String>>) -> Result<serde_json::Value, String> {
+    let controller = mcp_controller(&app)?;
+    controller.configure(enabled, repo_ids).await?;
+    Ok(controller.status())
+}
+
+#[tauri::command]
+pub async fn mcp_rotate_token(app: AppHandle) -> Result<serde_json::Value, String> {
+    let controller = mcp_controller(&app)?;
+    controller.rotate().await?;
+    Ok(controller.status())
+}
+
+#[tauri::command]
+pub fn mcp_connection(app: AppHandle) -> Result<serde_json::Value, String> {
+    mcp_controller(&app)?.connection()
+}
+
+#[tauri::command]
+pub fn mcp_agent_target(client: String) -> Result<String, String> {
+    Ok(crate::agent_config::target(&client)?.to_string_lossy().into_owned())
+}
+
+#[tauri::command]
+pub async fn mcp_connect_agent(app: AppHandle, client: String) -> Result<String, String> {
+    crate::agent_config::connect(client, mcp_controller(&app)?, runtime(&app)).await
+}

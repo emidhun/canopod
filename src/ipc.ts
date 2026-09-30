@@ -304,7 +304,23 @@ export interface RepoDetection {
   scripts: { name: string; command: string }[];
 }
 
+export interface McpStatus {
+  enabled: boolean;
+  error: string | null;
+  repoIds: string[];
+  permissions: string[];
+  endpoint: string;
+  transport: string;
+}
+export interface McpConnection { endpoint: string; token: string }
+
 export const ipc = {
+  mcpAgentTarget: (client: string) => invoke<string>("mcp_agent_target", { client }),
+  mcpConnectAgent: (client: string) => invoke<string>("mcp_connect_agent", { client }),
+  mcpStatus: () => invoke<McpStatus>("mcp_status"),
+  mcpConfigure: (enabled: boolean, repoIds?: string[]) => invoke<McpStatus>("mcp_configure", { enabled, repoIds: repoIds ?? null }),
+  mcpRotateToken: () => invoke<McpStatus>("mcp_rotate_token"),
+  mcpConnection: () => invoke<McpConnection>("mcp_connection"),
   getTree: () => invoke<RepoNode[]>("get_tree"),
   refresh: (wtKey?: string) => invoke<void>("refresh", { wtKey: wtKey ?? null }),
   getSettings: () => invoke<Settings>("get_settings"),

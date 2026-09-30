@@ -10,13 +10,14 @@ export const ICONS: Record<string, IconC> = {
 };
 
 export type PageId =
-  | "general" | "terminal" | "notifications" | "shortcuts" | "advanced"
+  | "mcp" | "general" | "terminal" | "notifications" | "shortcuts" | "advanced"
   | "repo-general" | "services" | "agents" | "commands" | "files" | "setup" | "security";
 
 export type PageMeta = { id: PageId; ic: string; label: string; desc: string; title: string; blurb: string };
 
 export const PLATFORM: PageMeta[] = [
   { id: "general", ic: "sliders", label: "General", desc: "Appearance and behaviour", title: "General", blurb: "How Canopy looks and what it does on launch." },
+  { id: "mcp", ic: "sparkle", label: "MCP", desc: "Connect to agents", title: "MCP", blurb: "Connect agents to Canopy and choose which repositories they can access." },
   { id: "terminal", ic: "terminal", label: "Terminal", desc: "Shell, font, env", title: "Terminal", blurb: "The shell Canopy opens inside a worktree, and what it inherits." },
   { id: "notifications", ic: "bell", label: "Notifications", desc: "What interrupts you", title: "Notifications", blurb: "Canopy only interrupts you for things that need a decision." },
   { id: "shortcuts", ic: "keyboard", label: "Shortcuts", desc: "Keyboard map", title: "Keyboard shortcuts", blurb: "Every command is reachable from the keyboard." },
@@ -38,6 +39,7 @@ export const REPO_PAGE_IDS = new Set<PageId>(REPOPAGES.map((p) => p.id));
 /* the searchable index — every setting, not just page names */
 export const INDEX: { page: PageId; label: string; hint: string }[] = (
   [
+    ["mcp", "Connect to agent", "MCP, Claude Code, Codex, token, repository access"],
     ["general", "Editor command", "code, cursor, subl"], ["general", "Theme", "dark, match system"],
     ["general", "Density", "compact or comfortable"], ["general", "Accent colour", "teal, green, amber"],
     ["general", "Show switch-branch action", "worktree menu"],

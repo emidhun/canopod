@@ -281,6 +281,11 @@ pub struct Server {
     connection_lifetime: Duration,
 }
 impl Server {
+    #[cfg(feature = "desktop")]
+    pub(crate) fn mcp(&self) -> Arc<crate::mcp::Controller> {
+        self.state.mcp.clone()
+    }
+
     pub async fn bind(
         app: RuntimeContext,
         port: u16,
@@ -297,7 +302,7 @@ impl Server {
         Self::from_listener(app, listener, stop)
     }
 
-    fn from_listener(app: RuntimeContext, listener: TcpListener, stop: watch::Sender<bool>) -> Result<Self, String> {
+    pub(crate) fn from_listener(app: RuntimeContext, listener: TcpListener, stop: watch::Sender<bool>) -> Result<Self, String> {
         let address = listener.local_addr().map_err(|e| format!("read backend listener address: {e}"))?;
         if address.ip() != std::net::IpAddr::V4(std::net::Ipv4Addr::LOCALHOST) || address.port() < 1024 {
             return Err("backend listener must use 127.0.0.1 and a port between 1024 and 65535".into());
@@ -340,7 +345,7 @@ impl Server {
         })
     }
 
-    async fn run(self) -> Result<(), String> {
+    pub(crate) async fn run(self) -> Result<(), String> {
         let application = Router::new()
             .fallback(|| async { error(StatusCode::NOT_FOUND, "not_found") })
             .route("/api/v1/status", get(status))

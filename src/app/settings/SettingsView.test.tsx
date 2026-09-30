@@ -33,6 +33,7 @@ describe("SettingsView shell", () => {
     open();
     // blurbs are unique per page, so they identify the rendered panel
     const pages: [string, string][] = [
+      ["MCP", "Connect agents to Canopy and choose which repositories they can access."],
       ["Terminal", "The shell Canopy opens inside a worktree, and what it inherits."],
       ["Notifications", "Canopy only interrupts you for things that need a decision."],
       ["Shortcuts", "Every command is reachable from the keyboard."],

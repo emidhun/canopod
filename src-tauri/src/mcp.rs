@@ -201,6 +201,17 @@ impl Controller {
     pub(crate) fn admin_guard_for_test(&self) -> parking_lot::MutexGuard<'_, ()> {
         self.admin.lock()
     }
+    /// Deliberate native UI export only; never included in status or MCP tools.
+    #[cfg(feature = "desktop")]
+    pub(crate) fn connection(&self) -> Result<serde_json::Value, String> {
+        let live = self.live.read();
+        if !live.policy.enabled || live.fault.is_some() || self.shutdown.is_cancelled() {
+            return Err("Enable MCP before copying connection details".into());
+        }
+        let bearer = live.bearer.as_ref().ok_or("MCP credential is unavailable")?;
+        Ok(serde_json::json!({"endpoint": format!("{}/mcp", self.origin), "token": bearer.expose()}))
+    }
+
     pub fn enabled(&self) -> bool {
         let live = self.live.read();
         live.policy.enabled && live.fault.is_none() && !self.shutdown.is_cancelled()

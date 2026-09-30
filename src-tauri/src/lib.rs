@@ -10,6 +10,10 @@ mod csp;
 pub mod db;
 #[cfg(feature = "desktop")]
 mod desktop_host;
+#[cfg(feature = "desktop")]
+mod desktop_api;
+#[cfg(feature = "desktop")]
+mod agent_config;
 pub mod diagnostics;
 pub mod disk;
 pub mod error;
@@ -138,7 +142,6 @@ pub fn run() {
                     return Ok(());
                 }
             };
-            app.manage(owner);
             let paths = runtime::RuntimePaths {
                 config: handle.path().app_config_dir()?,
                 data: handle.path().app_data_dir()?,
@@ -148,12 +151,27 @@ pub fn run() {
             // git credentials are process-wide (see git.rs) — publish them
             // before anything can run a git command
             git::apply_credentials(&loaded.security.ssh_key, &loaded.security.credential_helper);
-            let context = runtime::RuntimeContext::new(
+            let context = runtime::RuntimeContext::with_owner(
                 AppState::new(loaded, settings::load_runtime(&paths)),
                 paths,
                 tauri::async_runtime::handle().inner().clone(),
                 std::sync::Arc::new(desktop_host::DesktopHost(handle.clone())),
+                owner,
             );
+            // Share the desktop runtime with MCP; do not start a second host
+            // or its background refresh/process tasks.
+            let exit = handle.clone();
+            let server = tauri::async_runtime::block_on(desktop_api::DesktopApi::start(
+                context.clone(),
+                move |result| {
+                    let code = if let Err(error) = result {
+                        log::error!("desktop API stopped: {error}");
+                        1
+                    } else { 0 };
+                    exit.exit(code);
+                },
+            )).map_err(std::io::Error::other)?;
+            app.manage(server);
             app.manage(context.clone());
             for config in deferred_windows(&app.config().app.windows) {
                 tauri::WebviewWindowBuilder::from_config(app, config)?.build()?;
@@ -338,6 +356,12 @@ pub fn run() {
             }
         })
         .invoke_handler(tauri::generate_handler![
+            commands::mcp_status,
+            commands::mcp_configure,
+            commands::mcp_rotate_token,
+            commands::mcp_connection,
+            commands::mcp_agent_target,
+            commands::mcp_connect_agent,
             commands::get_tree,
             commands::refresh,
             commands::get_settings,
@@ -420,7 +444,7 @@ pub fn run() {
         .run(|app, event| {
             // Cmd-Q / app exit: kill every spawned process group before dying
             if let tauri::RunEvent::ExitRequested { code, api, .. } = event {
-                if app.try_state::<ownership::RuntimeOwner>().is_none() {
+                if app.try_state::<runtime::RuntimeContext>().is_none() {
                     if code.is_none() {
                         api.prevent_exit();
                     }
@@ -429,8 +453,11 @@ pub fn run() {
                 // kill embedded terminal shells before their host process dies
                 let Some(context) = app.try_state::<runtime::RuntimeContext>() else { return };
                 let handle = context.inner().clone();
-                terminal::close_all(&handle);
                 tauri::async_runtime::block_on(async move {
+                    if let Some(server) = app.try_state::<desktop_api::DesktopApi>() {
+                        server.shutdown().await;
+                    }
+                    terminal::close_all(&handle);
                     services::stop_all(&handle).await;
                 });
             }
