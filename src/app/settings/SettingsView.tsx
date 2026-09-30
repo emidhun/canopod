@@ -242,8 +242,8 @@ export default function SettingsView({ onClose }: { onClose: () => void }) {
     setSaving(true);
     try {
       if (hasBackend()) {
-        await ipc.saveSettings(cleaned);
-        setSettings((current) => current === settings ? cleaned : current);
+        const saved = await ipc.saveSettings(cleaned);
+        setSettings((current) => current === settings ? saved : current ? { ...current, revision: saved.revision } : current);
         const failures: string[] = [];
         await Promise.all(
           cleaned.repos.filter((r) => reposToSave.has(r.id)).map((r) =>

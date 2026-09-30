@@ -77,6 +77,7 @@ impl RuntimeContext {
     }
 
     fn construct(state: AppState, paths: RuntimePaths, executor: tokio::runtime::Handle, host: Arc<dyn Host>, owner: Option<crate::ownership::RuntimeOwner>) -> Self {
+        *state.settings_disk.lock() = crate::settings_store::initial_disk_revision(&paths.config.join("settings.json"), &state.settings.read());
         Self(Arc::new(Inner {
             state, paths, executor, host, _owner: owner,
             processes: ProcTable::default(), terminals: TermTable::default(),

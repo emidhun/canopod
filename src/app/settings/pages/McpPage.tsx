@@ -13,6 +13,7 @@ export default function McpPage({ preferredRepoPath }: { preferredRepoPath?: str
   const [status, setStatus] = useState<McpStatus | null>(null);
   const [repos, setRepos] = useState<RepoCfg[]>([]);
   const [selected, setSelected] = useState<string[]>([]);
+  const [allowConfiguration, setAllowConfiguration] = useState(false);
   const [allowServices, setAllowServices] = useState(false);
   const [allowWrite, setAllowWrite] = useState(false);
   const [client, setClient] = useState<Client>("claude");
@@ -33,6 +34,7 @@ export default function McpPage({ preferredRepoPath }: { preferredRepoPath?: str
       setStatus(next);
       setAllowWrite(next.allowWorktreeWrite);
       setAllowServices(next.allowServiceControl);
+      setAllowConfiguration(next.allowConfiguration);
       setRepos(settings.repos);
       const allowed = next.repoIds.filter((id) => settings.repos.some((r) => r.id === id));
       const preferred = settings.repos.find((r) => r.path === preferredRepoPath);
@@ -62,10 +64,11 @@ export default function McpPage({ preferredRepoPath }: { preferredRepoPath?: str
     setBusy(true); setError(""); setNotice("");
     try {
       const next = action === "rotate" ? await ipc.mcpRotateToken()
-        : await ipc.mcpConfigure(action === "enable", action === "enable" ? selected : undefined, action === "enable" ? allowWrite : undefined, action === "enable" ? allowServices : undefined);
+        : await ipc.mcpConfigure(action === "enable", action === "enable" ? selected : undefined, action === "enable" ? allowWrite : undefined, action === "enable" ? allowServices : undefined, action === "enable" ? allowConfiguration : undefined);
       setStatus(next);
       setAllowWrite(next.allowWorktreeWrite);
       setAllowServices(next.allowServiceControl);
+      setAllowConfiguration(next.allowConfiguration);
       setRotate(false);
       setNotice(action === "rotate" ? "Token rotated. Reconnect agents configured here. For manual setup, copy the new token into your agent."
         : action === "disable" ? "MCP access disabled." : "MCP access saved. Connect your agent below.");
@@ -89,7 +92,7 @@ export default function McpPage({ preferredRepoPath }: { preferredRepoPath?: str
   }
 
   if (!native) return <div className="mcp-panel"><p>MCP configuration is available in the Canopy desktop app.</p></div>;
-  const changed = status && (allowWrite !== status.allowWorktreeWrite || allowServices !== status.allowServiceControl || [...selected].sort().join("\n") !== [...status.repoIds].sort().join("\n"));
+  const changed = status && (allowWrite !== status.allowWorktreeWrite || allowServices !== status.allowServiceControl || allowConfiguration !== status.allowConfiguration || [...selected].sort().join("\n") !== [...status.repoIds].sort().join("\n"));
   return <div className="mcp-panel" aria-busy={busy || loading}>
     {(error || notice) && <div className="mcp-feedback">
       {error && <p role="alert" className="mcp-error">{error}</p>}
@@ -109,6 +112,8 @@ export default function McpPage({ preferredRepoPath }: { preferredRepoPath?: str
         <p className="mcp-hint">Applies to all allowed repositories. Agents can run configured setup scripts; creation follows repository defaults, including service startup. Setup reruns are limited to linked worktrees. Write access is off by default.</p>
         <label className="mcp-repo"><input type="checkbox" checked={allowServices} disabled={busy || loading || (!!status.executionError && !allowServices)} onChange={(e) => setAllowServices(e.target.checked)} /><span>Allow service start, stop and restart</span></label>
         <p className="mcp-hint">Agents can control configured services in all allowed repositories, including the main checkout. Starting a service runs its configured command.</p>
+        <label className="mcp-repo"><input type="checkbox" checked={allowConfiguration} disabled={busy || loading} onChange={(e) => setAllowConfiguration(e.target.checked)} /><span>Allow repository and service configuration</span></label>
+        <p className="mcp-hint">Agents can update allowed repositories and existing services, including commands and worktree defaults. Changes apply to future starts and setup; running services are not restarted.</p>
         {status.executionError && <p role="alert" className="mcp-error">Worktree jobs unavailable: {status.executionError}</p>}
         <div className="mcp-actions">
           <button className="btn pri" disabled={busy || loading || selected.length === 0 || (!!status.enabled && !changed)} onClick={() => void change("enable")}>{status.enabled ? "Apply MCP access" : "Enable MCP"}</button>

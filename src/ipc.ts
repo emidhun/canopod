@@ -87,6 +87,7 @@ export interface AgentContextCfg {
 }
 
 export interface Settings {
+  revision?: string;
   version: number;
   editor: { command: string };
   terminal: string;
@@ -307,6 +308,7 @@ export interface RepoDetection {
 export interface McpStatus {
   allowWorktreeWrite: boolean;
   allowServiceControl: boolean;
+  allowConfiguration: boolean;
   executionError: string | null;
   enabled: boolean;
   error: string | null;
@@ -321,13 +323,13 @@ export const ipc = {
   mcpAgentTarget: (client: string) => invoke<string>("mcp_agent_target", { client }),
   mcpConnectAgent: (client: string) => invoke<string>("mcp_connect_agent", { client }),
   mcpStatus: () => invoke<McpStatus>("mcp_status"),
-  mcpConfigure: (enabled: boolean, repoIds?: string[], allowWorktreeWrite?: boolean, allowServiceControl?: boolean) => invoke<McpStatus>("mcp_configure", { enabled, repoIds: repoIds ?? null, allowWorktreeWrite: allowWorktreeWrite ?? null, allowServiceControl: allowServiceControl ?? null }),
+  mcpConfigure: (enabled: boolean, repoIds?: string[], allowWorktreeWrite?: boolean, allowServiceControl?: boolean, allowConfiguration?: boolean) => invoke<McpStatus>("mcp_configure", { enabled, repoIds: repoIds ?? null, allowWorktreeWrite: allowWorktreeWrite ?? null, allowServiceControl: allowServiceControl ?? null, allowConfiguration: allowConfiguration ?? null }),
   mcpRotateToken: () => invoke<McpStatus>("mcp_rotate_token"),
   mcpConnection: () => invoke<McpConnection>("mcp_connection"),
   getTree: () => invoke<RepoNode[]>("get_tree"),
   refresh: (wtKey?: string) => invoke<void>("refresh", { wtKey: wtKey ?? null }),
   getSettings: () => invoke<Settings>("get_settings"),
-  saveSettings: (newSettings: Settings) => invoke<void>("save_settings", { newSettings }),
+  saveSettings: (newSettings: Settings) => invoke<Settings>("save_settings", { newSettings }),
   addRepo: (path: string) => invoke<RepoCfg>("add_repo", { path }),
   detectRepo: (path: string) => invoke<RepoDetection>("detect_repo", { path }),
   removeRepo: (repoId: string) => invoke<void>("remove_repo", { repoId }),

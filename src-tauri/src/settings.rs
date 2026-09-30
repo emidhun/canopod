@@ -7,6 +7,7 @@ use crate::runtime::RuntimeContext;
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", default)]
 pub struct Settings {
+    pub revision: String,
     pub version: u32,
     pub editor: EditorCfg,
     pub terminal: String,
@@ -200,6 +201,7 @@ pub struct CrashCfg {
 impl Default for Settings {
     fn default() -> Self {
         Self {
+            revision: String::new(),
             version: 0,
             editor: EditorCfg::default(),
             terminal: String::new(),
@@ -492,8 +494,8 @@ pub fn load_settings(app: &crate::runtime::RuntimePaths) -> Settings {
     load_json(&settings_path(app))
 }
 
-pub fn save_settings(app: &RuntimeContext, s: &Settings) -> Result<(), String> {
-    save_json(&settings_path(app.path()), s)
+pub fn save_settings(app: &RuntimeContext, s: &Settings) -> Result<Settings, String> {
+    crate::settings_store::mutate(app, Some(&s.revision), |next| { *next = s.clone(); Ok(()) }).map(|(saved,())|saved)
 }
 
 pub fn load_runtime(app: &crate::runtime::RuntimePaths) -> RuntimeState {

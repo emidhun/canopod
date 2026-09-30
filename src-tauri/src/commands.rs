@@ -32,7 +32,7 @@ pub fn get_settings(app: AppHandle) -> Settings {
 }
 
 #[tauri::command]
-pub async fn save_settings(app: AppHandle, new_settings: Settings) -> Result<(), CanopyError> {
+pub async fn save_settings(app: AppHandle, new_settings: Settings) -> Result<Settings, CanopyError> {
     let context = runtime(&app);
     crate::operations::save_settings(context, new_settings).await
 }
@@ -799,9 +799,9 @@ pub fn mcp_status(app: AppHandle) -> Result<serde_json::Value, String> {
 }
 
 #[tauri::command]
-pub async fn mcp_configure(app: AppHandle, enabled: bool, repo_ids: Option<Vec<String>>, allow_worktree_write: Option<bool>, allow_service_control: Option<bool>) -> Result<serde_json::Value, String> {
+pub async fn mcp_configure(app: AppHandle, enabled: bool, repo_ids: Option<Vec<String>>, allow_worktree_write: Option<bool>, allow_service_control: Option<bool>, allow_configuration: Option<bool>) -> Result<serde_json::Value, String> {
     let controller = mcp_controller(&app)?;
-    controller.configure_access(enabled, repo_ids, allow_worktree_write, allow_service_control).await?;
+    controller.configure_capabilities(enabled, repo_ids, allow_worktree_write, allow_service_control, allow_configuration).await?;
     Ok(controller.status())
 }
 

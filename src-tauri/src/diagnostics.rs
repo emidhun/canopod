@@ -157,14 +157,10 @@ pub fn clear_caches(app: &RuntimeContext) -> ClearedCaches {
 /// toggles back. Repositories are *what Canopy manages*, not a preference, so
 /// they survive; everything else returns to defaults.
 pub fn reset_settings(app: &RuntimeContext) -> Result<(), String> {
-    let state = app.state::<crate::state::AppState>();
-    let fresh = {
-        let mut s = state.settings.write();
-        let keep = s.repos.clone();
-        *s = crate::settings::Settings { repos: keep, ..Default::default() };
-        s.clone()
-    };
-    crate::settings::save_settings(app, &fresh)?;
+    let (fresh, ()) = crate::settings_store::mutate(app, None, |s| {
+        *s = crate::settings::Settings { repos: s.repos.clone(), ..Default::default() };
+        Ok(())
+    })?;
     crate::git::apply_credentials(&fresh.security.ssh_key, &fresh.security.credential_helper);
     crate::notify::refresh_badge(app);
     Ok(())

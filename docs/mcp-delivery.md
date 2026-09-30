@@ -502,3 +502,35 @@ race setup or another service operation. A stop job waits for the tracked proces
 to exit. Start/restart success means launch completed; readiness is reported
 separately by cached service status and logs. Shutdown prevents a restart from
 spawning a new process after cancellation, then the runtime reaps services.
+
+## MCP configuration
+
+`canopy_repository_config(repoId, cursor?, limit?)` returns an opaque settings
+revision, repository defaults and paged public service metadata. Command text
+and environment values are omitted.
+
+`canopy_update_configuration(repoId, revision, repository?, serviceId?, service?)`
+requires the separate **Allow repository and service configuration** grant.
+CLI: `mcp enable --allow-configuration` / `--no-configuration`.
+`--read-only` revokes configuration as well as both execution grants.
+
+Repository patches accept name, defaultBase, worktreeDir and worktreeDefaults.
+Service patches target one existing stable ID and accept name, kind, command,
+cwd, basePort (null clears it) and health. Unknown fields, repository/path/ID
+replacement, service addition/deletion and environment writes are refused.
+Changing a configured command affects a future start; it does not restart a
+running service. Configuration permission should be granted with that authority
+in mind, especially alongside an execution grant.
+
+Native and MCP settings changes share one ordered transaction. It clones and
+validates current state, writes a private temporary file, syncs and atomically
+replaces settings.json, then publishes memory and its new opaque revision.
+Failed patches leave disk and memory unchanged. An outdated UI/MCP revision is
+rejected. MCP retries after an uncertain response must read again and reconcile.
+
+The writer also compares the original file fingerprint before writing and
+immediately before replacement; detected external edits are preserved. Restart
+Canopy to adopt an external edit. A non-cooperating editor racing in the final
+check/rename interval cannot be made transactional by this protocol. Settings
+are capped at 4 MiB. Revisions cover app settings; the repository's separate
+.worktreemanager.json editor is not exposed as a configuration write tool here.

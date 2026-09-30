@@ -13,7 +13,7 @@ it("waits for the initial config before editing and preserves existing setup on 
   let resolve!: (config: RepoConfigFile) => void;
   vi.spyOn(ipc, "getSettings").mockResolvedValue({ ...MOCK, repos: [MOCK.repos[0]] });
   vi.spyOn(ipc, "getRepoConfig").mockReturnValue(new Promise((done) => { resolve = done; }));
-  vi.spyOn(ipc, "saveSettings").mockResolvedValue();
+  vi.spyOn(ipc, "saveSettings").mockImplementation(async (settings) => ({ ...settings, revision: "saved-revision" }));
   const saveRepo = vi.spyOn(ipc, "saveRepoConfig").mockResolvedValue();
   const user = userEvent.setup();
   const { container } = render(<SettingsView onClose={() => {}} />);
@@ -53,7 +53,7 @@ it("keeps a Files edit on the live page when a refresh resolves late", async () 
 it("keeps edits made while a repo save is pending", async () => {
   vi.spyOn(ipc, "getSettings").mockResolvedValue({ ...MOCK, repos: [MOCK.repos[0]] });
   vi.spyOn(ipc, "getRepoConfig").mockResolvedValue({ provision: [], setup: [], teardown: [], migrate: [], setupPolicy: { continueOnFailure: false, timeoutSecs: 0 } });
-  vi.spyOn(ipc, "saveSettings").mockResolvedValue();
+  vi.spyOn(ipc, "saveSettings").mockImplementation(async (settings) => ({ ...settings, revision: "saved-revision" }));
   let saved!: () => void;
   const saveRepo = vi.spyOn(ipc, "saveRepoConfig").mockReturnValue(new Promise<void>((done) => { saved = done; }));
   const user = userEvent.setup();
@@ -71,4 +71,5 @@ it("keeps edits made while a repo save is pending", async () => {
   await user.keyboard("{Meta>}s{/Meta}");
   await waitFor(() => expect(saveRepo).toHaveBeenCalledTimes(2));
   expect(saveRepo.mock.calls[1][4]?.migrate).toEqual(["first-new"]);
+  expect(vi.mocked(ipc.saveSettings).mock.calls[1][0].revision).toBe("saved-revision");
 });

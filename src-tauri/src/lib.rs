@@ -26,6 +26,7 @@ pub mod proc;
 pub mod runtime;
 pub mod services;
 pub mod settings;
+pub(crate) mod settings_store;
 pub mod setup;
 pub mod state;
 pub mod stats;

@@ -93,6 +93,7 @@ pub struct AppState {
     /// Per-runtime, cancellation-safe admission for the periodic refresh.
     refresh: tokio::sync::Mutex<()>,
     pub settings: RwLock<Settings>,
+    pub(crate) settings_disk: Mutex<Result<Option<String>, String>>,
     pub runtime: RwLock<RuntimeState>,
     pub tree: RwLock<Vec<RepoNode>>,
     /// svcKey -> current status (process table lands here in Phase 4)
@@ -142,14 +143,11 @@ pub fn release_worktree_runtime(app: &RuntimeContext, repo_id: &str, wt_key: &st
     // Drop the pin too. Nothing else prunes this list, so without it every
     // removed worktree leaves an entry that grows the config file forever and
     // silently re-pins the path if it is ever recreated.
-    let settings = {
-        let mut s = state.settings.write();
-        let before = s.pinned_worktrees.len();
-        s.pinned_worktrees.retain(|k| k != wt_key);
-        (before != s.pinned_worktrees.len()).then(|| s.clone())
-    };
-    if let Some(s) = settings {
-        let _ = crate::settings::save_settings(app, &s);
+    let was_pinned = state.settings.read().pinned_worktrees.iter().any(|k|k == wt_key);
+    if was_pinned {
+        if let Err(error) = crate::settings_store::mutate(app, None, |s| { s.pinned_worktrees.retain(|k|k != wt_key); Ok(()) }) {
+            log::warn!("Could not remove worktree pin: {error}");
+        }
     }
     {
         let table = app.state::<crate::services::ProcTable>();
@@ -185,10 +183,12 @@ pub struct WtContext {
 }
 
 impl AppState {
-    pub fn new(settings: Settings, runtime: RuntimeState) -> Self {
+    pub fn new(mut settings: Settings, runtime: RuntimeState) -> Self {
+        settings.revision = crate::settings_store::revision(&settings);
         Self {
             refresh: tokio::sync::Mutex::new(()),
             settings: RwLock::new(settings),
+            settings_disk: Mutex::new(Ok(None)),
             #[cfg(unix)]
             retained_orphans: Mutex::new(runtime.orphans.clone()),
             #[cfg(unix)]

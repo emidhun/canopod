@@ -17,10 +17,10 @@ gain new capabilities. Keep the shared operations and worktree leases.
 2. **Service execution — complete.** Explicit service-control grant in UI/CLI,
    durable start/stop/restart jobs using shared operations. Verify retry identity,
    worktree lease conflicts, shutdown, permission changes, actual processes.
-3. **Configuration — next.** Public-field configuration reads, revisions and
+3. **Configuration — complete for existing repository/service patches.** Public-field configuration reads, revisions and
    stable-ID patches, external/UI/MCP conflict checks and atomic ordered writes.
    Separate configure permission; never expose environment values.
-4. **Independent host and browser — pending.** Complete authenticated application
+4. **Independent host and browser — next.** Complete authenticated application
    RPC/event reconciliation, desktop attachment/bootstrap and native capability
    routing, browser static assets/pairing/session/CSRF, disconnect preservation.
    Do not switch desktop ownership until attachment is working end-to-end.
@@ -43,3 +43,8 @@ Clippy passed locally on macOS. Packaged platform acceptance remains pending.
 Service validation: 201 desktop and 193 headless Rust unit tests, three
 process tests per build (including CLI grant/revoke), nine MCP UI tests,
 frontend production build and Clippy passed locally on macOS.
+
+Configuration validation: 203 desktop and 195 headless Rust unit tests, three
+process tests per build, targeted settings/MCP UI tests, frontend production
+build, and desktop/headless Clippy passed locally. Concurrent stale revisions,
+failed patches and external edits preserve the winning configuration.

@@ -45,18 +45,14 @@ pub fn get_settings(state: &AppState) -> Settings {
     state.settings.read().clone()
 }
 
-pub async fn save_settings(app: RuntimeContext, new_settings: Settings) -> Result<(), CanopyError> {
-    {
-        let state = app.state::<AppState>();
-        *state.settings.write() = new_settings.clone();
-    }
+pub async fn save_settings(app: RuntimeContext, new_settings: Settings) -> Result<Settings, CanopyError> {
+    let new_settings = settings::save_settings(&app, &new_settings).map_err(CanopyError::config)?;
     // re-publish git credentials before the rescan, so the refresh it triggers
     // already uses the key the user just chose
     git::apply_credentials(
         &new_settings.security.ssh_key,
         &new_settings.security.credential_helper,
     );
-    settings::save_settings(&app, &new_settings).map_err(CanopyError::config)?;
     // await only the structural rebuild (the tree must reflect the new
     // services/repos when this resolves); git meta is 2 spawns per worktree
     // and arrives via worktree:git events — holding the Save button on it
@@ -65,7 +61,7 @@ pub async fn save_settings(app: RuntimeContext, new_settings: Settings) -> Resul
     let app2 = app.clone();
     app.executor()
         .spawn(async move { refresh_all_git_meta(&app2).await });
-    Ok(())
+    Ok(new_settings)
 }
 
 /// Validate + register a repo; returns the canonical repo config that was added.
@@ -97,28 +93,15 @@ pub async fn add_repo(app: RuntimeContext, path: String) -> Result<RepoCfg, Cano
         agent_idle_timeout_min: 0,
     };
 
-    let updated = {
-        let state = app.state::<AppState>();
-        let mut s = state.settings.write();
-        if s.repos.iter().any(|r| r.path == repo.path) {
-            return Err(CanopyError::conflict("Repository already registered"));
-        }
-        // repo lookups key on `id`, so two different paths must never share one
-        // (e.g. ~/work/tooljet + ~/client/tooljet) — suffix until unique.
+    let (_, repo) = crate::settings_store::mutate(&app, None, |s| {
+        if s.repos.iter().any(|r| r.path == repo.path) { return Err("Repository already registered".into()); }
         let mut repo = repo;
         let base = repo.id.clone();
         let mut n = 2;
-        while s.repos.iter().any(|r| r.id == repo.id) {
-            repo.id = format!("{base}-{n}");
-            n += 1;
-        }
+        while s.repos.iter().any(|r| r.id == repo.id) { repo.id = format!("{base}-{n}"); n += 1; }
         s.repos.push(repo.clone());
-        let updated = s.clone();
-        drop(s);
-        (repo, updated)
-    };
-    let (repo, updated) = updated;
-    settings::save_settings(&app, &updated).map_err(CanopyError::config)?;
+        Ok(repo)
+    }).map_err(CanopyError::config)?;
     refresh_tree(&app).await.map_err(CanopyError::internal)?;
     // meta arrives via worktree:git events — same reasoning as save_settings
     let app2 = app.clone();
@@ -244,13 +227,10 @@ pub async fn remove_repo(app: RuntimeContext, repo_id: String) -> Result<(), Can
         terminal::close_worktree(&app, app.state::<TermTable>(), wt);
     }
 
-    let updated = {
-        let state = app.state::<AppState>();
-        let mut s = state.settings.write();
+    crate::settings_store::mutate(&app, None, |s| {
         s.repos.retain(|r| r.id != repo_id);
-        s.clone()
-    };
-    settings::save_settings(&app, &updated).map_err(CanopyError::config)?;
+        Ok(())
+    }).map_err(CanopyError::config)?;
 
     for wt in &wt_keys {
         crate::state::release_worktree_runtime(&app, &repo_id, wt);
@@ -648,21 +628,11 @@ pub async fn set_worktree_pinned(
     pinned: bool,
 ) -> Result<(), CanopyError> {
     ensure_known_worktree(&app, &wt_key)?;
-    let updated = {
-        let state = app.state::<AppState>();
-        let mut s = state.settings.write();
-        let has = s.pinned_worktrees.iter().any(|k| k == &wt_key);
-        if has == pinned {
-            return Ok(()); // already in the requested state — no write, no event
-        }
-        if pinned {
-            s.pinned_worktrees.push(wt_key.clone());
-        } else {
-            s.pinned_worktrees.retain(|k| k != &wt_key);
-        }
-        s.clone()
-    };
-    settings::save_settings(&app, &updated).map_err(CanopyError::config)?;
+    crate::settings_store::mutate(&app, None, |s| {
+        s.pinned_worktrees.retain(|k| k != &wt_key);
+        if pinned { s.pinned_worktrees.push(wt_key.clone()); }
+        Ok(())
+    }).map_err(CanopyError::config)?;
     refresh_tree(&app).await.map_err(CanopyError::internal)?;
     Ok(())
 }

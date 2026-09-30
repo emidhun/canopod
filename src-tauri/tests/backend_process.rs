@@ -104,7 +104,13 @@ fn run_lifecycle(method: &str) {
         assert_eq!(body["allowServiceControl"], allowed);
         assert_eq!(body["allowWorktreeWrite"], false);
     }
-    for action in ["mcp enable --read-only --allow-service-control", "mcp enable --allow-service-control --read-only", "mcp status --allow-service-control", "mcp enable --read-only --allow-worktree-write", "mcp status --allow-worktree-write"] {
+    for (action, allowed) in [("mcp enable --allow-configuration", true), ("mcp enable", true), ("mcp enable --no-configuration", false), ("mcp enable --allow-configuration", true), ("mcp enable --read-only", false)] {
+        let result=command(action).output().unwrap();
+        assert!(result.status.success(), "{action}: {}", String::from_utf8_lossy(&result.stderr));
+        let body:serde_json::Value=serde_json::from_slice(&result.stdout).unwrap();
+        assert_eq!(body["allowConfiguration"],allowed);
+    }
+    for action in ["mcp enable --allow-configuration --read-only", "mcp enable --read-only --allow-configuration", "mcp status --allow-configuration", "mcp enable --read-only --allow-service-control", "mcp enable --allow-service-control --read-only", "mcp status --allow-service-control", "mcp enable --read-only --allow-worktree-write", "mcp status --allow-worktree-write"] {
         let result = command(action).output().unwrap();
         assert!(!result.status.success(), "{action} should reject invalid permission flags");
     }

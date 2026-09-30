@@ -1,4 +1,4 @@
-//! Capture subprocess output before renderer throttling. Never store raw secrets.
+//! Capture subprocess output before renderer throttling with best-effort redaction.
 use super::{Registry, SecretFilter, Tracking};
 use crate::{runtime::RuntimeContext, state::AppState};
 use parking_lot::Mutex;

@@ -221,6 +221,7 @@ struct McpEnable {
     repo_ids: Option<Vec<String>>,
     allow_worktree_write: Option<bool>,
     allow_service_control: Option<bool>,
+    allow_configuration: Option<bool>,
 }
 async fn mcp_status(State(state): State<ApiState>) -> Json<serde_json::Value> {
     Json(state.mcp.status())
@@ -236,7 +237,7 @@ fn mcp_control_result(state: &ApiState, result: Result<(), String>) -> Response 
     }
 }
 async fn mcp_enable(State(state): State<ApiState>, Json(input): Json<McpEnable>) -> Response {
-    mcp_control_result(&state, state.mcp.configure_access(true, input.repo_ids, input.allow_worktree_write, input.allow_service_control).await)
+    mcp_control_result(&state, state.mcp.configure_capabilities(true, input.repo_ids, input.allow_worktree_write, input.allow_service_control, input.allow_configuration).await)
 }
 async fn mcp_disable(State(state): State<ApiState>) -> Response {
     mcp_control_result(&state, state.mcp.configure(false, None).await)
@@ -974,7 +975,7 @@ mod tests {
         assert!(!Path::new(&path).join(".worktrees/agent-test").exists());
         running.grant_writes(true).await;
         let listing: serde_json::Value = running.rpc(&bearer, "tools/list", serde_json::json!({})).send().await.unwrap().json().await.unwrap();
-        assert_eq!(listing["result"]["tools"].as_array().unwrap().len(), 8);
+        assert_eq!(listing["result"]["tools"].as_array().unwrap().len(), 9);
         let accepted = tool_data(&running.tool(&bearer, "canopy_create_worktree", args.clone()).await);
         let id = accepted["job"]["jobId"].as_str().unwrap();
         let job = running.job_done(&bearer, id).await;
@@ -1057,6 +1058,82 @@ mod tests {
         }).await.expect("setup descendant survived shutdown");
         assert!(running.app.state::<AppState>().retained_orphans.lock().is_empty());
         journal.close().await;
+    }
+
+    #[tokio::test]
+    async fn mcp_configuration_serializes_competing_revisions_and_rolls_back_failed_patch() {
+        let running=Running::start().await;
+        let (bearer,_)=running.write_fixture("echo setup").await;
+        running.mcp.configure_capabilities(true,None,None,None,Some(true)).await.unwrap();
+        let revision=running.app.state::<AppState>().settings.read().revision.clone();
+        let bad=running.tool(&bearer,"canopy_update_configuration",serde_json::json!({"repoId":"allowed","revision":revision,"repository":{"name":"uncommitted"},"serviceId":"missing","service":{"name":"bad"}})).await;
+        assert_eq!(bad["isError"],true);
+        assert_ne!(running.app.state::<AppState>().settings.read().repos[0].name,"uncommitted");
+        assert!(!running.directory.0.join("settings.json").exists());
+        let (a,b)=tokio::join!(
+            running.tool(&bearer,"canopy_update_configuration",serde_json::json!({"repoId":"allowed","revision":revision,"repository":{"name":"A"}})),
+            running.tool(&bearer,"canopy_update_configuration",serde_json::json!({"repoId":"allowed","revision":revision,"repository":{"name":"B"}}))
+        );
+        assert_ne!(a["isError"],b["isError"]);
+        let persisted:crate::settings::Settings=serde_json::from_slice(&std::fs::read(running.directory.0.join("settings.json")).unwrap()).unwrap();
+        assert_eq!(persisted.revision,running.app.state::<AppState>().settings.read().revision);
+        assert_eq!(persisted.repos[0].name,if a["isError"]==false {"A"} else {"B"});
+        running.finish().await;
+    }
+
+    #[tokio::test]
+    async fn mcp_configuration_requires_grant_and_preserves_ui_and_external_edits() {
+        let running=Running::start().await;
+        let (bearer,_)=running.write_fixture("echo setup").await;
+        running.app.state::<AppState>().settings.write().repos[0].services.push(crate::settings::ServiceCfg {
+            id:"api".into(),name:"API".into(),command:"echo private-command".into(),
+            env:std::collections::HashMap::from([("API_TOKEN".into(),"private-env".into())]),..Default::default()
+        });
+        crate::state::refresh_tree(&running.app).await.unwrap();
+        let original=running.app.state::<AppState>().settings.read().clone();
+        let read=tool_data(&running.tool(&bearer,"canopy_repository_config",serde_json::json!({"repoId":"allowed"})).await);
+        assert!(!read.to_string().contains("private-command"));
+        assert!(!read.to_string().contains("private-env"));
+        let args=serde_json::json!({"repoId":"allowed","revision":read["revision"],"repository":{"name":"Agent edited","worktreeDefaults":{"runSetup":false}},"serviceId":"api","service":{"name":"API renamed","command":"echo configured","basePort":null}});
+        assert_eq!(running.tool(&bearer,"canopy_update_configuration",args.clone()).await["isError"],true);
+        running.mcp.configure_capabilities(true,None,None,None,Some(true)).await.unwrap();
+        let changed=tool_data(&running.tool(&bearer,"canopy_update_configuration",args.clone()).await);
+        assert_eq!(changed["applied"],true);
+        assert_ne!(changed["revision"],read["revision"]);
+        assert_eq!(changed["runningServicesRestarted"],false);
+        assert!(running.app.state::<crate::services::ProcTable>().procs.lock().is_empty());
+        {
+            let settings=running.app.state::<AppState>().settings.read();
+            assert_eq!(settings.repos[0].services[0].env["API_TOKEN"],"private-env");
+            assert_eq!(settings.repos[0].services[0].command,"echo configured");
+            assert!(!settings.repos[0].worktree_defaults.run_setup);
+        }
+        let stale=running.tool(&bearer,"canopy_update_configuration",args).await;
+        assert_eq!(stale["isError"],true);
+        assert!(stale.to_string().contains("revision_conflict"));
+        let mut stale_ui=original;
+        stale_ui.repos[0].name="Stale UI".into();
+        assert!(crate::operations::save_settings(running.app.clone(),stale_ui).await.is_err());
+        assert_eq!(running.app.state::<AppState>().settings.read().repos[0].name,"Agent edited");
+        let mut current=running.app.state::<AppState>().settings.read().clone();
+        current.repos[0].name="Fresh UI".into();
+        let saved=crate::operations::save_settings(running.app.clone(),current).await.unwrap();
+        assert_ne!(saved.revision,changed["revision"]);
+        let bad=running.tool(&bearer,"canopy_update_configuration",serde_json::json!({"repoId":"allowed","revision":saved.revision,"repository":{"path":"/elsewhere"}})).await;
+        assert_eq!(bad["isError"],true);
+        let denied=running.tool(&bearer,"canopy_repository_config",serde_json::json!({"repoId":"forbidden"})).await;
+        assert_eq!(denied["isError"],true);
+        let file=running.directory.0.join("settings.json");
+        let mut external:serde_json::Value=serde_json::from_slice(&std::fs::read(&file).unwrap()).unwrap();
+        external["repos"][0]["name"]="External edit".into();
+        let external_bytes=serde_json::to_vec(&external).unwrap();
+        std::fs::write(&file,&external_bytes).unwrap();
+        let refused=running.tool(&bearer,"canopy_update_configuration",serde_json::json!({"repoId":"allowed","revision":saved.revision,"repository":{"name":"must not overwrite"}})).await;
+        assert_eq!(refused["isError"],true);
+        assert!(refused.to_string().contains("external_settings_changed"));
+        assert_eq!(std::fs::read(&file).unwrap(),external_bytes);
+        assert_eq!(running.app.state::<AppState>().settings.read().repos[0].name,"Fresh UI");
+        running.finish().await;
     }
 
     #[cfg(unix)]
@@ -1260,7 +1337,7 @@ mod tests {
         let body: serde_json::Value = response.json().await.unwrap();
         assert_eq!(
             body["result"]["tools"].as_array().unwrap().len(),
-            6,
+            7,
             "{body}"
         );
         assert_eq!(body["result"]["tools"][0]["name"], "canopy_status");

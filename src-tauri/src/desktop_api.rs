@@ -187,7 +187,7 @@ mod tests {
                     .unwrap();
             assert_eq!(result["repoId"], "desktop-repo");
             assert_eq!(server.mcp.status()["allowWorktreeWrite"], false);
-            server.mcp.configure_access(true, None, Some(true), Some(true)).await.unwrap();
+            server.mcp.configure_capabilities(true, None, Some(true), Some(true), Some(true)).await.unwrap();
             server.shutdown().await;
             assert!(!exited.load(Ordering::Acquire));
         }
@@ -200,6 +200,7 @@ mod tests {
         assert!(credential(&app, CredentialKind::Mcp).matches(mcp.expose()));
         assert_eq!(restarted.mcp.status()["allowWorktreeWrite"], true);
         assert_eq!(restarted.mcp.status()["allowServiceControl"], true);
+        assert_eq!(restarted.mcp.status()["allowConfiguration"], true);
         let response = client
             .post(format!("{origin}/mcp"))
             .bearer_auth(mcp.expose())
