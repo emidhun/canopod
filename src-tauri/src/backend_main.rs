@@ -4,7 +4,7 @@ use canopy_lib::{
 };
 use std::path::PathBuf;
 
-const USAGE: &str = "canopy-backend <serve|status|stop|mcp> [--config-dir PATH] [--data-dir PATH] [--log-dir PATH]\ncanopy-backend serve [--port PORT]\n\nServe runs in the foreground; use a supervisor for persistence. Status/stop attach\nto the authenticated loopback backend hosted by Canopy or canopy-backend, without launching a GUI. MCP defaults to disabled and read-only; worktree creation/setup require --allow-worktree-write. Stop acknowledges asynchronous process cleanup.\ncanopy-backend mcp <status|enable|disable|rotate-token> [--repo ID]... [--allow-worktree-write | --read-only]\nEnable requires explicit registered repository IDs on first use. Re-enable without\n--repo preserves the allowlist. Credentials remain in private files; commands never print them.\n--port accepts 1024..65535 and persists for subsequent serve/status/stop commands.";
+const USAGE: &str = "canopy-backend <serve|status|stop|mcp> [--config-dir PATH] [--data-dir PATH] [--log-dir PATH]\ncanopy-backend serve [--port PORT]\n\nServe runs in the foreground; use a supervisor for persistence. Status/stop attach\nto the authenticated loopback backend hosted by Canopy or canopy-backend, without launching a GUI. MCP defaults to disabled and read-only; worktree creation/setup require --allow-worktree-write. Stop acknowledges asynchronous process cleanup.\ncanopy-backend mcp <status|enable|disable|rotate-token> [--repo ID]... [--allow-worktree-write | --read-only] [--allow-service-control | --no-service-control]\nEnable requires explicit registered repository IDs on first use. Re-enable without\n--repo preserves the allowlist. Credentials remain in private files; commands never print them.\n--port accepts 1024..65535 and persists for subsequent serve/status/stop commands.";
 
 struct StderrLogger;
 impl log::Log for StderrLogger {
@@ -60,6 +60,7 @@ fn run() -> Result<(), String> {
     let mut port = None;
     let mut repo_ids = Vec::new();
     let mut allow_worktree_write = None;
+    let mut allow_service_control = None;
     let mut seen = std::collections::HashSet::new();
     while let Some(flag) = args.next() {
         let name = flag.to_str().ok_or("directory option must be UTF-8")?;
@@ -67,8 +68,17 @@ fn run() -> Result<(), String> {
             println!("{USAGE}");
             return Ok(());
         }
+        if matches!(name, "--allow-service-control" | "--no-service-control") {
+            if action != "mcp/enable" || allow_service_control.is_some() { return Err("Choose one service permission flag, only with mcp enable".into()); }
+            allow_service_control = Some(name == "--allow-service-control");
+            continue;
+        }
         if matches!(name, "--allow-worktree-write" | "--read-only") {
             if action != "mcp/enable" || allow_worktree_write.is_some() { return Err("Choose one permission flag, only with mcp enable".into()); }
+            if name == "--read-only" {
+                if allow_service_control.is_some() { return Err("--read-only cannot be combined with service permission flags".into()); }
+                allow_service_control = Some(false);
+            }
             allow_worktree_write = Some(name == "--allow-worktree-write");
             continue;
         }
@@ -140,7 +150,7 @@ fn run() -> Result<(), String> {
     let runtime = tokio::runtime::Runtime::new().map_err(|e| format!("start executor: {e}"))?;
     let result = runtime.block_on(async {
         if action != "serve" {
-            return attach(&paths, action, repo_ids, allow_worktree_write).await;
+            return attach(&paths, action, repo_ids, allow_worktree_write, allow_service_control).await;
         }
         let signal = backend::shutdown_signal()?;
         let app = backend::open(paths)?;
@@ -170,6 +180,7 @@ async fn attach(
     action: &str,
     repo_ids: Vec<String>,
     allow_worktree_write: Option<bool>,
+    allow_service_control: Option<bool>,
 ) -> Result<(), String> {
     let config = app_api::Config::load(&paths.config)?;
     let store = CredentialStore::open_existing(&paths.data)
@@ -196,7 +207,7 @@ async fn attach(
         client.post(url)
     };
     let request = if action == "mcp/enable" {
-        request.json(&serde_json::json!({"repoIds": if repo_ids.is_empty() { None } else { Some(repo_ids) }, "allowWorktreeWrite": allow_worktree_write}))
+        request.json(&serde_json::json!({"repoIds": if repo_ids.is_empty() { None } else { Some(repo_ids) }, "allowWorktreeWrite": allow_worktree_write, "allowServiceControl": allow_service_control}))
     } else {
         request
     };

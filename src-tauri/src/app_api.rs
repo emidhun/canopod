@@ -220,6 +220,7 @@ async fn status(State(state): State<ApiState>) -> Json<serde_json::Value> {
 struct McpEnable {
     repo_ids: Option<Vec<String>>,
     allow_worktree_write: Option<bool>,
+    allow_service_control: Option<bool>,
 }
 async fn mcp_status(State(state): State<ApiState>) -> Json<serde_json::Value> {
     Json(state.mcp.status())
@@ -235,7 +236,7 @@ fn mcp_control_result(state: &ApiState, result: Result<(), String>) -> Response 
     }
 }
 async fn mcp_enable(State(state): State<ApiState>, Json(input): Json<McpEnable>) -> Response {
-    mcp_control_result(&state, state.mcp.configure_permissions(true, input.repo_ids, input.allow_worktree_write).await)
+    mcp_control_result(&state, state.mcp.configure_access(true, input.repo_ids, input.allow_worktree_write, input.allow_service_control).await)
 }
 async fn mcp_disable(State(state): State<ApiState>) -> Response {
     mcp_control_result(&state, state.mcp.configure(false, None).await)
@@ -1056,6 +1057,44 @@ mod tests {
         }).await.expect("setup descendant survived shutdown");
         assert!(running.app.state::<AppState>().retained_orphans.lock().is_empty());
         journal.close().await;
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn mcp_service_jobs_permissions_leases_retries_and_real_process_lifecycle() {
+        let running = Running::start().await;
+        let (bearer,path) = running.write_fixture("echo hello").await;
+        running.app.state::<AppState>().settings.write().repos[0].services.push(crate::settings::ServiceCfg {
+            id:"worker".into(),name:"Worker".into(),command:"while :; do sleep 1; done".into(),..Default::default()
+        });
+        crate::state::refresh_tree(&running.app).await.unwrap();
+        let key = crate::state::svc_key(&path,"worker");
+        let args = serde_json::json!({"repoId":"allowed","serviceKey":key,"requestKey":"start"});
+        running.grant_writes(true).await;
+        assert_eq!(running.tool(&bearer,"canopy_start_service",args.clone()).await["isError"],true);
+        running.mcp.configure_access(true,None,Some(false),Some(true)).await.unwrap();
+        let lease = crate::state::try_lease(&running.app,&path,"test").unwrap();
+        let busy = tool_data(&running.tool(&bearer,"canopy_start_service",serde_json::json!({"repoId":"allowed","serviceKey":key,"requestKey":"busy"})).await);
+        assert_eq!(running.job_done(&bearer,busy["job"]["jobId"].as_str().unwrap()).await["status"],"failed");
+        assert!(running.app.state::<crate::services::ProcTable>().procs.lock().is_empty());
+        drop(lease);
+        let started = tool_data(&running.tool(&bearer,"canopy_start_service",args.clone()).await);
+        assert_eq!(running.job_done(&bearer,started["job"]["jobId"].as_str().unwrap()).await["status"],"succeeded");
+        let pid = running.app.state::<crate::services::ProcTable>().procs.lock()[&key].pid;
+        let retry = tool_data(&running.tool(&bearer,"canopy_start_service",args).await);
+        assert_eq!(retry["job"]["jobId"],started["job"]["jobId"]);
+        assert_eq!(retry["reused"],true);
+        assert_eq!(running.app.state::<crate::services::ProcTable>().procs.lock()[&key].pid,pid);
+        let restarted = tool_data(&running.tool(&bearer,"canopy_restart_service",serde_json::json!({"repoId":"allowed","serviceKey":key,"requestKey":"restart"})).await);
+        assert_eq!(running.job_done(&bearer,restarted["job"]["jobId"].as_str().unwrap()).await["status"],"succeeded");
+        assert_ne!(running.app.state::<crate::services::ProcTable>().procs.lock()[&key].pid,pid);
+        assert_eq!(running.tool(&bearer,"canopy_stop_service",serde_json::json!({"repoId":"other","serviceKey":key,"requestKey":"bad"})).await["isError"],true);
+        let stopped = tool_data(&running.tool(&bearer,"canopy_stop_service",serde_json::json!({"repoId":"allowed","serviceKey":key,"requestKey":"stop"})).await);
+        assert_eq!(running.job_done(&bearer,stopped["job"]["jobId"].as_str().unwrap()).await["status"],"succeeded");
+        assert!(!running.app.state::<crate::services::ProcTable>().procs.lock().contains_key(&key));
+        running.mcp.configure_access(true,None,None,Some(false)).await.unwrap();
+        assert_eq!(running.tool(&bearer,"canopy_start_service",serde_json::json!({"repoId":"allowed","serviceKey":key,"requestKey":"revoked"})).await["isError"],true);
+        running.finish().await;
     }
 
     #[cfg(unix)]

@@ -30,36 +30,91 @@ pub(super) struct SetupArgs {
     #[serde(skip_serializing)]
     pub request_key: String,
 }
+#[derive(Clone, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub(super) struct ServiceArgs {
+    pub repo_id: String,
+    pub service_key: String,
+    #[serde(skip_serializing)]
+    pub request_key: String,
+}
+#[derive(Clone, Copy, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub(super) enum ServiceAction {
+    Start,
+    Stop,
+    Restart,
+}
 #[derive(Clone, Serialize)]
 #[serde(tag = "operation", content = "arguments", rename_all = "snake_case")]
 pub(super) enum Request {
     Create(CreateArgs),
     Setup(SetupArgs),
+    Service(ServiceArgs, ServiceAction),
 }
 impl Request {
     fn repo_id(&self) -> &str {
         match self {
             Self::Create(a) => &a.repo_id,
             Self::Setup(a) => &a.repo_id,
+            Self::Service(a, _) => &a.repo_id,
         }
     }
     fn request_key(&self) -> &str {
         match self {
             Self::Create(a) => &a.request_key,
             Self::Setup(a) => &a.request_key,
+            Self::Service(a, _) => &a.request_key,
         }
     }
     fn operation(&self) -> jobs::Operation {
         match self {
             Self::Create(_) => jobs::Operation::Create,
             Self::Setup(_) => jobs::Operation::Setup,
+            Self::Service(_, ServiceAction::Start) => jobs::Operation::ServiceStart,
+            Self::Service(_, ServiceAction::Stop) => jobs::Operation::ServiceStop,
+            Self::Service(_, ServiceAction::Restart) => jobs::Operation::ServiceRestart,
         }
     }
     fn target(&self, repo: &crate::settings::RepoCfg) -> String {
         match self {
             Self::Create(a) => crate::operations::derive_worktree_path(repo, &a.branch),
             Self::Setup(a) => a.worktree_key.clone(),
+            Self::Service(a, _) => a.service_key.clone(),
         }
+    }
+    fn authorize(
+        &self,
+        controller: &Controller,
+        generation: &CancellationToken,
+    ) -> Result<crate::settings::RepoCfg, String> {
+        let repo = controller.authorized_repo(
+            generation,
+            self.repo_id(),
+            !matches!(self, Self::Service(..)),
+        )?;
+        if matches!(self, Self::Service(..)) {
+            if generation.is_cancelled() {
+                return Err("authorization_changed".into());
+            }
+            if !controller.live.read().policy.allow_service_control {
+                return Err("service_control_not_allowed".into());
+            }
+            let binding = controller
+                .live
+                .read()
+                .policy
+                .repo_bindings
+                .get(self.repo_id())
+                .cloned()
+                .ok_or("repo_not_allowed")?;
+            if std::fs::canonicalize(&repo.path).ok().as_deref()
+                != Some(Path::new(&binding.canonical_path))
+            {
+                return Err("repo_path_changed".into());
+            }
+        }
+        Ok(repo)
     }
     fn validate(&self) -> bool {
         let bounded = |s: &str, max: usize| {
@@ -71,6 +126,7 @@ impl Request {
             && match self {
                 Self::Create(a) => git_ref(&a.branch) && a.base.as_deref().is_none_or(git_ref),
                 Self::Setup(a) => bounded(&a.worktree_key, 4096),
+                Self::Service(a, _) => bounded(&a.service_key, 4096),
             }
     }
 }
@@ -114,7 +170,7 @@ impl Executor {
         if !request.validate() {
             return Err("invalid_arguments".into());
         }
-        controller.authorized_repo(&generation, request.repo_id(), true)?;
+        request.authorize(&controller, &generation)?;
         let registry = controller
             .execution
             .registry
@@ -200,7 +256,11 @@ impl Executor {
         if view.record.repo_id != repo_id
             || !matches!(
                 view.record.operation,
-                jobs::Operation::Create | jobs::Operation::Setup
+                jobs::Operation::Create
+                    | jobs::Operation::Setup
+                    | jobs::Operation::ServiceStart
+                    | jobs::Operation::ServiceStop
+                    | jobs::Operation::ServiceRestart
             )
         {
             return Err("job_not_found".into());
@@ -212,7 +272,7 @@ fn project(view: &jobs::View) -> serde_json::Value {
     // No commands, environment, raw output or arbitrary outcome details cross
     // this boundary. Paths are restricted to the caller's allowlisted repo.
     serde_json::json!({"jobId":view.record.id,"repoId":view.record.repo_id,"operation":view.record.operation,
-        "status":view.record.status,"worktreeKey":view.record.target,"createdPath":view.record.outcome.created_path,
+        "status":view.record.status,"target":view.record.target,"worktreeKey": if matches!(view.record.operation,jobs::Operation::Create|jobs::Operation::Setup) {Some(&view.record.target)} else {None},"serviceKey": if matches!(view.record.operation,jobs::Operation::ServiceStart|jobs::Operation::ServiceStop|jobs::Operation::ServiceRestart) {Some(&view.record.target)} else {None},"createdPath":view.record.outcome.created_path,
         "createdAtMs":view.record.created_at_ms,"startedAtMs":view.record.started_at_ms,"finishedAtMs":view.record.finished_at_ms,
         "persistencePending":view.persistence_pending,"durabilityError":view.durability_error.as_ref().map(|_| "journal_write_failed"),
         "error":view.record.outcome.error.as_ref().map(|error| &error.code)})
@@ -224,7 +284,7 @@ async fn run(
     registry: Arc<Registry>,
     send: oneshot::Sender<Result<serde_json::Value, String>>,
 ) {
-    let repo = match controller.authorized_repo(&generation, request.repo_id(), true) {
+    let repo = match request.authorize(&controller, &generation) {
         Ok(repo) => repo,
         Err(error) => {
             let _ = send.send(Err(error));
@@ -277,11 +337,52 @@ async fn run(
                 controller.app.clone(),
                 controller.shutdown.clone(),
                 async move {
-                    let repo = owned.authorized_repo(&generation, request.repo_id(), true)?;
+                    let repo = request.authorize(&owned, &generation)?;
                     if request.target(&repo) != target {
                         return Err("repository_changed".into());
                     }
                     match request {
+                        Request::Service(args, action) => {
+                            let (wt, repo_id, repo_path) = owned
+                                .app
+                                .state::<AppState>()
+                                .service_context(&args.service_key)
+                                .ok_or("service_not_found")?;
+                            if repo_id != args.repo_id || repo_path != repo.path {
+                                return Err("service_not_allowed".into());
+                            }
+                            let worktrees = crate::git::list_worktrees(&repo.path)
+                                .await
+                                .map_err(|_| "worktree_lookup_failed")?;
+                            if !worktrees.iter().any(|w| !w.prunable && w.path == wt) {
+                                return Err("worktree_not_allowed".into());
+                            }
+                            Request::Service(args.clone(), action)
+                                .authorize(&owned, &generation)?;
+                            match action {
+                                ServiceAction::Start => {
+                                    crate::operations::service_start(
+                                        owned.app.clone(),
+                                        args.service_key,
+                                    )
+                                    .await
+                                }
+                                ServiceAction::Stop => {
+                                    crate::operations::service_stop(
+                                        owned.app.clone(),
+                                        args.service_key,
+                                    )
+                                    .await
+                                }
+                                ServiceAction::Restart => {
+                                    crate::operations::service_restart(
+                                        owned.app.clone(),
+                                        args.service_key,
+                                    )
+                                    .await
+                                }
+                            }
+                        }
                         Request::Create(args) => {
                             crate::git::run_git(
                                 &repo.path,
@@ -337,7 +438,7 @@ async fn run(
                         crate::error::ErrorCode::Setup => "setup_failed".to_owned(),
                         crate::error::ErrorCode::Git => "git_failed".to_owned(),
                         crate::error::ErrorCode::InvalidInput => "invalid_input".to_owned(),
-                        _ => "worktree_operation_failed".to_owned(),
+                        _ => "operation_failed".to_owned(),
                     })
                 },
             ),

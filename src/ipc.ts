@@ -306,6 +306,7 @@ export interface RepoDetection {
 
 export interface McpStatus {
   allowWorktreeWrite: boolean;
+  allowServiceControl: boolean;
   executionError: string | null;
   enabled: boolean;
   error: string | null;
@@ -320,7 +321,7 @@ export const ipc = {
   mcpAgentTarget: (client: string) => invoke<string>("mcp_agent_target", { client }),
   mcpConnectAgent: (client: string) => invoke<string>("mcp_connect_agent", { client }),
   mcpStatus: () => invoke<McpStatus>("mcp_status"),
-  mcpConfigure: (enabled: boolean, repoIds?: string[], allowWorktreeWrite?: boolean) => invoke<McpStatus>("mcp_configure", { enabled, repoIds: repoIds ?? null, allowWorktreeWrite: allowWorktreeWrite ?? null }),
+  mcpConfigure: (enabled: boolean, repoIds?: string[], allowWorktreeWrite?: boolean, allowServiceControl?: boolean) => invoke<McpStatus>("mcp_configure", { enabled, repoIds: repoIds ?? null, allowWorktreeWrite: allowWorktreeWrite ?? null, allowServiceControl: allowServiceControl ?? null }),
   mcpRotateToken: () => invoke<McpStatus>("mcp_rotate_token"),
   mcpConnection: () => invoke<McpConnection>("mcp_connection"),
   getTree: () => invoke<RepoNode[]>("get_tree"),

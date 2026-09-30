@@ -39,6 +39,7 @@ struct Policy {
     enabled: bool,
     repo_ids: Vec<String>,
     allow_worktree_write: bool,
+    allow_service_control: bool,
     repo_bindings: BTreeMap<String, RepoBinding>,
 }
 
@@ -198,8 +199,8 @@ impl Controller {
     pub fn status(&self) -> serde_json::Value {
         let live = self.live.read();
         serde_json::json!({"enabled": live.policy.enabled && live.fault.is_none() && !self.shutdown.is_cancelled(), "error": live.fault,
-            "repoIds": live.policy.repo_ids, "allowWorktreeWrite": live.policy.allow_worktree_write,
-            "permissions": if live.policy.allow_worktree_write { vec!["read", "worktree_write"] } else { vec!["read"] },
+            "repoIds": live.policy.repo_ids, "allowWorktreeWrite": live.policy.allow_worktree_write, "allowServiceControl": live.policy.allow_service_control,
+            "permissions": ([Some("read"), live.policy.allow_worktree_write.then_some("worktree_write"), live.policy.allow_service_control.then_some("service_control")].into_iter().flatten().collect::<Vec<_>>()),
             "executionError": self.execution.error,
             "endpoint": format!("{}/mcp", self.origin), "transport": "streamable-http", "sessions": 0})
     }
@@ -238,8 +239,13 @@ impl Controller {
     pub async fn configure_permissions(
         self: &Arc<Self>, enabled: bool, repo_ids: Option<Vec<String>>, allow_worktree_write: Option<bool>,
     ) -> Result<(), String> {
-        if allow_worktree_write == Some(true) && self.execution.error.is_some() {
-            return Err("Repair the job journal before allowing worktree creation and setup".into());
+        self.configure_access(enabled, repo_ids, allow_worktree_write, None).await
+    }
+    pub async fn configure_access(
+        self: &Arc<Self>, enabled: bool, repo_ids: Option<Vec<String>>, allow_worktree_write: Option<bool>, allow_service_control: Option<bool>,
+    ) -> Result<(), String> {
+        if (allow_worktree_write == Some(true) || allow_service_control == Some(true)) && self.execution.error.is_some() {
+            return Err("Repair the job journal before allowing execution".into());
         }
         let controller = self.clone();
         // The owned blocking task completes disk commit AND publication even
@@ -253,12 +259,12 @@ impl Controller {
             } else {
                 controller.admin.lock()
             };
-            controller.configure_sync(enabled, repo_ids, allow_worktree_write)
+            controller.configure_sync(enabled, repo_ids, allow_worktree_write, allow_service_control)
         })
         .await
         .map_err(|e| e.to_string())?
     }
-    fn configure_sync(&self, enabled: bool, repo_ids: Option<Vec<String>>, allow_worktree_write: Option<bool>) -> Result<(), String> {
+    fn configure_sync(&self, enabled: bool, repo_ids: Option<Vec<String>>, allow_worktree_write: Option<bool>, allow_service_control: Option<bool>) -> Result<(), String> {
         if self.shutdown.is_cancelled() {
             return Err("backend stopping".into());
         }
@@ -276,6 +282,7 @@ impl Controller {
         let mut policy = previous.clone();
         policy.enabled = enabled;
         if let Some(allow) = allow_worktree_write { policy.allow_worktree_write = allow; }
+        if let Some(allow) = allow_service_control { policy.allow_service_control = allow; }
         if let Some(ids) = repo_ids {
             policy.repo_ids = ids;
             policy.repo_ids.sort();
@@ -525,7 +532,7 @@ fn status_tool() -> Tool {
 struct StatusArgs {
     repo_id: String,
 }
-fn tools(write: bool) -> Vec<Tool> {
+fn tools(write: bool, service_control: bool) -> Vec<Tool> {
     let string = |max| serde_json::json!({"type":"string","minLength":1,"maxLength":max});
     let mut tools = vec![status_tool()];
     let schema = serde_json::json!({"type":"object","properties":{"repoId":string(256),"cursor":{"type":"integer","minimum":0},"limit":{"type":"integer","minimum":1,"maximum":100}},"required":["repoId"],"additionalProperties":false});
@@ -551,6 +558,17 @@ fn tools(write: bool) -> Vec<Tool> {
         tools.push(Tool::new("canopy_run_setup", "Run configured provisioning and setup for an existing non-main worktree. Use a key from canopy_worktrees. Requires worktree-write permission, including dry runs. Returns a durable job; use the same requestKey for retries. Setup can execute repository scripts and write files/databases. No arbitrary command input.", schema.as_object().unwrap().clone())
             .with_annotations(ToolAnnotations::new().read_only(false).destructive(true).idempotent(false).open_world(true)));
     }
+    if service_control {
+        for (name, description) in [
+            ("canopy_start_service", "Start a configured service. Success means launched, not ready; check canopy_services and logs."),
+            ("canopy_stop_service", "Stop a configured service and wait for its tracked process to exit."),
+            ("canopy_restart_service", "Stop and restart a configured service; success does not imply readiness."),
+        ] {
+            let schema = serde_json::json!({"type":"object","properties":{"repoId":string(256),"serviceKey":string(4096),"requestKey":string(256)},"required":["repoId","serviceKey","requestKey"],"additionalProperties":false});
+            tools.push(Tool::new(name, format!("{description} Requires service-control permission. Returns a durable job. Reuse requestKey and identical arguments for transport retries; no arbitrary command input."), schema.as_object().unwrap().clone())
+                .with_annotations(ToolAnnotations::new().read_only(false).destructive(true).idempotent(false).open_world(true)));
+        }
+    }
     tools
 }
 fn default_limit() -> usize { 50 }
@@ -573,7 +591,7 @@ impl ServerHandler for Handler {
             .with_server_info(Implementation::new("canopy-mcp", env!("CARGO_PKG_VERSION")))
     }
     fn get_tool(&self, name: &str) -> Option<Tool> {
-        tools(true).into_iter().find(|tool| tool.name == name)
+        tools(true, true).into_iter().find(|tool| tool.name == name)
     }
     async fn list_tools(
         &self,
@@ -583,8 +601,8 @@ impl ServerHandler for Handler {
         if self.generation.is_cancelled() {
             return Err(ErrorData::internal_error("authorization changed", None));
         }
-        let write = self.controller.live.read().policy.allow_worktree_write;
-        Ok(ListToolsResult::with_all_items(tools(write))
+        let policy = &self.controller.live.read().policy;
+        Ok(ListToolsResult::with_all_items(tools(policy.allow_worktree_write, policy.allow_service_control))
             .with_ttl_ms(0)
             .with_cache_scope(CacheScope::Private))
     }
@@ -608,6 +626,17 @@ impl ServerHandler for Handler {
             "canopy_services" => parse::<diagnostics::ServicesArgs>(arguments).and_then(|args| diagnostics::services(&self.controller, &self.generation, args)).map(|v| v.to_string()),
             "canopy_service_logs" => match parse::<diagnostics::LogsArgs>(arguments) {
                 Ok(args) => diagnostics::logs(self.controller.clone(), self.generation.clone(), args).await.map(|v| v.to_string()),
+                Err(error) => Err(error),
+            },
+            "canopy_start_service" | "canopy_stop_service" | "canopy_restart_service" => match parse::<execution::ServiceArgs>(arguments) {
+                Ok(args) => {
+                    let action = match request.name.as_ref() {
+                        "canopy_start_service" => execution::ServiceAction::Start,
+                        "canopy_stop_service" => execution::ServiceAction::Stop,
+                        _ => execution::ServiceAction::Restart,
+                    };
+                    execution::Executor::submit(self.controller.clone(), self.generation.clone(), execution::Request::Service(args, action)).await.map(|v|v.to_string())
+                },
                 Err(error) => Err(error),
             },
             "canopy_create_worktree" => match parse::<execution::CreateArgs>(arguments) {

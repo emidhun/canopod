@@ -14,10 +14,10 @@ gain new capabilities. Keep the shared operations and worktree leases.
    cached service identities/status, and bounded redacted service-log snapshots.
    Verify unauthorized/cross-repository reads, bursts, rotation, secret values,
    failures, restart recovery and response size.
-2. **Service execution — next.** Explicit service-control grant in UI/CLI,
+2. **Service execution — complete.** Explicit service-control grant in UI/CLI,
    durable start/stop/restart jobs using shared operations. Verify retry identity,
    worktree lease conflicts, shutdown, permission changes, actual processes.
-3. **Configuration — pending.** Public-field configuration reads, revisions and
+3. **Configuration — next.** Public-field configuration reads, revisions and
    stable-ID patches, external/UI/MCP conflict checks and atomic ordered writes.
    Separate configure permission; never expose environment values.
 4. **Independent host and browser — pending.** Complete authenticated application
@@ -39,3 +39,7 @@ issues are complete. Detailed requirements remain in mcp-delivery.md.
 Diagnostics validation: 200 desktop and 192 headless Rust unit tests, three
 process tests per build, 169 frontend tests, frontend production build and
 Clippy passed locally on macOS. Packaged platform acceptance remains pending.
+
+Service validation: 201 desktop and 193 headless Rust unit tests, three
+process tests per build (including CLI grant/revoke), nine MCP UI tests,
+frontend production build and Clippy passed locally on macOS.

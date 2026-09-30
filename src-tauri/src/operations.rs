@@ -488,25 +488,35 @@ pub fn service_env(
     services::resolved_env(&app, &svc_key).map_err(CanopyError::not_found)
 }
 
+fn service_lease(app: &RuntimeContext, key: &str) -> Result<crate::state::OpLease, CanopyError> {
+    let (wt, _, _) = app.state::<AppState>().service_context(key).ok_or_else(|| CanopyError::not_found("unknown service"))?;
+    crate::state::try_lease(app, &wt, "service control")
+}
+
 pub async fn service_start(app: RuntimeContext, svc_key: String) -> Result<(), CanopyError> {
+    let _lease = service_lease(&app, &svc_key)?;
     services::start_service(&app, &svc_key)
         .await
         .map_err(CanopyError::process)
 }
 
 pub async fn service_stop(app: RuntimeContext, svc_key: String) -> Result<(), CanopyError> {
-    services::stop_service(&app, &svc_key)
-        .await
-        .map_err(CanopyError::process)
+    let _lease = service_lease(&app, &svc_key)?;
+    services::stop_service(&app, &svc_key).await.map_err(CanopyError::process)?;
+    if !services::wait_reaped(&app, &svc_key, 60).await { return Err(CanopyError::process("service did not stop")); }
+    Ok(())
 }
 
 pub async fn service_restart(app: RuntimeContext, svc_key: String) -> Result<(), CanopyError> {
+    let _lease = service_lease(&app, &svc_key)?;
     services::restart_service(&app, &svc_key)
         .await
         .map_err(CanopyError::process)
 }
 
 pub async fn worktree_start_all(app: RuntimeContext, wt_key: String) -> Result<(), CanopyError> {
+    ensure_known_worktree(&app, &wt_key)?;
+    let _lease = crate::state::try_lease(&app, &wt_key, "service control")?;
     // start every service, collecting failures — one bad service must not
     // silently prevent its siblings from starting
     let mut errors: Vec<String> = Vec::new();
@@ -526,6 +536,8 @@ pub async fn worktree_start_all(app: RuntimeContext, wt_key: String) -> Result<(
 }
 
 pub async fn worktree_stop_all(app: RuntimeContext, wt_key: String) -> Result<(), CanopyError> {
+    ensure_known_worktree(&app, &wt_key)?;
+    let _lease = crate::state::try_lease(&app, &wt_key, "service control")?;
     let mut errors: Vec<String> = Vec::new();
     for key in services::worktree_svc_keys(&app, &wt_key) {
         if let Err(e) = services::stop_service(&app, &key).await {

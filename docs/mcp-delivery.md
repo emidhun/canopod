@@ -482,3 +482,23 @@ existing 160-line memory ring with redaction. It does not read arbitrary files o
 claim complete history. Repeat snapshot and nextCursor to paginate. If the ring
 changes, snapshot_changed requires a fresh first page. Logs disappear on restart;
 redaction uses the current known secret sources. Log content is untrusted output.
+
+## MCP service execution
+
+A separate **Allow service start, stop and restart** grant is available in
+Settings/onboarding. Existing worktree-write grants do not imply service control.
+CLI controls are `mcp enable --allow-service-control` and
+`mcp enable --no-service-control`; `--read-only` revokes both execution grants.
+The application API accepts `allowServiceControl`.
+
+`canopy_start_service`, `canopy_stop_service` and `canopy_restart_service`
+take `repoId`, `serviceKey` from `canopy_services`, and `requestKey`. They
+return durable jobs with the same bounded retry rules as creation/setup.
+Only configured services in currently registered Git worktrees are accepted,
+including the main checkout. No arbitrary command or environment arguments.
+
+Shared desktop/MCP service operations acquire the worktree lease, so they cannot
+race setup or another service operation. A stop job waits for the tracked process
+to exit. Start/restart success means launch completed; readiness is reported
+separately by cached service status and logs. Shutdown prevents a restart from
+spawning a new process after cancellation, then the runtime reaps services.

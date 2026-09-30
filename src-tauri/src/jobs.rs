@@ -147,6 +147,9 @@ type Result<T> = std::result::Result<T, JournalError>;
 pub enum Operation {
     Create,
     Setup,
+    ServiceStart,
+    ServiceStop,
+    ServiceRestart,
     Migrate,
     Custom,
     Snapshot,

@@ -492,6 +492,7 @@ pub fn resolved_env(app: &RuntimeContext, key: &str) -> Result<Vec<EnvEntry>, St
 }
 
 pub async fn start_service(app: &RuntimeContext, key: &str) -> Result<(), String> {
+    if crate::jobs::is_cancelled() { return Err("operation interrupted by shutdown".into()); }
     {
         let table = app.state::<ProcTable>();
         if table.procs.lock().contains_key(key) {
@@ -774,7 +775,7 @@ pub async fn stop_service(app: &RuntimeContext, key: &str) -> Result<(), String>
 }
 
 /// Wait up to `ticks * 150ms` for the waiter task to reap `key`.
-async fn wait_reaped(app: &RuntimeContext, key: &str, ticks: u32) -> bool {
+pub(crate) async fn wait_reaped(app: &RuntimeContext, key: &str, ticks: u32) -> bool {
     for _ in 0..ticks {
         tokio::time::sleep(Duration::from_millis(150)).await;
         let table = app.state::<ProcTable>();
