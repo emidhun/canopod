@@ -94,7 +94,7 @@ export default function McpPage({ preferredRepoPath }: { preferredRepoPath?: str
     </div>}
     <section className="mcp-section">
       <div className="mcp-heading"><h3>MCP access</h3><span className={`mcp-status ${status?.enabled ? "enabled" : ""}`}>{loading ? "Loading…" : status?.error ? "Needs attention" : status?.enabled ? "Enabled" : "Disabled"}</span></div>
-      <p>Let an agent read repository status, list worktrees, and check jobs for repositories you choose. Enable write access below to let it create worktrees and run setup.</p>
+      <p>Let an agent read repository status, list worktrees and services, and inspect redacted logs and job output for repositories you choose. Enable write access below to let it create worktrees and run setup.</p>
       {status?.error && <p role="alert" className="mcp-error">{status.error}</p>}
       <div className="mcp-actions"><button className="btn" disabled={busy || loading} onClick={() => void load()}>Refresh status</button></div>
       {status && <>

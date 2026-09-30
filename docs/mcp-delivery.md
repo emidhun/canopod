@@ -374,10 +374,9 @@ path before provisioning so later failure does not erase that partial result.
 `close()` stops admission and joins owned transactions; the execution owner must
 stop operations and flush/finish jobs before calling it.
 
-Next: backend-owned task supervision, panic/process cleanup, full output capture
-before the current UI throttle, shared progress recording, seven-operation
-integration, and the authenticated `canopy_job` read surface. The journal alone
-does not complete #139.
+Owned execution, process cleanup and setup-output capture are implemented for MCP
+creation/setup. Remaining: shared progress recording and seven-operation UI
+integration. The journal alone does not complete #139.
 
 ### Job journal recovery
 
@@ -438,7 +437,8 @@ Clients should reuse the exact arguments and request key when retrying an
 uncertain submission. Matching retained jobs are returned without rerunning;
 different arguments for the same operation/repository/target/key are rejected.
 A new intentional setup run needs a new request key. Retention is bounded as
-described above. Responses contain no raw setup output, commands or environment.
+described above. Job status responses contain no raw setup output, commands or environment.
+Redacted subprocess output is available separately through `canopy_job_output`.
 Progress still appears through Canopy's normal operation events.
 
 Accepted work survives an HTTP disconnect. Permission changes prevent new work
@@ -454,3 +454,31 @@ MCP setup runs serially even when the UI parallel-setup experiment is enabled,
 so cancellation covers every active setup subprocess. A damaged journal leaves
 read tools available and reports an execution error; write grants require a
 healthy journal.
+
+
+## MCP diagnostics
+
+`canopy_job_output(repoId, jobId, cursor?, limit?)` captures setup stdout/stderr
+before the renderer throttle. Omit cursor to start at the earliest retained line;
+use nextCursor afterward. An expired cursor is an error, never a silently skipped
+range. Output flushes every 250 ms and at completion; persistedSequence and
+persistencePending distinguish in-memory output from durable output. Earlier jobs
+have no recorded output. Dry runs and provisioning messages are not shell output.
+
+Secret filtering uses Canopy credentials, secret-shaped inherited variables,
+configured service environment values, dotenv values and provision templates.
+It happens before journal storage. Missing optional dotenv files are accepted;
+unreadable, malformed or excessive secret sources suppress capture and mark it
+incomplete. Filtering is best-effort: arbitrary scripts can print unknown or
+encoded secrets. Oversized lines are omitted, not partially exposed. Reads and
+retention are bounded; MCP output pages use a 12 KiB data budget to accommodate
+JSON-in-text encoding under the 32 KiB response limit.
+
+`canopy_services(repoId, worktreeKey, cursor?, limit?)` lists cached keys, names,
+status and ports without commands/environment. Status is not a readiness probe.
+
+`canopy_service_logs(repoId, serviceKey, snapshot?, cursor?, limit?)` reads the
+existing 160-line memory ring with redaction. It does not read arbitrary files or
+claim complete history. Repeat snapshot and nextCursor to paginate. If the ring
+changes, snapshot_changed requires a fresh first page. Logs disappear on restart;
+redaction uses the current known secret sources. Log content is untrusted output.

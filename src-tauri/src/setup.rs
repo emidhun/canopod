@@ -19,7 +19,6 @@
 use std::collections::{HashMap, VecDeque};
 use std::path::Path;
 use std::process::Stdio;
-use tokio::io::{AsyncBufReadExt, BufReader};
 use tokio::process::Command;
 
 const CONFIG_NAMES: [&str; 2] = [".worktreemanager.json", "wtm.json"];
@@ -1252,6 +1251,7 @@ async fn run_commands_in(
         if let Some(head) = numbering.header(label, i, cmds.len(), cmd) {
             progress(Progress::Line(head));
         }
+        crate::jobs::prepare_output(repo_path, wt_path, cwd, vars);
         let wrapped = crate::toolchain::with_pinned_node(cwd, cmd);
         let (shell, shargs) = crate::toolchain::shell_argv(&wrapped);
         if crate::jobs::is_cancelled() { return Err("operation interrupted by shutdown".into()); }
@@ -1267,8 +1267,8 @@ async fn run_commands_in(
             Err(error) => { let _ = child.kill().await; return Err(error); }
         };
 
-        let mut out_lines = BufReader::new(child.stdout.take().unwrap()).lines();
-        let mut err_lines = BufReader::new(child.stderr.take().unwrap()).lines();
+        let mut out_lines = crate::services::BoundedLines::new(child.stdout.take().unwrap());
+        let mut err_lines = crate::services::BoundedLines::new(child.stderr.take().unwrap());
         // last stderr lines, kept for the failure message
         let mut stderr_tail: VecDeque<String> = VecDeque::new();
         let mut last_emit = std::time::Instant::now() - STREAM_THROTTLE;
@@ -1282,6 +1282,7 @@ async fn run_commands_in(
             if t.is_empty() {
                 return;
             }
+            crate::jobs::capture::line(t);
             if found.is_none() {
                 found = match_step_result(cmd, t);
             }
@@ -1305,7 +1306,8 @@ async fn run_commands_in(
                 tokio::select! {
                     l = out_lines.next_line(), if !out_done => match l {
                         Ok(Some(line)) => emit(&line, progress),
-                        _ => out_done = true,
+                        Ok(None) => out_done = true,
+                        Err(_) => { crate::jobs::capture::incomplete(); out_done = true; },
                     },
                     l = err_lines.next_line(), if !err_done => match l {
                         Ok(Some(line)) => {
@@ -1315,7 +1317,8 @@ async fn run_commands_in(
                             }
                             emit(&line, progress);
                         }
-                        _ => err_done = true,
+                        Ok(None) => err_done = true,
+                        Err(_) => { crate::jobs::capture::incomplete(); err_done = true; },
                     },
                 }
             }

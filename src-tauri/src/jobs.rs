@@ -1,6 +1,8 @@
 //! Bounded durable job journal. Execution/leases remain in shared operations.
 //! MCP creation/setup uses this journal. The runtime owner
 //! must outlive the registry and all flush tasks; only one registry may write it.
+#[path = "job_output.rs"]
+pub(crate) mod capture;
 use crate::credentials::PrivateSnapshots;
 use parking_lot::Mutex;
 use serde::{Deserialize, Serialize};
@@ -30,6 +32,9 @@ pub(crate) async fn cancelled() {
         Ok(token) => token.cancelled().await,
         Err(_) => std::future::pending::<()>().await,
     }
+}
+pub(crate) fn prepare_output(repo: &str, wt: &str, cwd: &str, vars: &std::collections::HashMap<String, String>) {
+    let _ = EXECUTION_CANCEL.try_with(|(app, _)| capture::prepare(app, repo, wt, cwd, vars));
 }
 pub(crate) fn is_tracked() -> bool { EXECUTION_CANCEL.try_with(|_| ()).is_ok() }
 
@@ -283,7 +288,7 @@ impl SecretFilter {
         };
         Ok(Self { matcher })
     }
-    fn text(&self, input: &str) -> (String, bool) {
+    pub(crate) fn text(&self, input: &str) -> (String, bool) {
         if input.len() > 64 * 1024 {
             return ("[oversized output omitted]".into(), true);
         }
@@ -821,6 +826,19 @@ impl Registry {
         entry.revision += 1;
         self.changed.notify_waiters();
         Ok(())
+    }
+    pub fn mark_output_incomplete(&self, id: &str) {
+        let mut entries = self.entries.lock();
+        if let Ok(entry) = find_mut(&mut entries, id) {
+            entry.snapshot.record.output_complete = false;
+            entry.revision += 1;
+        }
+    }
+    pub fn earliest_cursor(&self, id: &str) -> Result<u64> {
+        let entries = self.entries.lock();
+        let entry = entries.iter().flatten().find(|e| e.snapshot.record.id == id && !expired(&e.snapshot.record))
+            .ok_or_else(|| JournalError::new("expired", "job no longer retained"))?;
+        Ok(entry.snapshot.output.front().map(|l| l.sequence).unwrap_or(entry.snapshot.record.next_sequence))
     }
     pub fn output(&self, id: &str, cursor: u64, limit: usize) -> Result<Page> {
         if !(1..=500).contains(&limit) {

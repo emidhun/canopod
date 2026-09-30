@@ -29,10 +29,10 @@ fn bounded_log(mut text: String) -> String {
 
 // Unlike AsyncBufReadExt::lines, an unterminated line cannot grow memory.
 // All partial state lives here so select! cancellation does not lose bytes.
-struct BoundedLines<R> { reader: BufReader<R>, bytes: Vec<u8>, truncated: bool }
+pub(crate) struct BoundedLines<R> { reader: BufReader<R>, bytes: Vec<u8>, truncated: bool }
 impl<R: tokio::io::AsyncRead + Unpin> BoundedLines<R> {
-    fn new(reader: R) -> Self { Self { reader: BufReader::new(reader), bytes: Vec::new(), truncated: false } }
-    async fn next_line(&mut self) -> std::io::Result<Option<String>> {
+    pub(crate) fn new(reader: R) -> Self { Self { reader: BufReader::new(reader), bytes: Vec::new(), truncated: false } }
+    pub(crate) async fn next_line(&mut self) -> std::io::Result<Option<String>> {
         loop {
             let available = self.reader.fill_buf().await?;
             if available.is_empty() {
@@ -416,7 +416,7 @@ pub struct EnvEntry {
 const SECRET_HINTS: [&str; 9] =
     ["secret", "token", "password", "passwd", "apikey", "api_key", "private", "credential", "signing"];
 
-fn looks_secret(key: &str) -> bool {
+pub(crate) fn looks_secret(key: &str) -> bool {
     let k = key.to_ascii_lowercase();
     SECRET_HINTS.iter().any(|h| k.contains(h))
 }

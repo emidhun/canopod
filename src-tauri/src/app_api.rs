@@ -973,7 +973,7 @@ mod tests {
         assert!(!Path::new(&path).join(".worktrees/agent-test").exists());
         running.grant_writes(true).await;
         let listing: serde_json::Value = running.rpc(&bearer, "tools/list", serde_json::json!({})).send().await.unwrap().json().await.unwrap();
-        assert_eq!(listing["result"]["tools"].as_array().unwrap().len(), 5);
+        assert_eq!(listing["result"]["tools"].as_array().unwrap().len(), 8);
         let accepted = tool_data(&running.tool(&bearer, "canopy_create_worktree", args.clone()).await);
         let id = accepted["job"]["jobId"].as_str().unwrap();
         let job = running.job_done(&bearer, id).await;
@@ -1056,6 +1056,73 @@ mod tests {
         }).await.expect("setup descendant survived shutdown");
         assert!(running.app.state::<AppState>().retained_orphans.lock().is_empty());
         journal.close().await;
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn mcp_diagnostics_capture_bursts_filter_secrets_and_recover_output() {
+        let running = Running::start().await;
+        let (bearer, path) = running.write_fixture("i=0; while [ $i -lt 100 ]; do echo burst-$i; i=$((i + 1)); done; echo private-fixture-value; echo 'Bearer private-bearer'; echo 'password=hidden-value' >&2; exit 7").await;
+        std::fs::write(Path::new(&path).join(".env"), "API_TOKEN=private-fixture-value
+").unwrap();
+        running.grant_writes(true).await;
+        let admitted = tool_data(&running.tool(&bearer, "canopy_create_worktree", serde_json::json!({
+            "repoId":"allowed","branch":"output","base":"main","requestKey":"output"
+        })).await);
+        let id = admitted["job"]["jobId"].as_str().unwrap();
+        assert_eq!(running.job_done(&bearer,id).await["status"], "failed");
+        let mut cursor = None;
+        let mut all = String::new();
+        loop {
+            let result = running.tool(&bearer,"canopy_job_output",serde_json::json!({"repoId":"allowed","jobId":id,"cursor":cursor,"limit":17})).await;
+            assert!(result.to_string().len() < 32*1024);
+            let page = tool_data(&result);
+            all.push_str(&page["output"]["lines"].to_string());
+            assert_eq!(page["persistencePending"],false);
+            if page["output"]["hasMore"] == false { break; }
+            cursor = page["output"]["nextCursor"].as_u64();
+        }
+        for i in 0..100 { assert!(all.contains(&format!("burst-{i}"))); }
+        for secret in ["private-fixture-value","private-bearer","hidden-value"] { assert!(!all.contains(secret),"{all}"); }
+        assert!(all.contains("[REDACTED]"));
+        let denied = running.tool(&bearer,"canopy_job_output",serde_json::json!({"repoId":"other","jobId":id})).await;
+        assert_eq!(denied["isError"],true);
+        let invalid = running.tool(&bearer,"canopy_job_output",serde_json::json!({"repoId":"allowed","jobId":id,"limit":501})).await;
+        assert_eq!(invalid["isError"],true);
+        running.shutdown.send_replace(true);
+        running.task.await.unwrap().unwrap();
+        let journal = crate::jobs::Registry::open(&running.directory.0).unwrap();
+        let recovered = journal.output(id,journal.earliest_cursor(id).unwrap(),500).unwrap();
+        let text = serde_json::to_string(&recovered).unwrap();
+        assert!(text.contains("burst-99")); assert!(!text.contains("private-fixture-value"));
+        journal.close().await;
+    }
+
+    #[tokio::test]
+    async fn mcp_service_log_pages_are_scoped_redacted_and_detect_changes() {
+        let running = Running::start().await;
+        let (bearer,path) = running.write_fixture("echo hello").await;
+        running.app.state::<AppState>().settings.write().repos[0].services.push(crate::settings::ServiceCfg {
+            id:"api".into(),name:"API".into(),env:std::collections::HashMap::from([("API_TOKEN".into(),"fixture-private-service-token".into())]),..Default::default()
+        });
+        crate::state::refresh_tree(&running.app).await.unwrap();
+        let service_key = crate::state::svc_key(&path,"api");
+        let listed = tool_data(&running.tool(&bearer,"canopy_services",serde_json::json!({"repoId":"allowed","worktreeKey":path})).await);
+        assert_eq!(listed["services"][0]["serviceKey"],service_key);
+        assert!(!listed.to_string().contains("fixture-private-service-token"));
+        for i in 0..3 { crate::services::push_log(&running.app,&service_key,crate::services::LogLine::now("info",format!("line-{i} fixture-private-service-token"))); }
+        let first = tool_data(&running.tool(&bearer,"canopy_service_logs",serde_json::json!({"repoId":"allowed","serviceKey":service_key,"limit":1})).await);
+        assert_eq!(first["hasMore"],true);
+        assert!(!first.to_string().contains("fixture-private-service-token"));
+        let next = tool_data(&running.tool(&bearer,"canopy_service_logs",serde_json::json!({"repoId":"allowed","serviceKey":service_key,"snapshot":first["snapshot"],"cursor":first["nextCursor"],"limit":1})).await);
+        assert!(next["lines"][0]["text"].as_str().unwrap().contains("line-1"));
+        crate::services::push_log(&running.app,&service_key,crate::services::LogLine::now("info","new"));
+        let changed = running.tool(&bearer,"canopy_service_logs",serde_json::json!({"repoId":"allowed","serviceKey":service_key,"snapshot":first["snapshot"],"cursor":first["nextCursor"]})).await;
+        assert_eq!(changed["isError"],true);
+        assert!(changed.to_string().contains("snapshot_changed"));
+        let denied = running.tool(&bearer,"canopy_service_logs",serde_json::json!({"repoId":"other","serviceKey":service_key})).await;
+        assert_eq!(denied["isError"],true);
+        running.finish().await;
     }
 
     #[tokio::test]
@@ -1154,7 +1221,7 @@ mod tests {
         let body: serde_json::Value = response.json().await.unwrap();
         assert_eq!(
             body["result"]["tools"].as_array().unwrap().len(),
-            3,
+            6,
             "{body}"
         );
         assert_eq!(body["result"]["tools"][0]["name"], "canopy_status");

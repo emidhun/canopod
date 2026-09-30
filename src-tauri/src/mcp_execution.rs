@@ -142,6 +142,51 @@ impl Executor {
             .await
             .map_err(|_| "job_admission_failed".to_owned())?
     }
+    pub fn output(
+        &self,
+        repo_id: &str,
+        id: &str,
+        cursor: Option<u64>,
+        limit: usize,
+    ) -> Result<serde_json::Value, String> {
+        self.get(repo_id, id)?;
+        let registry = self.registry.as_ref().ok_or("job_journal_unavailable")?;
+        let view = registry.get(id).map_err(|_| "job_not_found")?;
+        let cursor = match cursor {
+            Some(cursor) => cursor,
+            None => registry.earliest_cursor(id).map_err(|e| e.code)?,
+        };
+        let mut page = registry
+            .output(id, cursor, limit)
+            .map_err(|e| e.code.to_owned())?;
+        let mut bytes = 0;
+        let original_next = page.next_cursor;
+        let mut lines = Vec::new();
+        for mut line in page.lines {
+            let mut size = serde_json::to_vec(&line)
+                .map_err(|_| "encoding_failed")?
+                .len();
+            if size > 12 * 1024 {
+                line.text = "[line omitted: encoded output exceeds page budget]".into();
+                page.output_complete = false;
+                size = serde_json::to_vec(&line)
+                    .map_err(|_| "encoding_failed")?
+                    .len();
+            }
+            if bytes + size > 12 * 1024 {
+                break;
+            }
+            bytes += size + 1;
+            lines.push(line);
+        }
+        page.next_cursor = lines.last().map(|line| line.sequence + 1).unwrap_or(cursor);
+        page.has_more |= page.next_cursor < original_next;
+        page.lines = lines;
+        Ok(
+            serde_json::json!({"jobId":id,"output":page,"persistedSequence":view.persisted_sequence,
+            "persistencePending":view.persistence_pending,"durabilityError":view.durability_error.as_ref().map(|_|"journal_write_failed")}),
+        )
+    }
     pub fn get(&self, repo_id: &str, id: &str) -> Result<serde_json::Value, String> {
         if id.len() != 32 || !id.bytes().all(|b| b.is_ascii_hexdigit()) {
             return Err("invalid_arguments".into());
@@ -220,77 +265,88 @@ async fn run(
         };
         // Catch panics at the operation boundary; its process guards clean up
         // before the parent commits a failed outcome. A client cannot abort it.
-        tokio::spawn(jobs::with_cancellation(
-            controller.app.clone(),
-            controller.shutdown.clone(),
-            async move {
-                let repo = owned.authorized_repo(&generation, request.repo_id(), true)?;
-                if request.target(&repo) != target {
-                    return Err("repository_changed".into());
-                }
-                match request {
-                    Request::Create(args) => {
-                        crate::git::run_git(
-                            &repo.path,
-                            &["check-ref-format", "--branch", &args.branch],
-                        )
-                        .await
-                        .map_err(|_| "invalid_branch")?;
-                        owned.authorized_repo(&generation, &args.repo_id, true)?;
-                        crate::operations::create_worktree_for_repo(
-                            owned.app.clone(),
-                            repo,
-                            args.branch,
-                            args.base,
-                            args.create_branch,
-                            Some(tracking),
-                        )
-                        .await
-                        .map(|_| ())
+        let flush_done = CancellationToken::new();
+        let flusher = tokio::spawn(jobs::capture::flush_until(
+            registry.clone(),
+            id.clone(),
+            flush_done.clone(),
+        ));
+        let result = tokio::spawn(jobs::capture::scope(
+            tracking.clone(),
+            jobs::with_cancellation(
+                controller.app.clone(),
+                controller.shutdown.clone(),
+                async move {
+                    let repo = owned.authorized_repo(&generation, request.repo_id(), true)?;
+                    if request.target(&repo) != target {
+                        return Err("repository_changed".into());
                     }
-                    Request::Setup(args) => {
-                        let worktrees = crate::git::list_worktrees(&repo.path)
+                    match request {
+                        Request::Create(args) => {
+                            crate::git::run_git(
+                                &repo.path,
+                                &["check-ref-format", "--branch", &args.branch],
+                            )
                             .await
-                            .map_err(|_| "worktree_lookup_failed")?;
-                        let canonical = std::fs::canonicalize(&args.worktree_key)
-                            .map_err(|_| "worktree_not_found")?;
-                        if !worktrees
-                            .iter()
-                            .any(|w| !w.is_main && !w.prunable && Path::new(&w.path) == canonical)
-                        {
-                            return Err("worktree_not_allowed".into());
+                            .map_err(|_| "invalid_branch")?;
+                            owned.authorized_repo(&generation, &args.repo_id, true)?;
+                            crate::operations::create_worktree_for_repo(
+                                owned.app.clone(),
+                                repo,
+                                args.branch,
+                                args.base,
+                                args.create_branch,
+                                Some(tracking),
+                            )
+                            .await
+                            .map(|_| ())
                         }
-                        let context = owned
-                            .app
-                            .state::<AppState>()
-                            .wt_context(&args.worktree_key)
-                            .ok_or("worktree_not_found")?;
-                        if context.is_main
-                            || context.repo_id != args.repo_id
-                            || context.repo_path != repo.path
-                        {
-                            return Err("worktree_not_allowed".into());
+                        Request::Setup(args) => {
+                            let worktrees = crate::git::list_worktrees(&repo.path)
+                                .await
+                                .map_err(|_| "worktree_lookup_failed")?;
+                            let canonical = std::fs::canonicalize(&args.worktree_key)
+                                .map_err(|_| "worktree_not_found")?;
+                            if !worktrees.iter().any(|w| {
+                                !w.is_main && !w.prunable && Path::new(&w.path) == canonical
+                            }) {
+                                return Err("worktree_not_allowed".into());
+                            }
+                            let context = owned
+                                .app
+                                .state::<AppState>()
+                                .wt_context(&args.worktree_key)
+                                .ok_or("worktree_not_found")?;
+                            if context.is_main
+                                || context.repo_id != args.repo_id
+                                || context.repo_path != repo.path
+                            {
+                                return Err("worktree_not_allowed".into());
+                            }
+                            owned.authorized_repo(&generation, &args.repo_id, true)?;
+                            crate::operations::run_worktree_setup(
+                                owned.app.clone(),
+                                args.worktree_key,
+                                args.dry_run,
+                            )
+                            .await
                         }
-                        owned.authorized_repo(&generation, &args.repo_id, true)?;
-                        crate::operations::run_worktree_setup(
-                            owned.app.clone(),
-                            args.worktree_key,
-                            args.dry_run,
-                        )
-                        .await
                     }
-                }
-                .map_err(|error| match error.code {
-                    crate::error::ErrorCode::Conflict => "worktree_busy_or_exists".to_owned(),
-                    crate::error::ErrorCode::Setup => "setup_failed".to_owned(),
-                    crate::error::ErrorCode::Git => "git_failed".to_owned(),
-                    crate::error::ErrorCode::InvalidInput => "invalid_input".to_owned(),
-                    _ => "worktree_operation_failed".to_owned(),
-                })
-            },
+                    .map_err(|error| match error.code {
+                        crate::error::ErrorCode::Conflict => "worktree_busy_or_exists".to_owned(),
+                        crate::error::ErrorCode::Setup => "setup_failed".to_owned(),
+                        crate::error::ErrorCode::Git => "git_failed".to_owned(),
+                        crate::error::ErrorCode::InvalidInput => "invalid_input".to_owned(),
+                        _ => "worktree_operation_failed".to_owned(),
+                    })
+                },
+            ),
         ))
         .await
-        .unwrap_or_else(|_| Err("worktree_operation_panicked".into()))
+        .unwrap_or_else(|_| Err("worktree_operation_panicked".into()));
+        flush_done.cancel();
+        let _ = flusher.await;
+        result
     };
     let (status, outcome) = match result {
         Ok(()) => (Status::Succeeded, Outcome::default()),
@@ -396,10 +452,10 @@ pub(super) fn worktrees(
         for (index, wt) in repo.worktrees.iter().enumerate().skip(cursor) {
             let entry = serde_json::json!({"worktreeKey":wt.wt_key,"branch":wt.branch,"isMain":wt.is_main,"setupConfigured":wt.setup_configured});
             let size = entry.to_string().len();
-            if size > 30 * 1024 {
+            if size > 12 * 1024 {
                 return Err("worktree_metadata_too_large".into());
             }
-            if entries.len() >= limit || bytes + size > 30 * 1024 {
+            if entries.len() >= limit || bytes + size > 12 * 1024 {
                 next = Some(index);
                 break;
             }
