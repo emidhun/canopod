@@ -77,6 +77,8 @@ tauri-plugin-single-instance = { version = "2", optional = true }
 # the coding-agent CLI inside one). portable-pty is cross-platform (helps Linux).
 portable-pty = "0.9"
 base64 = "0.23"
+# Exclusive private image files, deleted with the terminal session.
+tempfile = "3"
 # OS notifications for the states that need a human while Canopy is in the
 # tray — a crashed service, a blocked agent, a finished setup.
 tauri-plugin-notification = { version = "2", optional = true }

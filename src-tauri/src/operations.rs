@@ -1496,6 +1496,7 @@ pub async fn restore_database(
     app: RuntimeContext,
     wt_key: String,
     file_path: String,
+    options: Option<crate::db::RestoreOptions>,
 ) -> Result<(), CanopyError> {
     ensure_known_worktree(&app, &wt_key)?;
     let _lease = crate::state::try_lease(&app, &wt_key, "restore")?;
@@ -1503,18 +1504,42 @@ pub async fn restore_database(
     // can observe (or block) a half-restored schema. Stop the worktree's
     // running services, restore, then bring the same ones back.
     let mut was_running: Vec<String> = Vec::new();
+    let mut stop_error = None;
     for key in services::worktree_svc_keys(&app, &wt_key) {
         if is_running(&app, &key) {
             was_running.push(key.clone());
-            let _ = services::stop_service(&app, &key).await;
+            if let Err(error) = services::stop_service(&app, &key).await {
+                stop_error = Some(format!("cannot stop {key} before restore: {error}"));
+                break;
+            }
         }
     }
     let app2 = app.clone();
     let wt2 = wt_key.clone();
-    let restore = crate::db::restore_database(&wt_key, &file_path, move |line| {
-        emit_op(&app2, &wt2, "snapshot", "progress", line)
-    })
-    .await;
+    let mut restore = if let Some(error) = stop_error {
+        Err(error)
+    } else {
+        crate::db::restore_database(&wt_key, &file_path, options.as_ref(), move |line| {
+            emit_op(&app2, &wt2, "snapshot", "progress", line)
+        })
+        .await
+    };
+
+    if restore.is_ok() {
+        if let Some(options) = options.as_ref().filter(|o| o.activate) {
+            let activate = async {
+                let (repo_path, _) = repo_for_wt(&app, &wt_key).map_err(|e| e.to_string())?;
+                crate::setup::activate_restored_database(&wt_key, &repo_path, &options.target)?;
+                refresh_tree(&app).await
+            }
+            .await;
+            if let Err(error) = activate {
+                restore = Err(format!(
+                    "database restored, but switching this worktree failed: {error}"
+                ));
+            }
+        }
+    }
 
     // restart what we stopped, whether or not the restore succeeded — the
     // worktree shouldn't be left dead because a dump file was bad

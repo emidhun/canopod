@@ -633,9 +633,10 @@ pub async fn restore_database(
     app: AppHandle,
     wt_key: String,
     file_path: String,
+    options: Option<crate::db::RestoreOptions>,
 ) -> Result<(), CanopyError> {
     let context = runtime(&app);
-    crate::operations::restore_database(context, wt_key, file_path).await
+    crate::operations::restore_database(context, wt_key, file_path, options).await
 }
 
 #[tauri::command]

@@ -486,6 +486,49 @@ fn interpolate(tpl: &str, vars: &HashMap<String, String>) -> String {
     out
 }
 
+/// Restore activation preflights every input before changing any dotenv file.
+/// This also prevents a malformed config or an escaping provision path from
+/// silently switching only part of a worktree.
+pub fn activate_restored_database(wt_path: &str, repo_path: &str, name: &str) -> Result<(), String> {
+    if name.is_empty() || !name.chars().all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '-') {
+        return Err("automatic switching requires a database name containing only letters, digits, '_' or '-'; disable switching for other names".into());
+    }
+    for dir in [wt_path, repo_path] {
+        for filename in CONFIG_NAMES {
+            let path = Path::new(dir).join(filename);
+            match std::fs::read_to_string(&path) {
+                Ok(text) => {
+                    let value: serde_json::Value = serde_json::from_str(&text)
+                        .map_err(|e| format!("invalid {}: {e}", path.display()))?;
+                    if !value.is_object() { return Err(format!("{} must be a JSON object", path.display())); }
+                }
+                Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
+                Err(e) => return Err(format!("read {}: {e}", path.display())),
+            }
+        }
+    }
+    let root = std::fs::canonicalize(wt_path).map_err(|e| e.to_string())?;
+    let mut paths = vec![root.join(".env")];
+    for pf in read_config(wt_path, repo_path).provision {
+        if pf.format != "dotenv" || pf.path == ".env" || !pf.keys.iter().any(|(k, _)| k == "PG_DB") { continue; }
+        check_contained(&pf.path, "path")?;
+        let path = root.join(pf.path);
+        if path.try_exists().map_err(|e| e.to_string())? { paths.push(path); }
+    }
+    let pairs = [("PG_DB".to_owned(), name.to_owned())];
+    let mut writes = Vec::new();
+    for path in paths {
+        let resolved = std::fs::canonicalize(&path).map_err(|e| format!("read {}: {e}", path.display()))?;
+        if !resolved.starts_with(&root) { return Err(format!("{} escapes the worktree", path.display())); }
+        let body = std::fs::read_to_string(&resolved).map_err(|e| format!("read {}: {e}", path.display()))?;
+        writes.push((resolved, upsert_dotenv_str(&body, &pairs)));
+    }
+    for (path, body) in writes {
+        std::fs::write(&path, body).map_err(|e| format!("write {}: {e}", path.display()))?;
+    }
+    Ok(())
+}
+
 /// Add-or-replace literal KEY=VALUE pairs in the worktree's `.env`, preserving
 /// every other line. Seeds `.env` from the main checkout if missing.
 pub fn set_env_keys(wt_path: &str, repo_path: &str, pairs: &[(String, String)]) -> Result<(), String> {
@@ -1311,6 +1354,31 @@ async fn run_commands_in(
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn restore_activation_preflights_and_preserves_env_files() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path();
+        let path = root.to_str().unwrap();
+        std::fs::create_dir(root.join("server")).unwrap();
+        let config = root.join(".worktreemanager.json");
+        let env = root.join(".env");
+        let child = root.join("server/.env");
+        std::fs::write(&env, "# keep\nPG_DB=old\nSECRET=yes\n").unwrap();
+        std::fs::write(&config, r#"{"provision":[{"path":"server/.env","format":"dotenv","keys":{"PG_DB":"old"}}]}"#).unwrap();
+        std::fs::write(&child, [0xff]).unwrap();
+        assert!(super::activate_restored_database(path, path, "fresh").is_err());
+        assert!(std::fs::read_to_string(&env).unwrap().contains("PG_DB=old"));
+        std::fs::write(&child, "PG_DB=old\nPORT=4000\n").unwrap();
+        super::activate_restored_database(path, path, "fresh").unwrap();
+        assert_eq!(std::fs::read_to_string(&env).unwrap(), "# keep\nSECRET=yes\nPG_DB=fresh\n");
+        assert_eq!(std::fs::read_to_string(&child).unwrap(), "PORT=4000\nPG_DB=fresh\n");
+        std::fs::write(&config, "{invalid").unwrap();
+        assert!(super::activate_restored_database(path, path, "next").is_err());
+        assert!(std::fs::read_to_string(&env).unwrap().contains("PG_DB=fresh"));
+        std::fs::write(&config, r#"{"provision":[{"path":"../escape","format":"dotenv","keys":{"PG_DB":"old"}}]}"#).unwrap();
+        assert!(super::activate_restored_database(path, path, "next").is_err());
+    }
+
     use super::*;
 
     /* Step numbering — the runner builds its step list from these markers.

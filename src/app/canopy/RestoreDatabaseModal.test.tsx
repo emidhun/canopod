@@ -1,0 +1,41 @@
+import { render, screen, waitFor } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
+import { beforeEach, expect, it, vi } from "vitest";
+import { open } from "@tauri-apps/plugin-dialog";
+import { ipc } from "../../ipc";
+import type { WorktreeNode } from "../../types";
+import RestoreDatabaseModal from "./RestoreDatabaseModal";
+vi.mock("@tauri-apps/plugin-dialog", () => ({ open: vi.fn(async () => "/tmp/input.dump") }));
+const wt = { wtKey: "/repo", path: "/repo", branch: "main", dbName: "app_old", services: [] } as unknown as WorktreeNode;
+beforeEach(() => { vi.spyOn(ipc, "listDatabases").mockResolvedValue(["postgres", "app_old", "other"]); vi.spyOn(ipc, "restoreDatabase").mockResolvedValue(); });
+it("restores into a newly named database with explicit activation", async () => {
+  const user = userEvent.setup(); const close = vi.fn();
+  render(<RestoreDatabaseModal wt={wt} onClose={close} />);
+  await user.click(screen.getByText("Choose dump file…"));
+  await user.type(screen.getByLabelText("New database name"), "app_new");
+  await user.click(screen.getByRole("button", { name: "Create and restore" }));
+  await waitFor(() => expect(ipc.restoreDatabase).toHaveBeenCalledWith("/repo", "/tmp/input.dump", { target: "app_new", mode: "create", activate: true }));
+  expect(close).toHaveBeenCalled();
+});
+it("requires confirmation for the selected existing database and resets it on selection change", async () => {
+  const user = userEvent.setup(); render(<RestoreDatabaseModal wt={wt} onClose={() => {}} />);
+  await user.click(screen.getByText("Choose dump file…"));
+  await user.selectOptions(screen.getByLabelText("Destination"), "replace");
+  const submit = screen.getByRole("button", { name: "Empty and restore" });
+  expect(submit).toBeDisabled();
+  await user.click(screen.getByLabelText(/I understand/));
+  await user.selectOptions(screen.getByLabelText("Database to empty"), "other");
+  expect(submit).toBeDisabled();
+  await user.click(screen.getByLabelText(/I understand/));
+  await user.click(screen.getByLabelText(/Use this database/));
+  await user.click(submit);
+  await waitFor(() => expect(ipc.restoreDatabase).toHaveBeenCalledWith("/repo", "/tmp/input.dump", { target: "other", mode: "replace", activate: false }));
+});
+it("does not restore after file selection is cancelled or into an existing new name", async () => {
+  vi.mocked(open).mockResolvedValueOnce(null);
+  const user = userEvent.setup(); render(<RestoreDatabaseModal wt={wt} onClose={() => {}} />);
+  await user.click(screen.getByText("Choose dump file…"));
+  await user.type(screen.getByLabelText("New database name"), "other");
+  expect(screen.getByRole("button", { name: "Create and restore" })).toBeDisabled();
+  expect(ipc.restoreDatabase).not.toHaveBeenCalled();
+});

@@ -510,6 +510,7 @@ dependencies = [
  "tauri-plugin-opener",
  "tauri-plugin-positioner",
  "tauri-plugin-single-instance",
+ "tempfile",
  "tokio",
  "tokio-util",
  "windows 0.62.2",
