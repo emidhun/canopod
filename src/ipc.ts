@@ -333,6 +333,7 @@ export const ipc = {
 
   // embedded terminals (agent lane). `id` is opaque (e.g. `${wtKey}::shell`);
   // `data` on read events is base64 of the raw PTY bytes.
+  terminalStoreImage: (id: string, data: number[]) => invoke<string>("terminal_store_image", { id, data }),
   terminalOpen: (id: string, cwd: string, cols: number, rows: number, command?: string) =>
     invoke<void>("terminal_open", { id, cwd, cols, rows, command: command ?? null }),
   terminalWrite: (id: string, data: string) => invoke<void>("terminal_write", { id, data }),

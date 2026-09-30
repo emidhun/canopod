@@ -28,6 +28,7 @@ pub mod stats;
 #[cfg(all(feature = "devtools", feature = "desktop"))]
 mod suite;
 pub mod terminal;
+mod terminal_images;
 pub mod toolchain;
 #[cfg(feature = "desktop")]
 mod tray;
@@ -359,6 +360,7 @@ pub fn run() {
             commands::save_text_file,
             commands::get_logs,
             commands::terminal_open,
+            commands::terminal_store_image,
             commands::terminal_write,
             commands::terminal_resize,
             commands::terminal_get_buffer,

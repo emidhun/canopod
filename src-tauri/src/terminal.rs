@@ -62,6 +62,7 @@ const QUIET_BEFORE_WAITING: Duration = Duration::from_millis(1200);
 const TAIL_BYTES: usize = 2048;
 
 pub struct PtySession {
+    attachments: crate::terminal_images::Attachments,
     master: Box<dyn MasterPty + Send>,
     /// Behind its own Arc<Mutex> so a write blocked by a stalled child (full
     /// PTY buffer) doesn't hold the sessions table lock — the reader thread
@@ -534,6 +535,7 @@ pub fn open(
     sessions.insert(
         id.to_string(),
         PtySession {
+            attachments: crate::terminal_images::Attachments::default(),
             master: pair.master,
             writer,
             child,
@@ -935,6 +937,15 @@ pub fn sweep_idle(app: &RuntimeContext, table: &TermTable) {
             }
         }
     }
+}
+
+/// Only a live session can own pasted image files; closing it removes them.
+pub fn store_image(table: &TermTable, id: &str, data: &[u8]) -> Result<String, String> {
+    let mut sessions = table.sessions.lock();
+    let session = sessions
+        .get_mut(id)
+        .ok_or("terminal session is not running")?;
+    session.attachments.add(data)
 }
 
 #[cfg(test)]

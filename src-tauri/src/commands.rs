@@ -154,6 +154,15 @@ pub async fn terminal_open(
 }
 
 #[tauri::command]
+pub async fn terminal_store_image(
+    app: AppHandle,
+    id: String,
+    data: Vec<u8>,
+) -> Result<String, CanopyError> {
+    crate::operations::terminal_store_image(runtime(&app), id, data).await
+}
+
+#[tauri::command]
 pub async fn terminal_write(app: AppHandle, id: String, data: String) -> Result<(), CanopyError> {
     let context = runtime(&app);
     crate::operations::terminal_write(context.clone(), context.state::<TermTable>(), id, data).await

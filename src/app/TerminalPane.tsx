@@ -12,6 +12,7 @@ import { WebglAddon } from "@xterm/addon-webgl";
 import { WebLinksAddon } from "@xterm/addon-web-links";
 import { errText, hasBackend, ipc, on, type TermCfg } from "../ipc";
 import { useStore } from "../store";
+import { bindTerminalImages } from "./terminalImages";
 
 /** Open a URL in the user's browser (never in the app's own webview). */
 async function openExternal(url: string) {
@@ -117,6 +118,38 @@ export default function TerminalPane({
   const hostRef = useRef<HTMLDivElement>(null);
   const termRef = useRef<Terminal | null>(null);
   const fitRef = useRef<FitAddon | null>(null);
+  const imageInputActive = useRef(false);
+  imageInputActive.current = !hidden && !readOnly;
+
+  useEffect(() => {
+    const host = hostRef.current;
+    if (!host || !hasBackend() || readOnly) return;
+    let disposed = false;
+    let unlisten: (() => void) | undefined;
+    const input = bindTerminalImages(host, {
+      active: () => imageInputActive.current,
+      save: (data) => ipc.terminalStoreImage(termId, data),
+      paste: (text) => { termRef.current?.paste(text); termRef.current?.focus(); },
+      error: (message) => useStore.getState().showToast(message),
+    });
+    // Tauri's native file-drop intercepts OS drags before DOM drop events.
+    void Promise.all([import("@tauri-apps/api/webview"), import("@tauri-apps/api/window")]).then(async ([webview, windowApi]) => {
+      if (disposed) return;
+      const stop = await webview.getCurrentWebview().onDragDropEvent(async ({ payload }) => {
+        if (payload.type !== "drop" || disposed || !imageInputActive.current) return;
+        try {
+          const scale = await windowApi.getCurrentWindow().scaleFactor();
+          if (disposed || !imageInputActive.current) return;
+          const rect = host.getBoundingClientRect();
+          const x = payload.position.x / scale, y = payload.position.y / scale;
+          if (x >= rect.left && x < rect.right && y >= rect.top && y < rect.bottom) input.dropPaths(payload.paths);
+        } catch (error) { if (!disposed) useStore.getState().showToast(`Image drop failed: ${errText(error)}`); }
+      });
+      if (disposed) stop(); else unlisten = stop;
+    }).catch((error) => { if (!disposed) useStore.getState().showToast(`Image drop unavailable: ${errText(error)}`); });
+    return () => { disposed = true; input.dispose(); unlisten?.(); };
+  }, [termId, readOnly]);
+
 
   useEffect(() => {
     const host = hostRef.current;

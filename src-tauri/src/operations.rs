@@ -393,6 +393,17 @@ pub async fn terminal_open(
     terminal::open(&app, table, &id, &cwd, cols, rows, command).map_err(CanopyError::terminal)
 }
 
+pub async fn terminal_store_image(
+    app: RuntimeContext,
+    id: String,
+    data: Vec<u8>,
+) -> Result<String, CanopyError> {
+    tokio::task::spawn_blocking(move || terminal::store_image(app.state::<TermTable>(), &id, &data))
+        .await
+        .map_err(|e| CanopyError::terminal(e.to_string()))?
+        .map_err(CanopyError::terminal)
+}
+
 pub async fn terminal_write(
     app: RuntimeContext,
     table: &TermTable,
