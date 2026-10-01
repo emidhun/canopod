@@ -33,6 +33,7 @@ import SwitchBranchModal from "./SwitchBranchModal";
 import UncommittedChangesModal from "./UncommittedChangesModal";
 import Onboarding from "../onboarding/Onboarding";
 import { nudgeFontScale, resetFontScale } from "../appearance";
+import { addedWorktrees, syncMessage } from "./syncWorktrees";
 
 export default function App() {
   const tree = useStore((s) => s.tree);
@@ -201,9 +202,9 @@ export default function App() {
     if ((sessions[wtKey] ?? []).every((s) => s.kind !== "shell")) launch.startShell(targetFor(wtKey));
   };
 
-  // Sync = rescan + reconcile worktrees deleted on disk. We snapshot the tree
-  // BEFORE refreshing, because a vanished worktree's db name lives in its (now
-  // gone) .env — the snapshot is the only place we still know it.
+  // Sync imports Git-registered worktrees created outside Canopy and reconciles
+  // ones deleted on disk. Snapshot first because a vanished worktree's db name
+  // lives in its (now gone) .env — this is the only place we still know it.
   const sync = async () => {
     if (!hasBackend()) {
       showToast("Sync needs the desktop app");
@@ -213,6 +214,8 @@ export default function App() {
     const known = new Map(tree.flatMap((r) => r.worktrees.map((w) => [w.wtKey, w.dbName] as const)));
     try {
       await ipc.refresh();
+      const refreshed = await ipc.getTree();
+      showToast(syncMessage(addedWorktrees(tree, refreshed)));
       // Sync also reconciles Settings with what's on disk: a repo's
       // `.worktreemanager.json` (setup tasks, provisioned files, migrate) may
       // have changed outside the app, so signal open views to re-read it.
@@ -503,6 +506,7 @@ export default function App() {
             setView("wt");
           }}
           onNewWorktree={() => setShowNewWt(true)}
+          onSync={sync}
           onSettings={() => setShowSettings(true)}
           onOpenTerminal={() => sel && openTerminalFor(sel.wt.wtKey)}
           onStartAgent={() => {

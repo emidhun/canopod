@@ -1,0 +1,100 @@
+name: release smoke
+
+on:
+  workflow_call:
+    inputs:
+      tag:
+        required: true
+        type: string
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Existing draft or published release tag
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  collect:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download exact release assets
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ inputs.tag }}
+        run: |
+          mkdir packages
+          gh release download "$TAG" --repo "$GITHUB_REPOSITORY" --dir packages
+          test "$(find packages -maxdepth 1 -type f | wc -l)" -ge 7
+      - uses: actions/upload-artifact@v5
+        with:
+          name: release-${{ inputs.tag }}
+          path: packages
+          if-no-files-found: error
+          retention-days: 3
+
+  macos:
+    needs: collect
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/download-artifact@v6
+        with:
+          name: release-${{ inputs.tag }}
+          path: packages
+      - run: bash scripts/release-smoke/macos.sh packages "${TAG#v}"
+        env:
+          TAG: ${{ inputs.tag }}
+
+  linux:
+    needs: collect
+    strategy:
+      fail-fast: false
+      matrix:
+        kind: [deb, appimage]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/download-artifact@v6
+        with:
+          name: release-${{ inputs.tag }}
+          path: packages
+      - run: bash scripts/release-smoke/linux.sh "$KIND" packages "${TAG#v}"
+        env:
+          KIND: ${{ matrix.kind }}
+          TAG: ${{ inputs.tag }}
+
+  rpm:
+    needs: collect
+    runs-on: ubuntu-latest
+    container: fedora:latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/download-artifact@v6
+        with:
+          name: release-${{ inputs.tag }}
+          path: packages
+      - run: bash scripts/release-smoke/linux.sh rpm packages "${TAG#v}"
+        env:
+          TAG: ${{ inputs.tag }}
+
+  windows:
+    needs: collect
+    strategy:
+      fail-fast: false
+      matrix:
+        kind: [nsis, msi]
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/download-artifact@v6
+        with:
+          name: release-${{ inputs.tag }}
+          path: packages
+      - shell: pwsh
+        run: ./scripts/release-smoke/windows.ps1 -Kind $env:KIND -Packages packages -ExpectedVersion $env:VERSION.TrimStart('v')
+        env:
+          KIND: ${{ matrix.kind }}
+          VERSION: ${{ inputs.tag }}

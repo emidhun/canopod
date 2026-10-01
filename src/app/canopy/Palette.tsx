@@ -6,7 +6,7 @@
    drift apart. */
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { ComponentType } from "react";
-import { Alert, Bolt, Cube, Fork, Logs, Play, Plus, Pull, Search, Settings, Single, Sparkle, Split, Stop, Terminal, X } from "../../icons";
+import { Alert, Bolt, Cube, Fork, Logs, Play, Plus, Pull, Refresh, Search, Settings, Single, Sparkle, Split, Stop, Terminal, X } from "../../icons";
 import { useStore } from "../../store";
 import { nextAction, wtDot, dotClass, type AttnItem, type NextAction } from "../nextAction";
 import type { LayoutId } from "./WorkSurface";
@@ -33,6 +33,7 @@ export default function Palette({
   onRunFor,
   onLayout,
   onNewWorktree,
+  onSync,
   onSettings,
   onOpenTerminal,
   onStartAgent,
@@ -47,6 +48,7 @@ export default function Palette({
   onRunFor: (wtKey: string) => void;
   onLayout: (l: LayoutId) => void;
   onNewWorktree: () => void;
+  onSync: () => void;
   onSettings: () => void;
   onOpenTerminal: () => void;
   onStartAgent: () => void;
@@ -120,6 +122,7 @@ export default function Palette({
         },
       },
       { g: "Actions", nm: "New worktree", icon: Plus, run: onNewWorktree },
+      { g: "Actions", nm: "Sync external worktrees", icon: Refresh, why: "Discover Git worktrees", run: onSync },
       // "repository" is the word people search for when the sidebar's menu is
       // hidden — which it is until a second repo exists
       { g: "Actions", nm: "Add repository", icon: Fork, why: "⇧⌘N", run: addRepo },

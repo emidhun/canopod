@@ -977,6 +977,33 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn refresh_discovers_worktree_created_outside_canopy() {
+        let running = Running::start().await;
+        let (_, path) = running.write_fixture("").await;
+        crate::state::refresh_tree(&running.app).await.unwrap();
+
+        let external = Path::new(&path).join(".worktrees/external-agent");
+        let external_path = external.to_string_lossy().into_owned();
+        crate::git::run_git(
+            &path,
+            &["worktree", "add", &external_path, "-b", "external-agent", "HEAD"],
+        )
+        .await
+        .unwrap();
+
+        crate::operations::refresh(running.app.clone(), None).await.unwrap();
+
+        let discovered = {
+            let tree = running.app.state::<AppState>().tree.read();
+            tree.iter()
+                .flat_map(|repo| &repo.worktrees)
+                .any(|worktree| worktree.branch == "external-agent" && worktree.path == external_path)
+        };
+        assert!(discovered);
+        running.finish().await;
+    }
+
+    #[tokio::test]
     async fn mcp_worktree_create_setup_permissions_retries_and_scope() {
         let running = Running::start().await;
         let (bearer, path) = running.write_fixture("echo configured > setup-ran").await;

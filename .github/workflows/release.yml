@@ -52,3 +52,11 @@ jobs:
           releaseName: "Canopy ${{ github.ref_name }}"
           releaseDraft: true
           args: ${{ matrix.args }}
+
+  smoke:
+    needs: build
+    permissions:
+      contents: read
+    uses: ./.github/workflows/release-smoke.yml
+    with:
+      tag: ${{ github.ref_name }}

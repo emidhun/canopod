@@ -27,8 +27,10 @@ npm run tauri build    # release .app (see DMG note below)
 ```
 
 ## Building a release DMG (important workarounds)
-0. **Official releases come from CI** — pushing a `v*` tag builds and uploads the DMG + Linux
-   packages via `.github/workflows/release.yml`. The steps below are for local one-off builds.
+0. **Official releases come from CI** — pushing a `v*` tag builds draft macOS, Linux and Windows
+   packages via `.github/workflows/release.yml`, then runs `.github/workflows/release-smoke.yml`
+   against those exact draft assets. A release stays draft when any install, version or launch
+   probe fails. The steps below are for local one-off builds.
 1. **Build app-only locally.** Tauri's `bundle_dmg.sh` step **hangs** on this machine (it drives
    Finder/AppleScript), so pass `--bundles app`: `npm run tauri build -- --bundles app`
    (CI runners bundle the DMG fine).
@@ -48,6 +50,22 @@ npm run tauri build    # release .app (see DMG note below)
 4. Relaunch: `pkill -f "Canopy.app"; open "$APP"`.
 
 The full one-shot block is what the assistant runs each ship; keep it together.
+
+## Re-running installer smoke tests
+
+Run the **release smoke** workflow manually with an existing tag when a runner failure needs to be
+retried without rebuilding packages. The workflow downloads the release assets rather than build
+directories, then checks:
+
+- macOS: DMG checksum, deep code signature, bundle version, packaged backend version and an
+  eight-second LaunchServices probe;
+- Linux: native installs for deb and rpm, AppImage extraction, packaged backend versions and Xvfb
+  launch probes; and
+- Windows: silent NSIS and MSI installs on separate clean runners, installed backend versions and
+  eight-second application launch probes.
+
+Smoke jobs never publish a draft. Publishing remains a separate maintainer action after every job
+is green and the release notes and checksums have been reviewed.
 
 ## App icon
 Regenerated from a 1024px PNG (dark squircle + Canopy mark) via `npm run tauri icon <png>` →
