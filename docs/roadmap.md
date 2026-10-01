@@ -1,5 +1,12 @@
 # Status & roadmap
 
+Today's execution order, effort budgets and completion checklist are in
+[the adoption plan](adoption-plan.md#today-october-1) (2026-10-01): release/docs
+audit → onboarding fixes → first-workspace validation → agent connection checks
+→ recipe/user-session materials → final validation. The bounded checklist is complete;
+broader adoption and MCP requirements remain tracked separately. The inventory
+below is historical and requires reconciliation with current code and releases.
+
 ## Delivered
 - v1 core: popover + main window, worktree discovery/create/delete with submodule object-sharing,
   per-service start/stop/restart, live logs, CPU/MEM/uptime, settings, Reset DB, Pull (submodule-aware).

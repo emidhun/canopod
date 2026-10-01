@@ -231,6 +231,11 @@ fn windows_link_count_is_safe(count: u32, require_linked: bool) -> bool {
 
 fn denied(message: &'static str) -> io::Error { io::Error::new(io::ErrorKind::PermissionDenied, message) }
 
+#[cfg(all(feature = "desktop", windows))]
+pub(crate) fn create_private_config(path: &Path) -> io::Result<File> {
+    platform::create_private_config(path)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -406,9 +411,4 @@ mod tests {
         });
         assert_eq!(fs::read_dir(&store.directory).unwrap().count(), 1);
     }
-}
-
-#[cfg(all(feature = "desktop", windows))]
-pub(crate) fn create_private_config(path: &Path) -> io::Result<File> {
-    platform::create_private_config(path)
 }

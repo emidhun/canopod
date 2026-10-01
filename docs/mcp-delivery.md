@@ -314,10 +314,13 @@ uses a private temporary file and refuses a detected concurrent edit.
 
 Manual setup exposes individually copyable endpoint, transport, bearer token and
 Authorization value fields. Complete Claude JSON / Codex TOML snippets are also
-available; only deliberate Copy actions retrieve secrets, and those snippets
-contain a static token that must be refreshed after rotation. No secret is shown
-in the on-screen preview. Reads include `canopy_status`, `canopy_worktrees`,
-and `canopy_job`. Worktree creation and setup require an explicit write grant.
+available; only deliberate Copy actions retrieve secrets. Claude and generic
+snippets contain a static token that must be refreshed after rotation. Codex TOML
+instead references `CANOPY_MCP_TOKEN` through `bearer_token_env_var`, and the token
+is copied separately. No secret is shown in the on-screen preview. The page also
+provides a copyable read-only first task that checks status, worktrees and services.
+Reads include `canopy_status`, `canopy_worktrees`, and `canopy_job`. Worktree
+creation and setup require an explicit write grant.
 
 Still required by the epic: browser controls, read/write/destructive
 permission profiles, private client configuration export, roots inference,

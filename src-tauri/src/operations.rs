@@ -121,6 +121,9 @@ pub struct RepoDetection {
     pub origin: String,
     /// node | next | nest | rails | django | go | rust | other
     pub stack: String,
+    /// npm | pnpm | yarn | empty when this is not a detected Node project
+    pub package_manager: String,
+    pub has_config: bool,
     pub scripts: Vec<ScriptEntry>,
 }
 
@@ -184,8 +187,16 @@ pub async fn detect_repo(path: String) -> Result<RepoDetection, CanopyError> {
 
     // package.json scripts → ordered list (preserves file order)
     let mut scripts = Vec::new();
+    let mut package_manager = String::new();
     if let Ok(txt) = std::fs::read_to_string(std::path::Path::new(&top).join("package.json")) {
         if let Ok(v) = serde_json::from_str::<serde_json::Value>(&txt) {
+            package_manager = v
+                .get("packageManager")
+                .and_then(|value| value.as_str())
+                .and_then(|value| value.split('@').next())
+                .filter(|value| matches!(*value, "npm" | "pnpm" | "yarn"))
+                .unwrap_or_default()
+                .to_string();
             if let Some(obj) = v.get("scripts").and_then(|s| s.as_object()) {
                 for (name, cmd) in obj {
                     if let Some(c) = cmd.as_str() {
@@ -198,13 +209,25 @@ pub async fn detect_repo(path: String) -> Result<RepoDetection, CanopyError> {
             }
         }
     }
+    if package_manager.is_empty() && has("pnpm-lock.yaml") {
+        package_manager = "pnpm".into();
+    } else if package_manager.is_empty() && has("yarn.lock") {
+        package_manager = "yarn".into();
+    } else if package_manager.is_empty()
+        && (has("package-lock.json") || has("npm-shrinkwrap.json") || has("package.json"))
+    {
+        package_manager = "npm".into();
+    }
 
+    let has_config = has(".worktreemanager.json");
     Ok(RepoDetection {
         top,
         name,
         branch,
         origin,
         stack,
+        package_manager,
+        has_config,
         scripts,
     })
 }
@@ -1991,7 +2014,7 @@ mod tests {
         let d = dir.to_str().unwrap();
         std::fs::write(
             dir.join("package.json"),
-            r#"{"scripts":{"dev":"vite","build":"tsc"}}"#,
+            r#"{"packageManager":"pnpm@10.0.0","scripts":{"dev":"vite","build":"tsc"}}"#,
         )
         .unwrap();
         run_git(d, &["add", "."]).await.unwrap();
@@ -2007,6 +2030,8 @@ mod tests {
         let det = detect_repo(d.to_string()).await.unwrap();
         assert_eq!(det.name, dir.file_name().unwrap().to_string_lossy());
         assert_eq!(det.stack, "node");
+        assert_eq!(det.package_manager, "pnpm");
+        assert!(!det.has_config);
         assert_eq!(
             det.origin, "github.com/acme/widgets",
             "git@…:…git → github.com/…"
@@ -2030,6 +2055,8 @@ mod tests {
         init(&dir).await;
         std::fs::write(dir.join("Cargo.toml"), "[package]\nname = \"x\"\n").unwrap();
         std::fs::write(dir.join("package.json"), "{}").unwrap();
+        std::fs::write(dir.join("yarn.lock"), "").unwrap();
+        std::fs::write(dir.join(".worktreemanager.json"), "{}").unwrap();
         let det = detect_repo(dir.to_str().unwrap().to_string())
             .await
             .unwrap();
@@ -2037,6 +2064,8 @@ mod tests {
             det.stack, "rust",
             "Cargo.toml is checked before package.json"
         );
+        assert_eq!(det.package_manager, "yarn");
+        assert!(det.has_config);
 
         let plain = tmp("detect-plain");
         let _ = std::fs::remove_dir_all(&plain);

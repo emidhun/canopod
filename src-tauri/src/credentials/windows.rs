@@ -235,6 +235,13 @@ pub(super) fn temporary_names(_: &Directory, path: &Path) -> io::Result<Vec<std:
     Ok(names)
 }
 
+/// Private temporary agent configuration, created with the same protected DACL
+/// as credentials before any existing agent secrets are written into it.
+#[cfg(feature = "desktop")]
+pub(super) fn create_private_config(path: &Path) -> io::Result<File> {
+    open_handle(path, true, false, true, &descriptor()?)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -323,11 +330,4 @@ mod tests {
         drop(store);
         std::fs::rename(path, moved).unwrap();
     }
-}
-
-/// Private temporary agent configuration, created with the same protected DACL
-/// as credentials before any existing agent secrets are written into it.
-#[cfg(feature = "desktop")]
-pub(super) fn create_private_config(path: &Path) -> io::Result<File> {
-    open_handle(path, true, false, true, &descriptor()?)
 }

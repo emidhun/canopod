@@ -1,4 +1,4 @@
-# MCP client validation — 2026-09-20
+# MCP client validation
 
 This records local debug-build checks, not packaged release acceptance.
 
@@ -41,7 +41,32 @@ rotation, status, duplicate-owner rejection and explicit shutdown. Network tests
 exercise wrong credentials/Host/Origin, oversized bodies, bounded stalled calls
 and cancellation of those calls on rotation.
 
-Still unverified: packaged macOS/Linux/Windows client flows, desktop/browser
-attachment to this backend, window-close behavior after that migration, client
-configuration export UX, and first-connect/idle/performance budgets. These checks
-do not mark epic #145 or transport issue #140 complete.
+## Release-branch check — 2026-10-01
+
+This follow-up used the current `0.5.0` release branch on macOS arm64 with Codex
+CLI 0.155.1 and Claude Code 2.1.280. A separate `canopy-backend` process used an
+isolated Git repository, config, data, logs, credential and port. MCP was enabled
+read-only for `smoke-repo`; the fixture and backend were stopped after the run.
+
+Codex connected using `bearer_token_env_var`, then successfully called
+`canopy_status`, `canopy_worktrees` and `canopy_services`. It observed one main
+worktree, no services and no failures. The installed Canopy desktop host was also
+available on its normal endpoint. A second real Codex run used the automatically
+managed `http_headers_helper` entry and successfully called `canopy_status` for
+an allowed repository. No MCP write capability was granted in either run.
+
+Claude Code established the isolated MCP connection and listed Canopy's tools,
+which proves config and transport discovery, but its model request stopped before
+a tool call because the installed OAuth session had expired and could not be
+refreshed. This is recorded as unavailable, not a connectivity pass. The prior
+2026-09-20 Claude Code 2.1.267 tool call above remains historical evidence.
+
+The Settings page now supplies a copyable, read-only first task. Manual Codex
+configuration uses `CANOPY_MCP_TOKEN` through `bearer_token_env_var`, so copying
+the TOML does not copy the bearer token. Automatic setup continues to use the
+client's dynamic header helper so token rotation works after reconnect.
+
+Still unverified: packaged macOS/Linux/Windows client flows, browser attachment,
+window-close behavior after backend migration, reconnect after grant/revoke in a
+packaged build, and first-connect/idle/performance budgets. These checks do not
+mark epic #145 or transport issue #140 complete.

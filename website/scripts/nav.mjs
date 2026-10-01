@@ -51,6 +51,7 @@ export const NAV = [
   {
     group: "Examples",
     items: [
+      ["example-simple-web", "Simple web app"],
       ["example-node-postgres", "Node + Postgres app"],
       ["example-tooljet", "ToolJet monorepo"],
       ["example-other-stacks", "Other stacks"],

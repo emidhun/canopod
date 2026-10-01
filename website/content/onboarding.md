@@ -76,13 +76,14 @@ trust.
 
 **Provisioning and setup** starts collapsed because it's usually already right. Open it to find:
 
-- **Env written into each worktree's `.env`**, pre-filled with `PORT` pointing at the primary service's
-  real port variable and `PG_DB` set to `${WT_DB_NAME}`.
-- **Setup, run in order on create**: `npm install`, plus a database line built from whichever
-  `db:create` and `db:migrate` scripts exist.
+- **Env written into each worktree's `.env`**. `PORT` is proposed only when a service has a port;
+  `PG_DB=${WT_DB_NAME}` is proposed only when database scripts were detected.
+- **Setup, run in order on create**: the detected npm, pnpm or Yarn install command, plus database
+  commands built from matching scripts. Unknown projects start empty for manual configuration.
 - **Database**: the migrate and reset commands found in `scripts`, and the directory new worktrees go
   into (`<repo>/.worktrees` by default).
-- **Import `.worktreemanager.json`** if the repo already has a config, so you don't retype it.
+- An existing `.worktreemanager.json` is preserved by default. Import a file only when you intend to
+  replace the suggestions.
 
 :::note Which variable names actually resolve
 Use `${WT_DB_NAME}` and `${WT_<SERVICE>_PORT}`. Those are the names the Rust setup runner substitutes.

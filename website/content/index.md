@@ -66,7 +66,7 @@ you can reference in it. There are worked configs for a
 
 ## Scope of this documentation
 
-This documentation was written from the app's source, for version **0.4.7**. Some screens exist with
-no backend behind them yet. Those are marked *coming soon* here, exactly as the app marks them, and
-[Limitations](limitations.html) lists every one with its issue number. Nothing on these pages
-describes something the build can't do.
+This documentation describes the latest published release, **v0.4.7**. The unreleased `0.5.0`
+branch contains newer settings and MCP work that is not in the downloads yet. Some v0.4.7 screens
+exist with no backend behind them; those are marked *coming soon*, and
+[Limitations](limitations.html) lists them with their issue numbers.

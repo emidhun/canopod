@@ -4,9 +4,13 @@ import "../../../styles/mcp.css";
 
 type Client = "claude" | "codex" | "generic";
 export function connectionConfig(client: Client, connection: McpConnection): string {
-  if (client === "codex") return `[mcp_servers.canopy]\nurl = ${JSON.stringify(connection.endpoint)}\nhttp_headers = { Authorization = ${JSON.stringify(`Bearer ${connection.token}`)} }`;
+  if (client === "codex") return `[mcp_servers.canopy]\nurl = ${JSON.stringify(connection.endpoint)}\nbearer_token_env_var = "CANOPY_MCP_TOKEN"`;
   if (client === "generic") return JSON.stringify({ url: connection.endpoint, transport: "streamable-http", headers: { Authorization: `Bearer ${connection.token}` } }, null, 2);
   return JSON.stringify({ mcpServers: { canopy: { type: "http", url: connection.endpoint, headers: { Authorization: `Bearer ${connection.token}` } } } }, null, 2);
+}
+
+export function firstTask(repoId: string): string {
+  return `Call canopy_status for repository ${JSON.stringify(repoId)}. Then list its worktrees and services, report anything stopped or failing, and do not make changes.`;
 }
 
 export default function McpPage({ preferredRepoPath }: { preferredRepoPath?: string }) {
@@ -75,17 +79,20 @@ export default function McpPage({ preferredRepoPath }: { preferredRepoPath?: str
     } catch (e) { setError(errText(e)); }
     finally { setBusy(false); }
   }
-  async function copy(kind: "config" | "token" | "endpoint" | "transport" | "header") {
+  async function copy(kind: "config" | "token" | "endpoint" | "transport" | "header" | "task") {
     setBusy(true); setError(""); setNotice("");
     try {
       if (!navigator.clipboard) throw new Error("Clipboard is unavailable. Use Canopy's desktop app.");
       if (kind === "endpoint") await navigator.clipboard.writeText(status!.endpoint);
       else if (kind === "transport") await navigator.clipboard.writeText("streamable-http");
+      else if (kind === "task") await navigator.clipboard.writeText(firstTask(status!.repoIds[0]));
       else {
         const connection = await ipc.mcpConnection();
         await navigator.clipboard.writeText(kind === "token" ? connection.token : kind === "header" ? `Bearer ${connection.token}` : connectionConfig(client, connection));
       }
-      setNotice(kind === "config" ? "Configuration copied, including the token. Paste it into your agent's private configuration and reconnect."
+      setNotice(kind === "config" ? client === "codex" ? "Codex configuration copied. Set CANOPY_MCP_TOKEN from the separately copied token, then restart Codex."
+        : "Configuration copied, including the token. Paste it into your agent's private configuration and reconnect."
+        : kind === "task" ? "First task copied. Paste it into your connected agent."
         : kind === "token" ? "MCP token copied." : kind === "header" ? "Authorization header value copied." : kind === "transport" ? "Transport copied." : "Endpoint copied.");
     } catch (e) { setError(errText(e)); }
     finally { setBusy(false); }
@@ -139,14 +146,15 @@ export default function McpPage({ preferredRepoPath }: { preferredRepoPath?: str
       <div className="mcp-field"><label className="mcp-label">Bearer token<input readOnly type="password" value={status.enabled ? "hidden-token" : ""} placeholder="Enable MCP to create a token" /></label><button className="btn" disabled={busy || !status.enabled} onClick={() => void copy("token")}>Copy token</button></div>
       <div className="mcp-field"><label className="mcp-label">Authorization header<input readOnly value="Authorization: Bearer <MCP_TOKEN>" /></label><button className="btn" disabled={busy || !status.enabled} onClick={() => void copy("header")}>Copy Authorization value</button></div>
       <details><summary>Copy a complete configuration instead</summary>
-      <p>{client === "codex" ? "Merge this entry into your private ~/.codex/config.toml, then restart Codex. Replace an existing canopy entry instead of adding a duplicate."
+      <p>{client === "codex" ? "Merge this entry into your private ~/.codex/config.toml, set CANOPY_MCP_TOKEN to the separately copied token before starting Codex, then restart it. Replace an existing canopy entry instead of adding a duplicate."
         : client === "claude" ? "Save this as a private JSON file outside your repository, then start Claude Code with: claude --mcp-config /path/to/canopy-mcp.json. Use /mcp to check the connection."
         : "Add a Streamable HTTP server with this URL and Authorization header in your MCP client."}</p>
       <pre className="mcp-config">{connectionConfig(client, { endpoint: status.endpoint, token: "<MCP_TOKEN>" })}</pre>
       <button className="btn pri" disabled={busy || !status.enabled} onClick={() => void copy("config")}>Copy agent configuration</button>
       </details>
-      <p className="mcp-hint">The copied configuration includes your secret token. Keep the file private and out of version control. After connecting, ask the agent to call canopy_status with one of these repository IDs:</p>
+      <p className="mcp-hint">{client === "codex" ? "The Codex configuration references CANOPY_MCP_TOKEN instead of embedding your secret. Keep the token private." : "The copied configuration includes your secret token. Keep the file private and out of version control."} After connecting, use one of these repository IDs:</p>
       <ul>{repos.filter((r) => status.repoIds.includes(r.id)).map((r) => <li key={r.id}>{r.name}: <code>{r.id}</code></li>)}</ul>
+      {status.repoIds.length > 0 && <><pre className="mcp-config">{firstTask(status.repoIds[0])}</pre><button className="btn" disabled={busy} onClick={() => void copy("task")}>Copy first task</button></>}
       <div className="mcp-actions"><button className="btn" disabled={busy} onClick={() => setRotate(true)}>Rotate token…</button></div>
       {rotate && <div className="mcp-confirm"><p>Rotating invalidates the current token. Manually configured agents will need the new token. Agents connected here can read it when they reconnect.</p><div className="mcp-actions"><button className="btn danger" disabled={busy} onClick={() => void change("rotate")}>Rotate token</button><button className="btn" disabled={busy} onClick={() => setRotate(false)}>Cancel</button></div></div>}
     </section>}

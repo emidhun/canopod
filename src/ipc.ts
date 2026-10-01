@@ -302,6 +302,8 @@ export interface RepoDetection {
   branch: string;
   origin: string;
   stack: string;
+  packageManager: string;
+  hasConfig: boolean;
   scripts: { name: string; command: string }[];
 }
 

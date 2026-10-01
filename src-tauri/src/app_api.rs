@@ -1033,6 +1033,107 @@ mod tests {
 
     #[cfg(unix)]
     #[tokio::test]
+    async fn simple_project_recovers_setup_and_serves_two_worktrees() {
+        let running = Running::start().await;
+        let sentinel = running.directory.0.join("allow-setup");
+        let setup = format!(
+            "echo retained > setup-input; test -f {} || exit 23; echo ready > setup-ready",
+            crate::toolchain::sh_quote(sentinel.to_str().unwrap())
+        );
+        let (bearer, path) = running.write_fixture(&setup).await;
+        running.grant_writes(true).await;
+
+        let first = tool_data(&running.tool(&bearer, "canopy_create_worktree", serde_json::json!({
+            "repoId":"allowed","branch":"acceptance-one","base":"main","requestKey":"acceptance-one"
+        })).await);
+        let first_job = running.job_done(&bearer, first["job"]["jobId"].as_str().unwrap()).await;
+        assert_eq!(first_job["status"], "failed", "{first_job}");
+        let first_path = first_job["createdPath"].as_str().unwrap();
+        assert_eq!(std::fs::read_to_string(Path::new(first_path).join("setup-input")).unwrap().trim(), "retained");
+        let config_path = Path::new(&path).join(".worktreemanager.json");
+        let config_before = std::fs::read(&config_path).unwrap();
+
+        std::fs::write(&sentinel, "retry allowed").unwrap();
+        let retry = tool_data(&running.tool(&bearer, "canopy_run_setup", serde_json::json!({
+            "repoId":"allowed","worktreeKey":first_path,"requestKey":"acceptance-retry"
+        })).await);
+        let retry_job = running.job_done(&bearer, retry["job"]["jobId"].as_str().unwrap()).await;
+        assert_eq!(retry_job["status"], "succeeded", "{retry_job}");
+        assert!(Path::new(first_path).join("setup-ready").exists());
+        assert_eq!(std::fs::read(&config_path).unwrap(), config_before);
+
+        let second = tool_data(&running.tool(&bearer, "canopy_create_worktree", serde_json::json!({
+            "repoId":"allowed","branch":"acceptance-two","base":"main","requestKey":"acceptance-two"
+        })).await);
+        let second_job = running.job_done(&bearer, second["job"]["jobId"].as_str().unwrap()).await;
+        assert_eq!(second_job["status"], "succeeded", "{second_job}");
+        let second_path = second_job["createdPath"].as_str().unwrap();
+        assert!(Path::new(second_path).join("setup-ready").exists());
+
+        let base_port = (0..100).find_map(|_| {
+            let candidate = std::net::TcpListener::bind("127.0.0.1:0").ok()?.local_addr().ok()?.port();
+            if candidate > 65000 { return None; }
+            let checks = [candidate, candidate + 10, candidate + 20]
+                .into_iter()
+                .map(|port| std::net::TcpListener::bind((std::net::Ipv4Addr::LOCALHOST, port)))
+                .collect::<Result<Vec<_>, _>>()
+                .ok()?;
+            drop(checks);
+            Some(candidate)
+        }).expect("three-port range");
+        running.app.state::<AppState>().settings.write().repos[0].services.push(crate::settings::ServiceCfg {
+            id: "web".into(),
+            name: "Web".into(),
+            kind: "web".into(),
+            command: "python3 -m http.server \"$PORT\" --bind 127.0.0.1".into(),
+            base_port: Some(base_port),
+            ..Default::default()
+        });
+        crate::state::refresh_tree(&running.app).await.unwrap();
+        running.mcp.configure_access(true, None, Some(true), Some(true)).await.unwrap();
+
+        let paths = [first_path, second_path];
+        let mut keys = Vec::new();
+        let mut ports = Vec::new();
+        {
+            let tree = running.app.state::<AppState>().tree.read();
+            for path in paths {
+                let service = tree.iter().flat_map(|repo| &repo.worktrees)
+                    .find(|worktree| worktree.wt_key == path).unwrap().services
+                    .iter().find(|service| service.service_id == "web").unwrap();
+                keys.push(service.svc_key.clone());
+                ports.push(service.port.unwrap());
+            }
+        }
+        assert_ne!(ports[0], ports[1]);
+        for (index, key) in keys.iter().enumerate() {
+            let started = tool_data(&running.tool(&bearer, "canopy_start_service", serde_json::json!({
+                "repoId":"allowed","serviceKey":key,"requestKey":format!("acceptance-start-{index}")
+            })).await);
+            assert_eq!(running.job_done(&bearer, started["job"]["jobId"].as_str().unwrap()).await["status"], "succeeded");
+        }
+        for port in &ports {
+            tokio::time::timeout(Duration::from_secs(10), async {
+                loop {
+                    if running.client.get(format!("http://127.0.0.1:{port}"))
+                        .send().await.is_ok_and(|response| response.status().is_success()) { break; }
+                    tokio::time::sleep(Duration::from_millis(50)).await;
+                }
+            }).await.expect("service did not become reachable");
+        }
+        for (index, key) in keys.iter().enumerate() {
+            let stopped = tool_data(&running.tool(&bearer, "canopy_stop_service", serde_json::json!({
+                "repoId":"allowed","serviceKey":key,"requestKey":format!("acceptance-stop-{index}")
+            })).await);
+            assert_eq!(running.job_done(&bearer, stopped["job"]["jobId"].as_str().unwrap()).await["status"], "succeeded");
+        }
+        assert!(Path::new(&path).join(".worktrees/acceptance-one").exists());
+        assert!(Path::new(&path).join(".worktrees/acceptance-two").exists());
+        running.finish().await;
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
     async fn mcp_shutdown_interrupts_setup_and_flushes_job() {
         let running = Running::start().await;
         let (bearer, path) = running.write_fixture("sleep 60 & echo $! > setup-child; echo started > setup-started; wait; echo escaped > setup-escaped").await;

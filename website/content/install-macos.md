@@ -14,9 +14,9 @@ tested, and the only build anyone has run on a real desktop.
 |---|---|
 | macOS on Apple Silicon | The published build targets `aarch64-apple-darwin`. There is no Intel or universal build. |
 | `git` | Every worktree operation shells out to git. |
-| A version manager (asdf / nvm / fnm) with the Node version your project pins | Canopy reads `.nvmrc`, `.node-version` and `.tool-versions` per worktree. |
+| The runtimes and package managers used by your project | For Node projects, Canopy can read `.nvmrc`, `.node-version` and `.tool-versions` per worktree. Canopy itself does not require Node. |
 | **Postgres** running locally | Only for the database features: snapshot, switch, export, restore, reset. |
-| A `.worktreemanager.json` in the repo | Optional at first. It's what makes setup travel with the branch. |
+| A `.worktreemanager.json` in the repo | Optional. Commit one when setup should travel with the branch. |
 
 :::note
 Your Postgres client binaries need to match the server's major version. Canopy asks the running server
