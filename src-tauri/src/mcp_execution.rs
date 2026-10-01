@@ -409,7 +409,10 @@ async fn run(
                             let canonical = std::fs::canonicalize(&args.worktree_key)
                                 .map_err(|_| "worktree_not_found")?;
                             if !worktrees.iter().any(|w| {
-                                !w.is_main && !w.prunable && Path::new(&w.path) == canonical
+                                !w.is_main
+                                    && !w.prunable
+                                    && std::fs::canonicalize(&w.path).ok().as_deref()
+                                        == Some(canonical.as_path())
                             }) {
                                 return Err("worktree_not_allowed".into());
                             }

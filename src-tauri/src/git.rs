@@ -89,7 +89,29 @@ pub struct WorktreeInfo {
 /// `git worktree list --porcelain` — first entry is the main working tree.
 pub async fn list_worktrees(repo_path: &str) -> Result<Vec<WorktreeInfo>, String> {
     let out = run_git(repo_path, &["worktree", "list", "--porcelain"]).await?;
-    Ok(parse_worktree_list(&out))
+    Ok(parse_worktree_list(&out)
+        .into_iter()
+        .map(|mut worktree| {
+            if let Ok(path) = std::fs::canonicalize(&worktree.path) {
+                worktree.path = display_path(&path);
+            }
+            worktree
+        })
+        .collect())
+}
+
+fn display_path(path: &std::path::Path) -> String {
+    let value = path.to_string_lossy();
+    #[cfg(windows)]
+    {
+        if let Some(rest) = value.strip_prefix(r"\\?\UNC\") {
+            return format!(r"\\{rest}");
+        }
+        if let Some(rest) = value.strip_prefix(r"\\?\") {
+            return rest.to_owned();
+        }
+    }
+    value.into_owned()
 }
 
 /// Pure parser for `git worktree list --porcelain` output.
