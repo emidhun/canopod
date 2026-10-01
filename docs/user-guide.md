@@ -8,7 +8,7 @@ A task-oriented walkthrough of using Canopy day to day. For a reference of every
 ## 1. Install and launch
 
 **Quickest:** `brew install --cask emidhun/canopy/canopy` — or grab the
-[macOS DMG](https://github.com/emidhun/canopy/releases/download/v0.4.0/Canopy_0.4.0_aarch64.dmg)
+[macOS DMG](https://github.com/emidhun/canopy/releases/download/v0.4.7/Canopy_0.4.7_aarch64.dmg)
 / [Linux packages](https://github.com/emidhun/canopy/releases) directly.
 Full steps in the [README](../README.md#install) (or
 [distribution.md](distribution.md) for the details). Once installed, launch **Canopy** — it runs as a
