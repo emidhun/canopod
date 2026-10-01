@@ -418,14 +418,16 @@ function Pane({
                 )
               );
             return (
-              <TerminalPane
-                key={`${s.id}#${s.gen}`}
-                termId={s.id}
-                cwd={wt.path}
-                command={s.command}
-                hidden={!isActive}
-                readOnly={!s.running}
-              />
+              <div key={s.id} className={"term-body" + (isActive ? "" : " hidden")} role="tabpanel" aria-label={s.title} aria-hidden={!isActive}>
+                <TerminalPane
+                  key={`${s.id}#${s.gen}`}
+                  termId={s.id}
+                  cwd={wt.path}
+                  command={s.command}
+                  hidden={!isActive}
+                  readOnly={!s.running}
+                />
+              </div>
             );
           })}
 

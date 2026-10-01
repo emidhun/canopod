@@ -1,28 +1,56 @@
+#[cfg(feature = "desktop")]
 mod commands;
+pub mod backend;
+pub mod app_api;
+pub mod mcp;
+pub mod jobs;
+pub mod credentials;
 #[cfg(test)]
 mod csp;
-mod db;
-mod error;
-mod git;
-mod proc;
-mod services;
-mod settings;
-mod setup;
-mod state;
-mod stats;
-#[cfg(feature = "devtools")]
+pub mod db;
+#[cfg(feature = "desktop")]
+mod desktop_host;
+#[cfg(feature = "desktop")]
+mod desktop_api;
+#[cfg(feature = "desktop")]
+mod agent_config;
+pub mod diagnostics;
+pub mod disk;
+pub mod error;
+pub mod events;
+pub mod git;
+pub mod notify;
+pub mod operations;
+pub mod ownership;
+pub mod proc;
+pub mod runtime;
+pub mod services;
+pub mod settings;
+pub(crate) mod settings_store;
+pub mod setup;
+pub mod state;
+pub mod stats;
+#[cfg(all(feature = "devtools", feature = "desktop"))]
 mod suite;
-mod terminal;
-mod toolchain;
+pub mod terminal;
+mod terminal_images;
+pub mod toolchain;
+#[cfg(feature = "desktop")]
 mod tray;
+pub mod updates;
 
+#[cfg(all(unix, feature = "devtools", feature = "desktop"))]
 use services::ProcTable;
+#[cfg(feature = "desktop")]
 use state::AppState;
+#[cfg(feature = "desktop")]
 use tauri::Manager;
+#[cfg(feature = "desktop")]
 use terminal::TermTable;
 
 /// Is any Canopy window (main / popover / detached terminal) on screen?
 /// Queries the OS — used only by the 1s poll below; hot paths read the cache.
+#[cfg(feature = "desktop")]
 pub(crate) fn any_window_visible(app: &tauri::AppHandle) -> bool {
     app.webview_windows()
         .values()
@@ -34,18 +62,22 @@ pub(crate) fn any_window_visible(app: &tauri::AppHandle) -> bool {
 /// WebKit/WebView2 processes hot for work nobody can see — the log pump and
 /// PTY reader consult this per emit, so it must be an atomic read, not an
 /// OS query marshalled to the main thread per 32KB chunk.
+#[cfg(feature = "desktop")]
 static WINDOWS_VISIBLE: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(true);
 
+#[cfg(feature = "desktop")]
 pub(crate) fn windows_visible() -> bool {
     WINDOWS_VISIBLE.load(std::sync::atomic::Ordering::Relaxed)
 }
 
 /// Called by every path that shows a window, so the ≤1s cache staleness can
 /// never swallow the first events after a show.
+#[cfg(feature = "desktop")]
 pub(crate) fn note_window_shown() {
     WINDOWS_VISIBLE.store(true, std::sync::atomic::Ordering::Relaxed);
 }
 
+#[cfg(feature = "desktop")]
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     // GUI apps on macOS get a bare PATH; fix it so git/node/nvm resolve.
@@ -82,37 +114,102 @@ pub fn run() {
         )
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_positioner::init())
-        .plugin(tauri_plugin_dialog::init());
+        .plugin(tauri_plugin_dialog::init())
+        .plugin(tauri_plugin_notification::init());
     // NSPanel plugin is macOS-only; other platforms use a plain popover window.
     #[cfg(target_os = "macos")]
     let builder = builder.plugin(tauri_nspanel::init());
     builder
         .setup(|app| {
             let handle = app.handle().clone();
+            // Cross-executable ownership must precede every runtime read and
+            // orphan sweep. The desktop single-instance plugin alone cannot
+            // exclude a headless host using the same data directory.
+            let owner = match ownership::RuntimeOwner::acquire(&handle.path().app_data_dir()?) {
+                Ok(owner) => owner,
+                Err(error) => {
+                    use tauri_plugin_dialog::{DialogExt, MessageDialogKind};
+                    log::error!("{error}");
+                    // Keep the event loop alive for the native dialog. A blocking
+                    // dialog in setup deadlocks the main thread on some platforms.
+                    // No webview or runtime may operate without ownership.
+                    let exit = handle.clone();
+                    handle
+                        .dialog()
+                        .message(error)
+                        .title("Canopy could not start")
+                        .kind(MessageDialogKind::Error)
+                        .show(move |_| exit.exit(1));
+                    return Ok(());
+                }
+            };
+            let paths = runtime::RuntimePaths {
+                config: handle.path().app_config_dir()?,
+                data: handle.path().app_data_dir()?,
+                logs: handle.path().app_log_dir()?,
+            };
+            let loaded = settings::load_settings(&paths);
+            // git credentials are process-wide (see git.rs) — publish them
+            // before anything can run a git command
+            git::apply_credentials(&loaded.security.ssh_key, &loaded.security.credential_helper);
+            let context = runtime::RuntimeContext::with_owner(
+                AppState::new(loaded, settings::load_runtime(&paths)),
+                paths,
+                tauri::async_runtime::handle().inner().clone(),
+                std::sync::Arc::new(desktop_host::DesktopHost(handle.clone())),
+                owner,
+            );
+            // Share the desktop runtime with MCP; do not start a second host
+            // or its background refresh/process tasks.
+            let exit = handle.clone();
+            let server = tauri::async_runtime::block_on(desktop_api::DesktopApi::start(
+                context.clone(),
+                move |result| {
+                    let code = if let Err(error) = result {
+                        log::error!("desktop API stopped: {error}");
+                        1
+                    } else { 0 };
+                    exit.exit(code);
+                },
+            )).map_err(std::io::Error::other)?;
+            app.manage(server);
+            app.manage(context.clone());
+            for config in deferred_windows(&app.config().app.windows) {
+                tauri::WebviewWindowBuilder::from_config(app, config)?.build()?;
+            }
             tray::init(&handle)?;
-            app.manage(AppState::new(
-                settings::load_settings(&handle),
-                settings::load_runtime(&handle),
-            ));
-            app.manage(ProcTable::default());
-            app.manage(TermTable::default());
+            let desktop = handle;
+
+
+            // crash reports + the update check need AppState for their
+            // preferences, so both are installed after it is managed
+            updates::install_panic_hook(context.clone());
+            updates::spawn_check_task(context.clone());
 
             // kill process groups left over from a crashed previous run
-            services::sweep_orphans(&handle);
-            terminal::sweep_orphans(&handle);
+            services::sweep_orphans(&context);
+            terminal::sweep_orphans(&context);
 
-            stats::spawn_stats_task(handle.clone());
+            stats::spawn_stats_task(context.clone());
 
-            // 1s visibility poll feeding the WINDOWS_VISIBLE cache
+            // 1s visibility poll feeding the WINDOWS_VISIBLE cache, plus the
+            // agent-activity sweep. Both are cheap and want the same cadence:
+            // "an agent is waiting on you" is the second-highest priority
+            // state in the app, so a second is about the longest it can go
+            // unnoticed and still feel immediate. The sweep runs even while
+            // every window is hidden — the tray badge and the attention queue
+            // are exactly what someone checks when the app isn't on screen —
+            // and it emits only on a transition, never on the tick.
             {
-                let handle = handle.clone();
+                let context = context.clone();
                 tauri::async_runtime::spawn(async move {
                     loop {
                         tokio::time::sleep(std::time::Duration::from_secs(1)).await;
                         WINDOWS_VISIBLE.store(
-                            any_window_visible(&handle),
+                            any_window_visible(&desktop),
                             std::sync::atomic::Ordering::Relaxed,
                         );
+                        terminal::poll_states(&context);
                     }
                 });
             }
@@ -126,13 +223,12 @@ pub fn run() {
 
             // periodically sweep idle shell terminals (bounds long-run memory)
             {
-                let handle = handle.clone();
+                let context = context.clone();
                 tauri::async_runtime::spawn(async move {
                     loop {
                         tokio::time::sleep(std::time::Duration::from_secs(5 * 60)).await;
-                        if let Some(table) = handle.try_state::<TermTable>() {
-                            terminal::sweep_idle(&table);
-                        }
+                        let table = context.state::<TermTable>();
+                        terminal::sweep_idle(&context, table);
                     }
                 });
             }
@@ -142,27 +238,27 @@ pub fn run() {
             // the periodic tick is skipped (show_main_window / the popover
             // toggle kick an immediate refresh when a window comes back).
             tauri::async_runtime::spawn(async move {
-                state::refresh_all(&handle).await;
+                state::refresh_all(&context).await;
                 loop {
                     tokio::time::sleep(std::time::Duration::from_secs(60)).await;
                     if !windows_visible() {
                         continue;
                     }
-                    state::refresh_all(&handle).await;
+                    state::refresh_all(&context).await;
                 }
             });
 
             // headless end-to-end suite: WTM_SUITE=<repoId>
             #[cfg(feature = "devtools")]
             if let Ok(repo_id) = std::env::var("WTM_SUITE") {
-                suite::run(app.handle().clone(), repo_id);
+                suite::run(app.state::<runtime::RuntimeContext>().inner().clone(), repo_id);
             }
 
             // headless smoke test of the process layer: WTM_SELFTEST=<svcKey>
             // (Unix-only: it pokes pgids with killpg to verify the group died)
             #[cfg(all(unix, feature = "devtools"))]
             if let Ok(key) = std::env::var("WTM_SELFTEST") {
-                let handle = app.handle().clone();
+                let handle = app.state::<runtime::RuntimeContext>().inner().clone();
                 tauri::async_runtime::spawn(async move {
                     tokio::time::sleep(std::time::Duration::from_secs(2)).await;
                     eprintln!("[selftest] starting {key}");
@@ -195,7 +291,7 @@ pub fn run() {
             // headless create+start test: WTM_SELFTEST_CREATE="repoId|branch|serviceId"
             #[cfg(feature = "devtools")]
             if let Ok(spec) = std::env::var("WTM_SELFTEST_CREATE") {
-                let handle = app.handle().clone();
+                let handle = app.state::<runtime::RuntimeContext>().inner().clone();
                 tauri::async_runtime::spawn(async move {
                     tokio::time::sleep(std::time::Duration::from_secs(2)).await;
                     let parts: Vec<&str> = spec.split('|').collect();
@@ -205,7 +301,7 @@ pub fn run() {
                     }
                     let (repo_id, branch, service_id) = (parts[0], parts[1], parts[2]);
                     eprintln!("[ct] create_worktree repo={repo_id} branch={branch}");
-                    match commands::create_worktree(
+                    match operations::create_worktree(
                         handle.clone(),
                         repo_id.to_string(),
                         branch.to_string(),
@@ -261,6 +357,12 @@ pub fn run() {
             }
         })
         .invoke_handler(tauri::generate_handler![
+            commands::mcp_status,
+            commands::mcp_configure,
+            commands::mcp_rotate_token,
+            commands::mcp_connection,
+            commands::mcp_agent_target,
+            commands::mcp_connect_agent,
             commands::get_tree,
             commands::refresh,
             commands::get_settings,
@@ -283,12 +385,14 @@ pub fn run() {
             commands::save_text_file,
             commands::get_logs,
             commands::terminal_open,
+            commands::terminal_store_image,
             commands::terminal_write,
             commands::terminal_resize,
             commands::terminal_get_buffer,
             commands::terminal_close,
             commands::write_worktree_context,
             commands::resolve_agent_command,
+            commands::service_env,
             commands::service_start,
             commands::service_stop,
             commands::service_restart,
@@ -298,10 +402,12 @@ pub fn run() {
             commands::open_in_editor,
             commands::open_file_in_editor,
             commands::reveal_in_finder,
+            commands::reveal_repo,
             commands::open_terminal,
             commands::open_port,
             commands::show_main_window,
             commands::quit_app,
+            commands::preview_worktree,
             commands::create_worktree,
             commands::run_worktree_setup,
             commands::worktree_dirty_report,
@@ -322,20 +428,59 @@ pub fn run() {
             commands::set_service_port,
             commands::run_migration,
             commands::run_custom_command,
+            commands::get_disk_usage,
+            commands::scan_disk_usage,
+            commands::set_worktree_pinned,
+            commands::gather_diagnostics,
+            commands::list_experiments,
+            commands::open_log_dir,
+            commands::clear_caches,
+            commands::reset_settings,
+            commands::check_for_update,
+            commands::open_crash_reports,
+            commands::crash_report_count,
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application")
         .run(|app, event| {
             // Cmd-Q / app exit: kill every spawned process group before dying
-            if let tauri::RunEvent::ExitRequested { .. } = event {
-                // kill embedded terminal shells before their host process dies
-                if let Some(table) = app.try_state::<TermTable>() {
-                    terminal::close_all(&table);
+            if let tauri::RunEvent::ExitRequested { code, api, .. } = event {
+                if app.try_state::<runtime::RuntimeContext>().is_none() {
+                    if code.is_none() {
+                        api.prevent_exit();
+                    }
+                    return;
                 }
-                let handle = app.clone();
+                // kill embedded terminal shells before their host process dies
+                let Some(context) = app.try_state::<runtime::RuntimeContext>() else { return };
+                let handle = context.inner().clone();
                 tauri::async_runtime::block_on(async move {
+                    if let Some(server) = app.try_state::<desktop_api::DesktopApi>() {
+                        server.shutdown().await;
+                    }
+                    terminal::close_all(&handle);
                     services::stop_all(&handle).await;
                 });
             }
         });
+}
+
+// Tauri has already built configs with create=true. Only deferred windows
+// belong to the post-ownership initialization path.
+#[cfg(feature = "desktop")]
+fn deferred_windows(windows: &[tauri::utils::config::WindowConfig]) -> impl Iterator<Item = &tauri::utils::config::WindowConfig> {
+    windows.iter().filter(|config| !config.create)
+}
+
+#[cfg(all(test, feature = "desktop"))]
+mod window_tests {
+    #[test]
+    fn builds_only_deferred_windows() {
+        let windows = [
+            tauri::utils::config::WindowConfig { label: "automatic".into(), create: true, ..Default::default() },
+            tauri::utils::config::WindowConfig { label: "deferred".into(), create: false, ..Default::default() },
+        ];
+        let labels: Vec<_> = super::deferred_windows(&windows).map(|config| config.label.as_str()).collect();
+        assert_eq!(labels, ["deferred"]);
+    }
 }

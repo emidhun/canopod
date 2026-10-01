@@ -2,13 +2,25 @@
 
    Attention first, then running, then idle. Every section's table shares one
    geometry so columns align down the whole page. */
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 import { Alert, ChevRight, Play, Restart, SidebarIcon, Sparkle, Stop, Terminal } from "../../icons";
 import { useStore, type LaneSession } from "../../store";
 import { isLive, type RepoNode, type WorktreeNode } from "../../types";
 import { agentState, dotClass, nextAction, wtDot, type AttnItem } from "../nextAction";
 
 const EMPTY: LaneSession[] = [];
+
+/* Sizes here are read to decide what to reclaim, so the unit is the one that
+   makes that decision: whole GB below a decimal, MB under a gigabyte. A
+   worktree is 1–2 GB, and "1.4 GB" answers the question that "1,483 MB"
+   makes you do arithmetic for. */
+function fmtBytes(n: number): string {
+  const gb = n / 1024 ** 3;
+  if (gb >= 1) return `${gb.toFixed(1)} GB`;
+  const mb = n / 1024 ** 2;
+  if (mb >= 1) return `${Math.round(mb)} MB`;
+  return `${Math.max(1, Math.round(n / 1024))} KB`;
+}
 
 export default function Overview({
   attn,
@@ -28,6 +40,8 @@ export default function Overview({
   const tree = useStore((s) => s.tree);
   const sessions = useStore((s) => s.sessions);
   const stats = useStore((s) => s.stats);
+  const disk = useStore((s) => s.disk);
+  const scanDisk = useStore((s) => s.scanDisk);
   const startAll = useStore((s) => s.startAll);
   const stopAll = useStore((s) => s.stopAll);
   const showToast = useStore((s) => s.showToast);
@@ -41,6 +55,17 @@ export default function Overview({
   // a finished-in-the-background notice is news, not a demand — it stays in
   // the queue without pulling its worktree into the Needs-you section
   const needs = new Set(attn.filter((a) => a.kind !== "info").map((a) => a.wtKey));
+
+  // Measure lazily: the walk only happens because someone opened this view,
+  // and anything measured recently enough is skipped by the backend. Runs on
+  // mount and whenever the worktree set changes, never on every render.
+  // Measuring is NOT automatic. A recursive walk of a few node_modules trees
+  // is hundreds of thousands of stat calls, and opening this view is not a
+  // request to pay that for every worktree at once — so each row measures only
+  // when asked. Anything already measured (by an earlier click, or force-
+  // refreshed after setup) is shown straight from the cache.
+  const [asked, setAsked] = useState<Record<string, boolean>>({});
+  const measure = (wtKey: string) => { setAsked((a) => ({ ...a, [wtKey]: true })); scanDisk([wtKey]); };
 
   const head = (
     <tr>
@@ -102,12 +127,40 @@ export default function Overview({
         </td>
         <td className="r num">{live ? `${cpu.toFixed(1)}%` : "—"}</td>
         <td className="r num">{live ? `${Math.round(mem)} MB` : "—"}</td>
-        {/* TODO(#55): no backend measures a worktree's on-disk footprint yet.
-            The column is kept so the table geometry matches the design and
-            wiring it up stays purely additive. */}
-        <td className="r num muted" title="Disk usage is not measured yet">
-          —
-        </td>
+        {(() => {
+          const d = disk[wt.wtKey];
+          // No figure yet: offer the walk rather than starting it. An estimate
+          // would be a number someone deletes on, so nothing is guessed.
+          if (!d) {
+            return (
+              <td className="r num">
+                {asked[wt.wtKey] ? (
+                  <span className="muted" title="Measuring…">…</span>
+                ) : (
+                  <button
+                    className="cxs-measure"
+                    title="Measure this worktree's disk usage"
+                    onClick={(e) => { e.stopPropagation(); measure(wt.wtKey); }}
+                  >
+                    Measure
+                  </button>
+                )}
+              </td>
+            );
+          }
+          const when = new Date(d.scannedAt * 1000).toLocaleTimeString();
+          return (
+            <td
+              className="r num"
+              title={(d.partial ? `At least ${fmtBytes(d.bytes)} — the scan hit its limit (${when})` : `Measured at ${when}`) + " · click to re-measure"}
+              onClick={(e) => { e.stopPropagation(); measure(wt.wtKey); }}
+              style={{ cursor: "pointer" }}
+            >
+              {d.partial ? "≥ " : ""}
+              {fmtBytes(d.bytes)}
+            </td>
+          );
+        })()}
         <td className="num muted">
           {g ? (
             <>

@@ -198,7 +198,7 @@ pub(crate) fn catch_up_refresh(app: &AppHandle) {
     crate::note_window_shown();
     let app = app.clone();
     tauri::async_runtime::spawn(async move {
-        crate::state::refresh_all(&app).await;
+        crate::state::refresh_all(app.state::<crate::runtime::RuntimeContext>().inner()).await;
     });
 }
 

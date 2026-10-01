@@ -111,7 +111,7 @@ const DEFAULT_LANE = 372;
 const TIGHT = 1180;
 
 const NO_SESSIONS: LaneSession[] = [];
-const defaultAgent = (legacy: string): AgentCfg => ({ id: "default", name: "Claude", command: legacy.trim() || "claude", promptOnLaunch: true });
+const defaultAgent = (legacy: string): AgentCfg => ({ id: "default", name: "Claude", command: legacy.trim() || "claude", promptOnLaunch: true, waitingPatterns: "" });
 const shellQuote = (value: string) => `'${value.replace(/'/g, `'"'"'`)}'`;
 
 export default function AgentLane({ repo, wt }: { repo: RepoNode; wt: WorktreeNode }) {

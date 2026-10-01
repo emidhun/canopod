@@ -43,7 +43,8 @@ submodule workflows like ToolJet.
 
 - **Platform:** macOS **arm64** (Apple Silicon). Linux & Windows ports are experimental — they compile and pass CI, but aren't yet validated on a desktop.
 - **Stack:** Tauri 2 (Rust) + React + zustand
-- **Current version:** 0.4.7
+- **Latest published version:** 0.4.7. The `release/0.5.0` branch is unreleased; its source and
+  release notes may describe behavior that is not in the downloads above yet.
 
 ---
 
@@ -64,11 +65,13 @@ hand is tedious and error-prone. Canopy automates it:
 
 ## Requirements
 
-- macOS on Apple Silicon (arm64)
-- A version manager providing the Node version your project needs (e.g. **Node 22.15.1** for ToolJet)
-- **Postgres** running locally (for database-backed projects like ToolJet)
 - **git**
-- A `.worktreemanager.json` in the repo (commit it so it travels per branch) — see the
+- macOS on Apple Silicon (arm64) for the primary tested desktop build; Linux and Windows packages
+  are experimental
+- The runtimes and package managers your repository's configured commands use; Canopy itself does
+  not require Node
+- A local database only when your project or configured database actions need one
+- Optionally, a committed `.worktreemanager.json` so setup travels with each branch — see the
   [Configuration guide](docs/configuration.md)
 
 ---
@@ -120,11 +123,11 @@ install/signing details are in [docs/distribution.md](docs/distribution.md).
 ## Quick start (users)
 
 1. Click the Canopy icon in the menu bar → **Open Manager**.
-2. **Settings** (gear, top-right) → **Add repo** → pick your repo's main checkout folder. Set the
-   worktree directory and define your **services** (id / name / command / cwd / basePort).
-3. Commit a `.worktreemanager.json` in the repo describing env overrides + setup commands (see the
-   [Configuration guide](docs/configuration.md); a ToolJet example is in
-   [docs/tooljet-config.md](docs/tooljet-config.md)).
+2. On first launch, choose **Add a repository**, pick the main checkout, and review the detected
+   services and editable setup suggestions. Existing configuration should be reviewed, not replaced.
+3. Optionally commit a `.worktreemanager.json` describing env overrides and setup commands so they
+   travel with the branch (see the [Configuration guide](docs/configuration.md); a ToolJet example
+   is in [docs/tooljet-config.md](docs/tooljet-config.md)).
 4. **New worktree** → pick a new or existing branch/tag → Canopy creates the worktree, provisions it,
    and streams progress.
 5. **Start all** to boot the worktree's services, then click a service's port (`:3000`) to open it

@@ -11,6 +11,7 @@
 import { useEffect, useRef, useState } from "react";
 import { Chevron, Play, Spinner } from "../../icons";
 import { errText, hasBackend, ipc, type CustomCmd } from "../../ipc";
+import { groupCommands } from "./commandGroups";
 import { mockCustomCommands } from "../../mock";
 import { useStore } from "../../store";
 import type { WorktreeNode } from "../../types";
@@ -115,13 +116,7 @@ export default function CommandButtons({ wt }: { wt: WorktreeNode }) {
       .finally(() => setBusy(false));
   };
 
-  const flat = cmds.slice(0, 1);
-  const rest = cmds.slice(1);
-  const groups = rest.reduce<Record<string, Grouped[]>>((a, c) => {
-    const g = (c as Grouped).group || "";
-    (a[g] ??= []).push(c);
-    return a;
-  }, {});
+  const { flat, groups } = groupCommands(cmds as Grouped[]);
 
   return (
     <div className="cxs-cmds" ref={box}>
@@ -131,7 +126,7 @@ export default function CommandButtons({ wt }: { wt: WorktreeNode }) {
           <span className="t">{c.label}</span>
         </button>
       ))}
-      {rest.length > 0 && (
+      {cmds.length > 1 && (
         <>
           <button
             ref={trigger}

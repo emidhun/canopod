@@ -142,8 +142,17 @@ pub async fn list_databases(wt_path: &str) -> Result<Vec<String>, String> {
     let c = conn(wt_path)?;
     let conn_args = c.args().iter().map(|a| q(a)).collect::<Vec<_>>().join(" ");
     let sql = "SELECT datname FROM pg_database WHERE datistemplate = false ORDER BY datname";
-    let out = run(wt_path, &c, &format!("psql {conn_args} -d {} -tAc {}", q(&c.db), q(sql))).await?;
-    Ok(out.lines().map(|l| l.trim().to_string()).filter(|l| !l.is_empty()).collect())
+    let out = run(
+        wt_path,
+        &c,
+        &format!("psql {conn_args} -d {} -tAc {}", q("postgres"), q(sql)),
+    )
+    .await?;
+    Ok(out
+        .lines()
+        .map(|l| l.trim().to_string())
+        .filter(|l| !l.is_empty())
+        .collect())
 }
 
 pub async fn database_exists(wt_path: &str, name: &str) -> Result<bool, String> {
@@ -273,27 +282,127 @@ pub async fn export_database(wt_path: &str, file_path: &str, mut progress: impl 
     Ok(())
 }
 
-/// Restore a dump file INTO the worktree's current DB. Custom-format/.dump files
-/// go through pg_restore (`--clean --if-exists` to replace existing objects); a
-/// plain .sql file goes through psql. Binaries are matched to the server version.
-pub async fn restore_database(wt_path: &str, file_path: &str, mut progress: impl FnMut(String)) -> Result<(), String> {
-    let c = conn(wt_path)?;
-    let conn_args = c.args().iter().map(|a| q(a)).collect::<Vec<_>>().join(" ");
-    let pre = pg_path_prefix_for(server_major(wt_path, &c).await);
-    progress(format!("restoring {} from file…", c.db));
-    let line = if file_path.to_lowercase().ends_with(".sql") {
-        // ON_ERROR_STOP=1: without it psql runs the whole script regardless of
-        // failures and exits 0 — a half-restored database reported as success.
-        format!("{pre}psql {conn_args} -d {db} -v ON_ERROR_STOP=1 -f {f}", db = q(&c.db), f = q(file_path))
-    } else {
+/// An explicit restore destination. Creating never replaces an existing DB.
+#[derive(Clone, serde::Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct RestoreOptions {
+    pub target: String,
+    pub mode: RestoreMode,
+    #[serde(default)]
+    pub activate: bool,
+}
+#[derive(Clone, Copy, PartialEq, Eq, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum RestoreMode {
+    Replace,
+    Create,
+}
+
+fn validate_restore_target(target: &str) -> Result<(), String> {
+    if target.trim().is_empty() || target.len() > 63 || target.chars().any(char::is_control) {
+        return Err("database name must contain 1–63 bytes and no control characters".into());
+    }
+    if matches!(target, "postgres" | "template0" | "template1") {
+        return Err("choose an application database, not a PostgreSQL maintenance database".into());
+    }
+    Ok(())
+}
+
+fn restore_commands(
+    c: &PgConn,
+    file: &str,
+    prefix: &str,
+    options: Option<&RestoreOptions>,
+) -> Result<Vec<String>, String> {
+    let args = c.args().iter().map(|a| q(a)).collect::<Vec<_>>().join(" ");
+    let target = options.map_or(c.db.as_str(), |o| o.target.as_str());
+    if options.is_some() {
+        validate_restore_target(target)?;
+    }
+    let mut commands = Vec::new();
+    // Validate archives BEFORE dropping a destination. Plain SQL is checked by
+    // psql inside its restore transaction; syntax cannot be validated offline.
+    if !file.to_lowercase().ends_with(".sql") {
+        commands.push(format!("{prefix}pg_restore --list {} > /dev/null", q(file)));
+    }
+    if let Some(options) = options {
+        if options.mode == RestoreMode::Replace {
+            // Do not force-terminate unrelated clients: active connections fail
+            // before the database is dropped and the error identifies the cause.
+            commands.push(format!(
+                "{prefix}dropdb {args} --maintenance-db=postgres -- {}",
+                q(target)
+            ));
+        }
+        commands.push(format!(
+            "{prefix}createdb {args} --maintenance-db=postgres --template=template0 -- {}",
+            q(target)
+        ));
+    }
+    let line = if file.to_lowercase().ends_with(".sql") {
         format!(
-            "{pre}pg_restore {conn_args} --no-owner --no-acl --clean --if-exists -d {db} {f}",
-            db = q(&c.db),
-            f = q(file_path),
+            "{prefix}psql {args} -X -v ON_ERROR_STOP=1 --single-transaction -d {} -f {}",
+            q(target),
+            q(file)
         )
+    } else {
+        let clean = if options.is_none() {
+            "--clean --if-exists "
+        } else {
+            ""
+        };
+        format!("{prefix}pg_restore {args} --no-owner --no-acl --exit-on-error --single-transaction {clean}-d {} {}", q(target), q(file))
     };
-    run(wt_path, &c, &line).await?;
-    progress("restore complete".into());
+    commands.push(line);
+    Ok(commands)
+}
+
+pub async fn restore_database(
+    wt_path: &str,
+    file_path: &str,
+    options: Option<&RestoreOptions>,
+    mut progress: impl FnMut(String),
+) -> Result<(), String> {
+    // Reject an unreadable/missing/empty input before doing anything destructive.
+    let input =
+        std::fs::File::open(file_path).map_err(|e| format!("cannot read dump {file_path}: {e}"))?;
+    let meta = input.metadata().map_err(|e| e.to_string())?;
+    if !meta.is_file() || meta.len() == 0 {
+        return Err("choose a nonempty dump file".into());
+    }
+    let mut c = conn(wt_path)?;
+    let original = c.db.clone();
+    c.db = "postgres".into(); // metadata must work even if the old app DB is missing
+    let pre = pg_path_prefix_for(server_major(wt_path, &c).await);
+    c.db = original;
+    let commands = restore_commands(&c, file_path, &pre, options)?;
+    if let Some(options) = options {
+        let args = c.args().iter().map(|a| q(a)).collect::<Vec<_>>().join(" ");
+        let databases = run(
+            wt_path,
+            &c,
+            &format!(
+                "psql {args} -X -d postgres -tAc {}",
+                q("SELECT datname FROM pg_database")
+            ),
+        )
+        .await?;
+        let exists = databases.lines().any(|name| name == options.target);
+        if exists == (options.mode == RestoreMode::Create) {
+            return Err(if exists {
+                "database already exists; choose a new name"
+            } else {
+                "selected database no longer exists; refresh the list"
+            }
+            .into());
+        }
+    }
+    let target = options.map_or(c.db.as_str(), |o| o.target.as_str());
+    progress(format!("restoring into {target}…"));
+    for line in commands {
+        run(wt_path, &c, &line).await?;
+    }
+    progress(format!("restore into {target} complete"));
     Ok(())
 }
 
@@ -324,6 +433,59 @@ mod tests {
             user: "u".into(),
             pass: None,
             db: "d".into(),
+        }
+    }
+
+    #[test]
+    fn restore_empties_only_the_selected_database_after_archive_preflight() {
+        let c = PgConn {
+            host: "localhost".into(),
+            port: "5432".into(),
+            user: "postgres".into(),
+            pass: None,
+            db: "original".into(),
+        };
+        let options = RestoreOptions {
+            target: "selected".into(),
+            mode: RestoreMode::Replace,
+            activate: false,
+        };
+        let commands = restore_commands(&c, "/tmp/in.dump", "", Some(&options)).unwrap();
+        assert!(commands[0].starts_with("pg_restore --list "));
+        assert!(commands[1].starts_with("dropdb ") && commands[1].ends_with("-- 'selected'"));
+        assert!(!commands[1].contains("--force"));
+        assert!(
+            commands[2].starts_with("createdb ") && commands[2].contains("--template=template0")
+        );
+        assert!(commands[3].contains("-d 'selected'"));
+        assert!(!commands.iter().any(|c| c.contains("original")));
+    }
+
+    #[test]
+    fn fresh_restore_never_drops_and_sql_errors_abort_the_transaction() {
+        let c = PgConn {
+            host: "localhost".into(),
+            port: "5432".into(),
+            user: "postgres".into(),
+            pass: None,
+            db: "original".into(),
+        };
+        let options = RestoreOptions {
+            target: "new db's".into(),
+            mode: RestoreMode::Create,
+            activate: false,
+        };
+        let commands = restore_commands(&c, "/tmp/in.sql", "", Some(&options)).unwrap();
+        assert_eq!(commands.len(), 2);
+        assert!(commands[0].starts_with("createdb "));
+        assert!(commands[0].ends_with(&format!("-- {}", q(&options.target))));
+        assert!(
+            commands[1].contains(" -X ")
+                && commands[1].contains("ON_ERROR_STOP=1")
+                && commands[1].contains("--single-transaction")
+        );
+        for target in ["", "postgres", "template0", "template1", "bad\nname"] {
+            assert!(validate_restore_target(target).is_err());
         }
     }
 

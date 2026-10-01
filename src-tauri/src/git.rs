@@ -18,22 +18,56 @@ async fn run_git_net(cwd: &str, args: &[&str]) -> Result<String, String> {
     run_git_with_timeout(cwd, args, GIT_NETWORK_TIMEOUT).await
 }
 
+/// The user's configured git credentials, captured once per run.
+///
+/// A process-wide `OnceLock` rather than a lookup per git call: `run_git` has
+/// no `AppHandle`, is called from dozens of places including hot refresh
+/// paths, and threading state through all of them to read two rarely-changed
+/// strings would be a large diff for no behavioural gain. `apply_credentials`
+/// is called at startup and after every settings save.
+static GIT_CREDENTIALS: std::sync::OnceLock<parking_lot::RwLock<(String, String)>> = std::sync::OnceLock::new();
+
+fn credentials() -> &'static parking_lot::RwLock<(String, String)> {
+    GIT_CREDENTIALS.get_or_init(|| parking_lot::RwLock::new((String::new(), String::new())))
+}
+
+/// Publish the configured SSH key and credential helper to every later git
+/// call. Idempotent; safe to call on every settings save.
+pub fn apply_credentials(ssh_key: &str, credential_helper: &str) {
+    *credentials().write() = (ssh_key.trim().to_string(), credential_helper.trim().to_string());
+}
+
 async fn run_git_with_timeout(cwd: &str, args: &[&str], dur: Duration) -> Result<String, String> {
-    let fut = Command::new("git")
-        .arg("-C")
-        .arg(cwd)
-        .args(args)
-        .kill_on_drop(true) // a timed-out git must not linger
-        .output();
-    let out = match tokio::time::timeout(dur, fut).await {
-        Ok(res) => res.map_err(|e| format!("failed to run git: {e}"))?,
-        Err(_) => {
-            return Err(format!(
-                "git {} timed out after {}s",
-                args.first().copied().unwrap_or(""),
-                dur.as_secs()
-            ))
-        }
+    let (ssh_key, helper) = credentials().read().clone();
+    let mut cmd = Command::new("git");
+    // `-c` before the subcommand, so it applies to this invocation only and
+    // never edits the user's repo or global config
+    if !helper.is_empty() {
+        // Clear the inherited multi-valued helper list before selecting one.
+        cmd.args(["-c", "credential.helper="]).arg("-c").arg(format!("credential.helper={helper}"));
+    }
+    cmd.arg("-C").arg(cwd).args(args);
+    if !ssh_key.is_empty() {
+        // IdentitiesOnly stops ssh-agent offering every other key first, which
+        // is what makes "I selected a key and it still used the wrong one"
+        // happen. The path is quoted for the shell git builds from this string.
+        cmd.env("GIT_SSH_COMMAND", format!("ssh -i '{}' -o IdentitiesOnly=yes", ssh_key.replace('\'', "'\\''")));
+    }
+    if crate::jobs::is_cancelled() { return Err("operation interrupted by shutdown".into()); }
+    cmd.kill_on_drop(true).stdout(std::process::Stdio::piped()).stderr(std::process::Stdio::piped());
+    crate::proc::prepare_group_command(&mut cmd);
+    let mut child = cmd.spawn().map_err(|e| format!("failed to run git: {e}"))?;
+    let mut group = match crate::proc::CommandGroup::attach(child.id().unwrap_or(0)) {
+        Ok(group) => group,
+        Err(error) => { let _ = child.kill().await; return Err(error); }
+    };
+    let out = tokio::select! {
+        biased;
+        _ = crate::jobs::cancelled() => return Err("operation interrupted by shutdown".into()),
+        result = tokio::time::timeout(dur, child.wait_with_output()) => match result {
+            Ok(res) => { group.disarm(); res.map_err(|e| format!("failed to run git: {e}"))? },
+            Err(_) => return Err(format!("git {} timed out after {}s", args.first().copied().unwrap_or(""), dur.as_secs())),
+        },
     };
     if out.status.success() {
         Ok(String::from_utf8_lossy(&out.stdout).into_owned())
@@ -55,7 +89,29 @@ pub struct WorktreeInfo {
 /// `git worktree list --porcelain` — first entry is the main working tree.
 pub async fn list_worktrees(repo_path: &str) -> Result<Vec<WorktreeInfo>, String> {
     let out = run_git(repo_path, &["worktree", "list", "--porcelain"]).await?;
-    Ok(parse_worktree_list(&out))
+    Ok(parse_worktree_list(&out)
+        .into_iter()
+        .map(|mut worktree| {
+            if let Ok(path) = std::fs::canonicalize(&worktree.path) {
+                worktree.path = display_path(&path);
+            }
+            worktree
+        })
+        .collect())
+}
+
+fn display_path(path: &std::path::Path) -> String {
+    let value = path.to_string_lossy();
+    #[cfg(windows)]
+    {
+        if let Some(rest) = value.strip_prefix(r"\\?\UNC\") {
+            return format!(r"\\{rest}");
+        }
+        if let Some(rest) = value.strip_prefix(r"\\?\") {
+            return rest.to_owned();
+        }
+    }
+    value.into_owned()
 }
 
 /// Pure parser for `git worktree list --porcelain` output.
@@ -578,14 +634,23 @@ pub async fn create_worktree(
     branch: &str,
     base: Option<&str>,
     create_branch: bool,
-    mut progress: impl FnMut(String),
+    progress: impl FnMut(String),
+) -> Result<(), String> {
+    create_worktree_tracked(repo_path, wt_path, branch, base, create_branch, progress, None).await
+}
+
+pub(crate) async fn create_worktree_tracked(
+    repo_path: &str, wt_path: &str, branch: &str, base: Option<&str>, create_branch: bool,
+    mut progress: impl FnMut(String), tracking: Option<&crate::jobs::Tracking>,
 ) -> Result<(), String> {
     progress(format!("git worktree add {wt_path}"));
     if create_branch {
         let base = base.unwrap_or("HEAD");
         run_git(repo_path, &["worktree", "add", wt_path, "-b", branch, base]).await?;
+        if let Some(tracking) = tracking { tracking.created(wt_path).await.map_err(|e| e.to_string())?; }
     } else {
         run_git(repo_path, &["worktree", "add", wt_path, branch]).await?;
+        if let Some(tracking) = tracking { tracking.created(wt_path).await.map_err(|e| e.to_string())?; }
         // A remote pick reusing an existing local branch passes the origin ref
         // as `base`. Fast-forward the checkout to it so the worktree (and the
         // submodule commits it pins) reflect origin rather than a stale local
@@ -1025,6 +1090,33 @@ mod tests {
         assert_eq!(std::fs::read_to_string(repo.join("a.txt")).unwrap(), "two\n", "restored to HEAD");
 
         let _ = std::fs::remove_dir_all(&repo);
+    }
+
+    /// The add-repo flow (#122) leans on validate_repo to accept a real repo
+    /// and reject a plain folder before it registers anything.
+    #[tokio::test]
+    async fn validate_repo_returns_toplevel_and_rejects_non_repos() {
+        let repo = unique_dir("validate");
+        let _ = std::fs::remove_dir_all(&repo);
+        init_repo(&repo).await;
+        let rp = repo.to_str().unwrap();
+
+        let top = validate_repo(rp).await.unwrap();
+        // git canonicalizes (/var → /private/var on macOS); compare by basename
+        assert_eq!(
+            std::path::Path::new(top.trim()).file_name(),
+            std::path::Path::new(rp).file_name(),
+            "toplevel is the repo dir"
+        );
+
+        // a plain directory that isn't a git repo must error, not return a path
+        let plain = unique_dir("validate-plain");
+        let _ = std::fs::remove_dir_all(&plain);
+        std::fs::create_dir_all(&plain).unwrap();
+        assert!(validate_repo(plain.to_str().unwrap()).await.is_err(), "a non-repo must be rejected");
+
+        let _ = std::fs::remove_dir_all(&repo);
+        let _ = std::fs::remove_dir_all(&plain);
     }
 
     /// Data-loss guard: this report arms `worktree remove --force`, and a

@@ -10,8 +10,9 @@ import { Terminal, type IBufferLine, type ILink } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
 import { WebglAddon } from "@xterm/addon-webgl";
 import { WebLinksAddon } from "@xterm/addon-web-links";
-import { errText, hasBackend, ipc, on } from "../ipc";
+import { errText, hasBackend, ipc, on, type TermCfg } from "../ipc";
 import { useStore } from "../store";
+import { bindTerminalImages } from "./terminalImages";
 
 /** Open a URL in the user's browser (never in the app's own webview). */
 async function openExternal(url: string) {
@@ -64,6 +65,38 @@ const THEME = {
   brightWhite: "#f4f5f7",
 };
 
+/* Embedded-shell settings, fetched once per webview and shared by every pane.
+
+   Applied to a LIVE terminal rather than being a constructor argument: making
+   the pane wait for an async settings read would either delay every terminal
+   behind an IPC round-trip, or remount (and so tear down) live sessions
+   whenever settings changed. xterm takes all of these at runtime. */
+let termCfgPromise: Promise<TermCfg | null> | null = null;
+function loadTermCfg(): Promise<TermCfg | null> {
+  if (!termCfgPromise) {
+    termCfgPromise = ipc
+      .getSettings()
+      .then((s) => s.embeddedTerminal ?? null)
+      .catch(() => null);
+  }
+  return termCfgPromise;
+}
+/** Called after a settings save, so the next pane to mount reads fresh values. */
+export function invalidateTermCfg() {
+  termCfgPromise = null;
+}
+
+/** Apply only the fields the user actually set — an unset field keeps the
+    design's own default rather than being overwritten with a magic number. */
+function applyTermCfg(term: Terminal, cfg: TermCfg | null) {
+  if (!cfg) return;
+  if (cfg.fontFamily.trim()) term.options.fontFamily = cfg.fontFamily.trim();
+  if (cfg.fontSize > 0) term.options.fontSize = cfg.fontSize;
+  if (cfg.scrollback > 0) term.options.scrollback = cfg.scrollback;
+  if (cfg.cursor === "block" || cfg.cursor === "underline" || cfg.cursor === "bar") term.options.cursorStyle = cfg.cursor;
+  term.options.cursorBlink = cfg.cursorBlink;
+}
+
 export default function TerminalPane({
   termId,
   cwd,
@@ -85,6 +118,38 @@ export default function TerminalPane({
   const hostRef = useRef<HTMLDivElement>(null);
   const termRef = useRef<Terminal | null>(null);
   const fitRef = useRef<FitAddon | null>(null);
+  const imageInputActive = useRef(false);
+  imageInputActive.current = !hidden && !readOnly;
+
+  useEffect(() => {
+    const host = hostRef.current;
+    if (!host || !hasBackend() || readOnly) return;
+    let disposed = false;
+    let unlisten: (() => void) | undefined;
+    const input = bindTerminalImages(host, {
+      active: () => imageInputActive.current,
+      save: (data) => ipc.terminalStoreImage(termId, data),
+      paste: (text) => { termRef.current?.paste(text); termRef.current?.focus(); },
+      error: (message) => useStore.getState().showToast(message),
+    });
+    // Tauri's native file-drop intercepts OS drags before DOM drop events.
+    void Promise.all([import("@tauri-apps/api/webview"), import("@tauri-apps/api/window")]).then(async ([webview, windowApi]) => {
+      if (disposed) return;
+      const stop = await webview.getCurrentWebview().onDragDropEvent(async ({ payload }) => {
+        if (payload.type !== "drop" || disposed || !imageInputActive.current) return;
+        try {
+          const scale = await windowApi.getCurrentWindow().scaleFactor();
+          if (disposed || !imageInputActive.current) return;
+          const rect = host.getBoundingClientRect();
+          const x = payload.position.x / scale, y = payload.position.y / scale;
+          if (x >= rect.left && x < rect.right && y >= rect.top && y < rect.bottom) input.dropPaths(payload.paths);
+        } catch (error) { if (!disposed) useStore.getState().showToast(`Image drop failed: ${errText(error)}`); }
+      });
+      if (disposed) stop(); else unlisten = stop;
+    }).catch((error) => { if (!disposed) useStore.getState().showToast(`Image drop unavailable: ${errText(error)}`); });
+    return () => { disposed = true; input.dispose(); unlisten?.(); };
+  }, [termId, readOnly]);
+
 
   useEffect(() => {
     const host = hostRef.current;
@@ -110,6 +175,24 @@ export default function TerminalPane({
     term.open(host);
     termRef.current = term;
     fitRef.current = fit;
+
+    let alive = true;
+    let bellTimer: number | undefined;
+    loadTermCfg().then((cfg) => {
+      if (!alive) return;
+      applyTermCfg(term, cfg);
+      fit.fit();
+      // xterm dropped `bellStyle`, so the audible/visual bell is ours. A flash
+      // on the pane is the right shape here: a beep from a background worktree
+      // with no visible tab tells you nothing about WHERE it came from.
+      if (cfg?.bell) {
+        term.onBell(() => {
+          host.classList.add("is-bell");
+          window.clearTimeout(bellTimer);
+          bellTimer = window.setTimeout(() => host.classList.remove("is-bell"), 160);
+        });
+      }
+    });
 
     // http(s) links → the user's browser, never this webview.
     term.loadAddon(
@@ -284,6 +367,8 @@ export default function TerminalPane({
 
     return () => {
       disposed = true;
+      alive = false;
+      window.clearTimeout(bellTimer);
       document.removeEventListener("visibilitychange", onVisible);
       window.removeEventListener("focus", onVisible);
       unlistenData?.();

@@ -26,9 +26,9 @@ needs `contents: write`, because the default token on a new repository is read-o
 ### Cutting a release
 
 ```sh
-# 1. bump the version in BOTH places
-#    package.json           → "version": "0.4.8"
-#    src-tauri/tauri.conf.json → "version": "0.4.8"
+# 1. bump the version consistently
+#    package.json, src-tauri/Cargo.toml, src-tauri/tauri.conf.json
+#    and the canopy package entry in src-tauri/Cargo.lock
 
 # 2. verify locally
 npm run build && npm run csp:check
@@ -42,8 +42,8 @@ git push origin main --tags
 # 4. the workflow builds; review the draft release, then publish
 ```
 
-Keep the two version numbers in step. `tauri.conf.json` is what the app reports in Settings → Advanced
-and in the popover's footer.
+Keep all four version records in step. `tauri.conf.json` is what the app reports in Settings →
+Advanced and in the popover's footer.
 
 ### What CI checks on every push
 
@@ -123,7 +123,9 @@ check proves the app works under it.
 The Tauri capability set is the default one plus what the app actually uses: dialog, opener, and fs for
 the paths it reads.
 
-Canopy makes no network requests of its own. No telemetry, no update check, no analytics.
+Canopy has no telemetry or analytics. In `0.5.0`, update checks are opt-in and contact GitHub only
+when enabled or run manually. The local application API binds to loopback, and MCP remains disabled
+until the user explicitly enables it.
 
 ## Building and deploying this documentation
 

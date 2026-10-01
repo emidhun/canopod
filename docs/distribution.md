@@ -1,13 +1,17 @@
 # Distribution
 
 ## Current state
-Builds are **ad-hoc signed, not notarized**, **arm64-only** (Apple Silicon). A signed DMG is produced
-on the Desktop (`~/Desktop/Canopy-0.3.0-arm64.dmg`). Because it isn't notarized, macOS quarantines it
-on transfer and shows "damaged" / "unidentified developer" / "can't verify it's free of malware".
+The latest published release is **v0.4.7** (2026-08-13). It includes an Apple Silicon DMG/app archive,
+Linux deb/rpm/AppImage packages and Windows NSIS/MSI installers. Artifact presence proves packaging,
+not successful installation or desktop behavior.
+
+macOS builds are **ad-hoc signed, not notarized**, and **arm64-only** (Apple Silicon). The release
+workflow has no Developer ID or notarization step, and `tauri.conf.json` uses signing identity `-`.
+Linux and Windows packages are experimental because no real-desktop acceptance record exists.
 
 ## Installing from the DMG (what to tell recipients)
 ```sh
-hdiutil attach ~/Desktop/Canopy-0.3.0-arm64.dmg
+hdiutil attach ~/Downloads/Canopy_0.4.7_aarch64.dmg
 cp -R "/Volumes/Canopy/Canopy.app" /Applications/
 hdiutil detach "/Volumes/Canopy"
 xattr -dr com.apple.quarantine /Applications/Canopy.app      # clears quarantine — the step that matters
@@ -16,8 +20,9 @@ open /Applications/Canopy.app
 Or: double-click the DMG, drag Canopy to Applications, then run only the `xattr -dr com.apple.quarantine` line.
 On macOS Sequoia, the GUI alternative is System Settings → Privacy & Security → **Open Anyway**.
 
-Recipient prerequisites: git, **Node 22.15.1** (via a version manager), **Postgres** running (for
-ToolJet), and a `.worktreemanager.json` in the repo (commit it so it travels).
+Recipient prerequisites: git, plus only the runtimes, package managers and databases required by the
+repository's configured commands. `.worktreemanager.json` is optional initially; commit one when the
+setup should travel with each branch.
 
 ## Removing the warning permanently: Developer ID + notarization
 Requires an **Apple Developer Program** membership ($99/yr — a cost, not income; doesn't enable App

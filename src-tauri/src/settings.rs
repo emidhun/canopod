@@ -2,27 +2,220 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::fs;
 use std::path::PathBuf;
-use tauri::{AppHandle, Manager};
+use crate::runtime::RuntimeContext;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", default)]
 pub struct Settings {
+    pub revision: String,
     pub version: u32,
     pub editor: EditorCfg,
     pub terminal: String,
     pub repos: Vec<RepoCfg>,
     /// show the in-place "Switch branch" action in the worktree header
     pub show_switch_branch: bool,
+    /// Worktrees the user pinned to the top of the sidebar, by `wt_key`.
+    ///
+    /// Lives here rather than in `RuntimeState` because it is a *preference*,
+    /// not derived state: it should travel with the config file, be editable by
+    /// hand, and survive a state-file reset. Pruned when a worktree is removed
+    /// so the list can't grow without bound.
+    #[serde(default)]
+    pub pinned_worktrees: Vec<String>,
+    #[serde(default)]
+    pub security: SecurityCfg,
+    /// the embedded PTY + xterm renderer (Settings → Terminal → Embedded shell)
+    #[serde(default)]
+    pub embedded_terminal: TermCfg,
+    /// Opt-in experiment flags, by id (see `EXPERIMENTS` in diagnostics.rs).
+    ///
+    /// A map rather than named booleans: experiments are meant to appear and
+    /// disappear, and every one of them would otherwise be a schema change
+    /// plus a migration for something that may not survive the month. An
+    /// unknown key is simply an experiment this build no longer has.
+    #[serde(default)]
+    pub experiments: HashMap<String, bool>,
+    #[serde(default)]
+    pub notifications: NotifyCfg,
+    /// Keybinding overrides: action id → binding ("Mod+k"). Only ids the
+    /// running build knows are honoured, so an override for a shortcut that
+    /// was removed is ignored rather than being an error.
+    ///
+    /// A map for the same reason experiments are: shortcuts are added and
+    /// renamed, and a named field per action would be a schema change every
+    /// time. The registry lives in the frontend (`src/app/keys.ts`), which is
+    /// where the handlers are — the backend only needs to persist the map.
+    #[serde(default)]
+    pub keybindings: HashMap<String, String>,
+    #[serde(default)]
+    pub updates: UpdatesCfg,
+    #[serde(default)]
+    pub crash_reports: CrashCfg,
+}
+/// Secret handling and git credentials.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", default)]
+pub struct SecurityCfg {
+    /// render secret-looking values as bullets in the config preview and in
+    /// streamed setup output
+    pub mask_secrets: bool,
+    /// export key NAMES but not their values
+    pub mask_in_exports: bool,
+    /// SSH identity for git network operations; empty = git's own default
+    pub ssh_key: String,
+    /// git credential helper for HTTPS remotes; empty = git's own default
+    pub credential_helper: String,
+}
+
+impl Default for SecurityCfg {
+    fn default() -> Self {
+        Self {
+            // On by default: the cost of masking a value that wasn't a secret
+            // is one extra click to see it, and the cost of the reverse is a
+            // token in a screenshot.
+            mask_secrets: true,
+            // Off by default: an export is normally a file you commit to your
+            // own repo, where the values are the point. Masking silently would
+            // produce a config that provisions the string "••••••••".
+            mask_in_exports: false,
+            ssh_key: String::new(),
+            credential_helper: String::new(),
+        }
+    }
+}
+
+/// Embedded-shell configuration.
+///
+/// Every field has an "unset" value that means *keep the built-in behaviour*
+/// (empty string, or 0 for the numbers) rather than a baked-in default. That
+/// way a settings file written before this existed behaves exactly as it did,
+/// and the renderer's defaults stay in one place — the design's own tokens —
+/// instead of being duplicated here as magic numbers.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", default)]
+pub struct TermCfg {
+    /// shell to run; empty = the user's login shell
+    pub program: String,
+    /// extra arguments, whitespace-separated. Applied only with an explicit
+    /// `program`: they would collide with the `-l`/`-i`/`-c` flags Canopy
+    /// passes to a login shell it chose itself.
+    pub args: String,
+    /// CSS font stack; empty = the app's mono stack
+    pub font_family: String,
+    /// 0 = the app's default size
+    pub font_size: f32,
+    /// lines of scrollback the renderer keeps; 0 = default
+    pub scrollback: u32,
+    /// block | underline | bar; empty = block
+    pub cursor: String,
+    /// blink the cursor
+    pub cursor_blink: bool,
+    /// flash the pane when a process emits BEL
+    pub bell: bool,
+    /// open new shells in the worktree root (off = the user's home directory)
+    pub cwd_worktree: bool,
+    /// expose the worktree's provisioned variables (WT_SLUG, WT_DB_NAME,
+    /// WT_<SERVICE>_PORT) to the shell, so a command typed by hand sees the
+    /// same environment setup and services do
+    pub inherit_env: bool,
+}
+
+impl Default for TermCfg {
+    fn default() -> Self {
+        Self {
+            program: String::new(),
+            args: String::new(),
+            font_family: String::new(),
+            font_size: 0.0,
+            scrollback: 0,
+            cursor: String::new(),
+            cursor_blink: true,
+            bell: false,
+            cwd_worktree: true,
+            inherit_env: true,
+        }
+    }
+}
+
+/// Which backend events raise an OS notification.
+///
+/// Every one of these already appears in the in-app attention queue. A
+/// notification is for when Canopy is in the tray and you are looking at
+/// something else — so the defaults follow one rule: notify only when a human
+/// is BLOCKING something, never for progress.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", default)]
+pub struct NotifyCfg {
+    /// a service exited unexpectedly
+    pub service_crash: bool,
+    /// an agent is blocked waiting on input
+    pub agent_waiting: bool,
+    /// provisioning finished (success or failure)
+    pub setup_done: bool,
+    /// the worktree's branch moved on origin
+    pub branch_moved: bool,
+    /// play the system sound with the notification
+    pub sound: bool,
+    /// "count" | "dot" | "off" — the app-icon badge
+    pub badge: String,
+}
+
+impl Default for NotifyCfg {
+    fn default() -> Self {
+        Self {
+            // the two states that mean "something is stuck on you"
+            service_crash: true,
+            agent_waiting: true,
+            // progress, not a block — you asked for it and you can watch it
+            setup_done: false,
+            branch_moved: false,
+            sound: false,
+            badge: "count".into(),
+        }
+    }
+}
+
+/// Update-check preferences. Canopy checks the project's GitHub releases for a
+/// newer tag; it never downloads or installs anything on its own (see
+/// `updates.rs` for why).
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[serde(rename_all = "camelCase", default)]
+// Background checking is opt-in until its result has a visible update notice.
+pub struct UpdatesCfg {
+    /// check for a newer release in the background
+    pub auto_check: bool,
+}
+
+
+
+/// Crash-report preferences.
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[serde(rename_all = "camelCase", default)]
+pub struct CrashCfg {
+    /// record a stack trace to the log directory when Canopy panics.
+    /// Opt-in: off until the user turns it on.
+    pub enabled: bool,
+
 }
 
 impl Default for Settings {
     fn default() -> Self {
         Self {
+            revision: String::new(),
             version: 0,
             editor: EditorCfg::default(),
             terminal: String::new(),
             repos: Vec::new(),
             show_switch_branch: true,
+            pinned_worktrees: Vec::new(),
+            security: SecurityCfg::default(),
+            embedded_terminal: TermCfg::default(),
+            experiments: HashMap::new(),
+            notifications: NotifyCfg::default(),
+            keybindings: HashMap::new(),
+            updates: UpdatesCfg::default(),
+            crash_reports: CrashCfg::default(),
+
         }
     }
 }
@@ -67,6 +260,68 @@ pub struct RepoCfg {
     /// `agent_command` so existing settings files upgrade without data loss.
     #[serde(default)]
     pub agents: Vec<AgentCfg>,
+    /// Branch new worktrees are created from when the user doesn't pick one.
+    /// Empty = whatever the New-worktree modal defaults to (`main` if present).
+    #[serde(default)]
+    pub default_base: String,
+    #[serde(default)]
+    pub worktree_defaults: WorktreeDefaults,
+    #[serde(default)]
+    pub agent_context: AgentContextCfg,
+    /// Most agent sessions allowed to run at once in one repository.
+    /// 0 = no limit. Each agent is a real CLI doing real work; several at once
+    /// on one machine compete for CPU and for the same dev database.
+    #[serde(default)]
+    pub max_parallel_agents: u32,
+    /// Minutes an agent session may sit with no output or input before Canopy
+    /// closes it. 0 = never, which is the default: a quiet agent may simply be
+    /// waiting for the user, and killing it loses work.
+    #[serde(default)]
+    pub agent_idle_timeout_min: u32,
+}
+
+/// What `create_worktree` does after `git worktree add`, per repository.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", default)]
+pub struct WorktreeDefaults {
+    /// provision files and run setup tasks as soon as the worktree exists
+    pub run_setup: bool,
+    /// start the service list once provisioning finishes
+    pub start_services: bool,
+    /// give the worktree its own database name (`WT_DB_NAME` = the branch
+    /// slug). Off makes `WT_DB_NAME` resolve to the MAIN checkout's PG_DB, so
+    /// the worktree shares that database instead of getting one of its own.
+    pub isolated_database: bool,
+}
+
+impl Default for WorktreeDefaults {
+    fn default() -> Self {
+        // Matches what create_worktree did before these were configurable, so
+        // an existing settings file behaves identically.
+        Self { run_setup: true, start_services: false, isolated_database: true }
+    }
+}
+
+/// What Canopy puts in the handoff every agent receives.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", default)]
+pub struct AgentContextCfg {
+    /// the task title, body and linked PR / issue
+    pub worktree_context: bool,
+    /// branch, path, database name and resolved ports
+    pub runtime_facts: bool,
+    /// the last error lines from any unhealthy service
+    pub failing_logs: bool,
+}
+
+impl Default for AgentContextCfg {
+    fn default() -> Self {
+        // Matches what the handoff contained before this was configurable.
+        // Failing logs are opt-in: they are the one part that can carry
+        // arbitrary process output — including a value from a .env — into a
+        // prompt sent to a third-party CLI.
+        Self { worktree_context: true, runtime_facts: true, failing_logs: false }
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
@@ -77,6 +332,15 @@ pub struct AgentCfg {
     pub command: String,
     /// Append Canopy's initial handoff as the first CLI prompt argument.
     pub prompt_on_launch: bool,
+    /// Extra literal snippets (one per line) that mean "this agent is blocked
+    /// on a human". Matched case-insensitively against the terminal tail after
+    /// ANSI stripping, on top of the built-in prompt shapes.
+    ///
+    /// Literal, not regex: a pattern that failed to compile would silently
+    /// disable waiting-detection for the profile, which is a worse failure
+    /// than a snippet that simply never matches.
+    #[serde(default)]
+    pub waiting_patterns: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
@@ -104,6 +368,14 @@ pub struct ServiceCfg {
     pub cwd: String,
     pub base_port: Option<u16>,
     pub env: HashMap<String, String>,
+    /// Readiness probe path, e.g. `/api/health`. Empty = none, and the service
+    /// counts as running the moment its process is alive (today's behaviour).
+    ///
+    /// A path, not a URL: the host is always localhost and the port is the
+    /// service's own derived one, so accepting a full URL would let a health
+    /// check silently point at a different service — or a different machine.
+    #[serde(default)]
+    pub health: String,
 }
 
 /// Persisted runtime state (not user-edited): stable port index per worktree,
@@ -129,6 +401,7 @@ pub struct OrphanProc {
     pub svc_key: String,
     pub pgid: i32,
     pub spawn_time_secs: u64,
+    pub owner: Option<ProcessOwner>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
@@ -137,17 +410,24 @@ pub struct TermOrphan {
     pub id: String,
     pub pgid: i32,
     pub spawn_time_secs: u64,
+    pub owner: Option<ProcessOwner>,
 }
 
-fn settings_path(app: &AppHandle) -> PathBuf {
-    app.path()
+/// The spawning backend identity, independent of the process that later adopts
+/// its children (PID 1, systemd --user, or a container subreaper).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ProcessOwner { pub pid: u32, pub started: u64 }
+
+fn settings_path(app: &crate::runtime::RuntimePaths) -> PathBuf {
+    app
         .app_config_dir()
         .expect("no app config dir")
         .join("settings.json")
 }
 
-fn runtime_path(app: &AppHandle) -> PathBuf {
-    app.path()
+fn runtime_path(app: &crate::runtime::RuntimePaths) -> PathBuf {
+    app
         .app_data_dir()
         .expect("no app data dir")
         .join("state.json")
@@ -198,20 +478,32 @@ fn save_json<T: Serialize>(path: &PathBuf, value: &T) -> Result<(), String> {
     fs::rename(&tmp, path).map_err(|e| format!("rename {} → {}: {e}", tmp.display(), path.display()))
 }
 
-pub fn load_settings(app: &AppHandle) -> Settings {
+/// Backend startup must distinguish a fresh install from unreadable/corrupt
+/// existing state. In particular, never quarantine or overwrite another host's
+/// files while deciding whether it is safe to take ownership.
+pub fn load_checked<T: for<'a> Deserialize<'a> + Default>(path: &std::path::Path) -> Result<T, String> {
+    match fs::read(path) {
+        Ok(bytes) => serde_json::from_slice(&bytes)
+            .map_err(|e| format!("parse {}: {e}; repair the file before starting the backend", path.display())),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(T::default()),
+        Err(e) => Err(format!("read {}: {e}", path.display())),
+    }
+}
+
+pub fn load_settings(app: &crate::runtime::RuntimePaths) -> Settings {
     load_json(&settings_path(app))
 }
 
-pub fn save_settings(app: &AppHandle, s: &Settings) -> Result<(), String> {
-    save_json(&settings_path(app), s)
+pub fn save_settings(app: &RuntimeContext, s: &Settings) -> Result<Settings, String> {
+    crate::settings_store::mutate(app, Some(&s.revision), |next| { *next = s.clone(); Ok(()) }).map(|(saved,())|saved)
 }
 
-pub fn load_runtime(app: &AppHandle) -> RuntimeState {
+pub fn load_runtime(app: &crate::runtime::RuntimePaths) -> RuntimeState {
     load_json(&runtime_path(app))
 }
 
-pub fn save_runtime(app: &AppHandle, s: &RuntimeState) -> Result<(), String> {
-    save_json(&runtime_path(app), s)
+pub fn save_runtime(app: &RuntimeContext, s: &RuntimeState) -> Result<(), String> {
+    save_json(&runtime_path(app.path()), s)
 }
 
 #[cfg(test)]
@@ -237,6 +529,19 @@ mod tests {
         assert_eq!(loaded.terminal, "", "defaults on parse failure");
         let backup = path.with_extension("json.corrupt");
         assert_eq!(fs::read_to_string(&backup).unwrap(), "{ truncated", "original quarantined");
+
+        // a settings file written before pinning existed must still load, with
+        // an empty pin list rather than falling back to full defaults
+        fs::write(&path, r#"{"version":1,"terminal":"iTerm","repos":[]}"#).unwrap();
+        let loaded: Settings = load_json(&path);
+        assert_eq!(loaded.terminal, "iTerm", "pre-pinning settings still parse");
+        assert!(loaded.pinned_worktrees.is_empty(), "absent pin list defaults to empty");
+
+        // pins round-trip
+        let s = Settings { pinned_worktrees: vec!["/wt/a".into()], ..Default::default() };
+        save_json(&path, &s).unwrap();
+        let loaded: Settings = load_json(&path);
+        assert_eq!(loaded.pinned_worktrees, vec!["/wt/a".to_string()]);
 
         // unchanged content → no rewrite (mtime-stable persistence)
         fs::write(&path, serde_json::to_string_pretty(&s).unwrap()).unwrap();

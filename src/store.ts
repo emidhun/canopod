@@ -2,6 +2,7 @@
 // Rust via events; in a plain browser tab it falls back to the Phase-2 mock.
 import { create } from "zustand";
 import type { LogLine, RepoNode, ServiceNode, SvcStats, SvcStatus, WorktreeNode } from "./types";
+import type { DiskUsage } from "./ipc";
 import { isLive } from "./types";
 import { genLine, logTime, mockTree } from "./mock";
 import { errText, hasBackend, ipc, on } from "./ipc";
@@ -16,6 +17,10 @@ export interface OpLog {
   lines: LogLine[];
   /** last "[k/n]: cmd" step marker seen, for the inline loader */
   step: string | null;
+  /** step index → the short quantity it produced ("1,842 packages"). Index 0
+      is the provisioning phase. A step with no entry produced nothing the
+      backend recognised, and renders with no metadata rather than a guess. */
+  results: Record<number, string>;
   running: boolean;
 }
 
@@ -93,6 +98,10 @@ export interface LaneSession {
   command?: string;
   /** false once the PTY exits — the tab stays so its output can be read/restarted */
   running: boolean;
+  /** what a *running* agent session is doing, from the backend's PTY
+      detector. Absent until the first `terminal:state` arrives, and always
+      absent for shells — which is why `agentState()` defaults it to "busy". */
+  activity?: "busy" | "waiting";
   /** bumped on restart so the pane remounts and creates a fresh PTY */
   gen: number;
 }
@@ -136,6 +145,11 @@ interface State {
   logs: Record<string, LogLine[]>;
   ops: Record<string, OpLog>;
   stats: Record<string, SvcStats>;
+  /** wtKey -> last completed on-disk measurement (see disk.rs). Absent until a
+      scan finishes; the overview renders "—" rather than blocking on one. */
+  disk: Record<string, DiskUsage>;
+  /** ask the backend to measure these worktrees; results arrive as events */
+  scanDisk: (wtKeys: string[], force?: boolean) => void;
   /** rolling CPU samples per service — the service-detail sparkline. Kept
       client-side because the backend streams point-in-time stats and has no
       reason to retain history for a modal that may never open. */
@@ -280,15 +294,31 @@ const STEP_MARK = /\[\d+\/\d+\]:/;
 
 /** Fold a worktree:op event into the per-worktree op buffer. A progress event
     after an idle state starts a fresh buffer (new run). */
-function appendOpLine(wtKey: string, state: "progress" | "done" | "error", detail: string) {
+function appendOpLine(
+  wtKey: string,
+  state: "progress" | "done" | "error",
+  detail: string,
+  stepIndex?: number,
+  result?: string,
+) {
   useStore.setState((st) => {
     const prev = st.ops[wtKey];
     const fresh = state === "progress" && !prev?.running;
+    // A result event carries no output line — recording it as one would put a
+    // blank row in the raw tail the failure view prints.
+    const isResult = result !== undefined && stepIndex !== undefined;
     const lv = state === "error" ? "err" : state === "done" ? "ok" : "info";
-    const lines = [...(fresh ? [] : prev?.lines ?? []), { t: logTime(), lv, text: detail } as LogLine];
+    const lines = isResult
+      ? (fresh ? [] : (prev?.lines ?? []))
+      : [...(fresh ? [] : (prev?.lines ?? [])), { t: logTime(), lv, text: detail } as LogLine];
     if (lines.length > OP_LOG_CAP) lines.splice(0, lines.length - OP_LOG_CAP);
-    const step = STEP_MARK.test(detail) ? detail : fresh ? null : prev?.step ?? null;
-    return { ops: { ...st.ops, [wtKey]: { lines, step, running: state === "progress" } } };
+    const step = STEP_MARK.test(detail) ? detail : fresh ? null : (prev?.step ?? null);
+    const results = isResult
+      ? { ...(fresh ? {} : (prev?.results ?? {})), [stepIndex]: result }
+      : fresh
+        ? {}
+        : (prev?.results ?? {});
+    return { ops: { ...st.ops, [wtKey]: { lines, step, results, running: state === "progress" } } };
   });
 }
 
@@ -359,6 +389,7 @@ export const useStore = create<State>((set, get) => {
     logs: seedLogs(mock),
     ops: {},
     stats: seedStats(mock),
+    disk: {},
     cpuHistory: {},
     exitCodes: {},
     resetting: {},
@@ -376,6 +407,11 @@ export const useStore = create<State>((set, get) => {
     collapsed: false,
     sessions: {},
     activeTerm: {},
+    scanDisk: (wtKeys, force = false) => {
+      // No mock fallback: inventing a size would put a fabricated number in a
+      // column whose entire purpose is deciding what to delete.
+      if (hasBackend() && wtKeys.length) ipc.scanDiskUsage(wtKeys, force).catch(() => {});
+    },
     openSession: (s) => {
       sessionStartedAt[s.id] = Date.now();
       set((st) => ({
@@ -817,7 +853,7 @@ export function initSync(): () => void {
 
   track(on.serviceLog((e) => appendLogs(e.svcKey, e.lines)));
 
-  track(on.worktreeOp((e) => appendOpLine(e.wtKey, e.state, e.detail)));
+  track(on.worktreeOp((e) => appendOpLine(e.wtKey, e.state, e.detail, e.step, e.result)));
 
   // session lifecycle: every lane tab is its own PTY, so its exit is the
   // authoritative "this tab stopped" signal. The tab is kept (marked not
@@ -843,6 +879,31 @@ export function initSync(): () => void {
       }));
     }),
   );
+
+  // agent activity: the backend emits only on a transition, so this is a
+  // direct assignment rather than a reconcile.
+  track(
+    on.terminalState((e) => {
+      const wtKey = wtOf(e.id);
+      useStore.setState((st) => ({
+        sessions: {
+          ...st.sessions,
+          [wtKey]: (st.sessions[wtKey] ?? []).map((s) => (s.id === e.id ? { ...s, activity: e.state } : s)),
+        },
+      }));
+    }),
+  );
+  // disk measurements: one event per completed walk, so a plain merge.
+  track(
+    on.worktreeDisk((e) => {
+      useStore.setState((st) => ({
+        disk: { ...st.disk, [e.wtKey]: { bytes: e.bytes, scannedAt: e.scannedAt, partial: e.partial } },
+      }));
+    }),
+  );
+  // pick up whatever earlier scans already found — a window opened later (or
+  // the popover) should not have to re-walk trees this process already measured
+  ipc.getDiskUsage().then((d) => useStore.setState({ disk: d })).catch(() => {});
 
   track(
     on.serviceStats((e) => {

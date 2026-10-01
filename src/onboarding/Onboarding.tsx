@@ -23,7 +23,8 @@ import { useEffect, useRef, useState } from "react";
 import { open as openDialog } from "@tauri-apps/plugin-dialog";
 import { getCurrentWebview } from "@tauri-apps/api/webview";
 import "../styles/onboarding.css";
-import { errText, hasBackend, ipc, type ProvisionEntry, type RepoCfg, type RepoDetection, type ServiceCfg } from "../ipc";
+import McpPage from "../app/settings/pages/McpPage";
+import { errText, hasBackend, ipc, type SetupTask, type ProvisionEntry, type RepoCfg, type RepoDetection, type ServiceCfg } from "../ipc";
 import { useStore } from "../store";
 import { Bolt, Browser, Check, ChevRight, Chevron, Cube, Doc, Download, Fork, Plus, Server, Spinner, Trash } from "../icons";
 
@@ -63,6 +64,7 @@ interface Cfg {
   worktreeDir: string;
   env: { id: string; on: boolean; key: string; value: string }[];
   setup: { id: string; on: boolean; cmd: string }[];
+  writeConfig: boolean;
 }
 
 let _uid = 0;
@@ -77,8 +79,10 @@ const delay = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 /** Map detected package.json scripts + stack into service/command suggestions.
  * Port-derivation and env-template names mirror the Rust setup runner. */
-function derive(det: RepoDetection): { services: WizSvc[]; cfg: Cfg } {
+export function derive(det: RepoDetection): { services: WizSvc[]; cfg: Cfg } {
   const scripts = det.scripts ?? [];
+  const packageManager = det.packageManager || (/^(node|next|nest)$/.test(det.stack) ? "npm" : "");
+  const runScript = (name: string) => `${packageManager} run ${name}`;
   const find = (re: RegExp) => scripts.find((s) => re.test(s.name));
   const dirOf = (command: string) => command.match(/--prefix\s+(\S+)/)?.[1] ?? "";
 
@@ -97,26 +101,23 @@ function derive(det: RepoDetection): { services: WizSvc[]; cfg: Cfg } {
       dir: dirOf(command),
       dirEdited: true,
       script: name,
-      cmd: command,
+      cmd: runScript(name),
       port: String((portBase += services.length ? 10 : 0)),
     });
   }
-  if (!services.length) {
-    services.push({ id: uid("s"), on: true, name: "Dev", kind: "server", dir: "", dirEdited: true, cmd: "npm run dev", port: "3000" });
-  }
   const build = find(/^(build|compile|plugins?:build)$/i);
   if (build) {
-    services.push({ id: uid("s"), on: false, name: cap(build.name.replace(/[:_-]/g, " ")), kind: "worker", dir: dirOf(build.command), dirEdited: true, script: build.name, cmd: build.command, port: "" });
+    services.push({ id: uid("s"), on: false, name: cap(build.name.replace(/[:_-]/g, " ")), kind: "worker", dir: dirOf(build.command), dirEdited: true, script: build.name, cmd: runScript(build.name), port: "" });
   }
 
   const reset = find(/^(db:reset|reset:db|resetdb)$/i);
   const migrate = find(/^(db:migrate|migrate|migration:run)$/i);
   const create = find(/^(db:create|createdb)$/i);
 
-  const setup: Cfg["setup"] = [{ id: uid("u"), on: true, cmd: "npm install" }];
-  if (create && migrate) setup.push({ id: uid("u"), on: true, cmd: `npm run ${create.name} && npm run ${migrate.name}` });
-  else if (create) setup.push({ id: uid("u"), on: true, cmd: `npm run ${create.name}` });
-  else if (migrate) setup.push({ id: uid("u"), on: true, cmd: `npm run ${migrate.name}` });
+  const setup: Cfg["setup"] = packageManager ? [{ id: uid("u"), on: true, cmd: `${packageManager} install` }] : [];
+  if (create && migrate) setup.push({ id: uid("u"), on: true, cmd: `${runScript(create.name)} && ${runScript(migrate.name)}` });
+  else if (create) setup.push({ id: uid("u"), on: true, cmd: runScript(create.name) });
+  else if (migrate) setup.push({ id: uid("u"), on: true, cmd: runScript(migrate.name) });
 
   // The backend exposes each service's port as WT_<NAME-SLUG>_PORT (and by id).
   // Point the default PORT env at the primary service's real variable so it
@@ -125,16 +126,24 @@ function derive(det: RepoDetection): { services: WizSvc[]; cfg: Cfg } {
   const primary = services.find((s) => s.on && s.kind === "server") ?? services.find((s) => s.on && s.port) ?? services[0];
   const portVar = primary ? `\${WT_${envSlug(primary.name)}_PORT}` : "${WT_SERVER_PORT}";
 
+  const hasDatabase = Boolean(reset || migrate || create);
+  const env: Cfg["env"] = [];
+  if (primary?.port) env.push({ id: uid("e"), on: true, key: "PORT", value: portVar });
+  if (hasDatabase) env.push({ id: uid("e"), on: true, key: "PG_DB", value: "${WT_DB_NAME}" });
   const cfg: Cfg = {
-    resetDb: reset ? `npm run ${reset.name}` : "",
-    migrate: migrate ? `npm run ${migrate.name}` : "",
+    resetDb: reset ? runScript(reset.name) : "",
+    migrate: migrate ? runScript(migrate.name) : "",
     worktreeDir: det.top ? `${det.top}/.worktrees` : "",
-    env: [
-      { id: uid("e"), on: true, key: "PORT", value: portVar },
-      { id: uid("e"), on: true, key: "PG_DB", value: "${WT_DB_NAME}" },
-    ],
+    env,
     setup,
+    writeConfig: !det.hasConfig && Boolean(packageManager || env.length || setup.length),
   };
+  if (det.hasConfig) {
+    cfg.resetDb = "";
+    cfg.migrate = "";
+    cfg.env = [];
+    cfg.setup = [];
+  }
   return { services, cfg };
 }
 
@@ -276,7 +285,7 @@ function AddScreen({
   const hits = new Set<string>();
   services.forEach((s) => s.on && s.script && hits.add(s.script));
   [cfg.resetDb, cfg.migrate].forEach((c) => {
-    const m = c.match(/npm run (\S+)/);
+    const m = c.match(/(?:npm|pnpm|yarn) run (\S+)/);
     if (m) hits.add(m[1]);
   });
   const patch = (id: string, p: Partial<WizSvc>) => setServices((ss) => ss.map((s) => (s.id === id ? { ...s, ...p } : s)));
@@ -304,7 +313,7 @@ function AddScreen({
         const prov = Array.isArray(parsed.provision) ? (parsed.provision as Record<string, unknown>[]) : [];
         const dotenv = prov.find((p) => p.format === "dotenv") ?? prov[0];
         setCfg((c) => {
-          const next = { ...c };
+          const next = { ...c, writeConfig: true };
           if (dotenv && dotenv.keys && typeof dotenv.keys === "object") {
             next.env = Object.entries(dotenv.keys as Record<string, unknown>).map(([k, v]) => ({ id: uid("e"), on: true, key: k, value: String(v) }));
           }
@@ -500,11 +509,11 @@ function AddScreen({
                     <summary>
                       <span className="cv"><ChevRight size={11} /></span>
                       Provisioning and setup
-                      <span className="n">{envOn} env keys · {setupOn} setup steps · db commands found</span>
+                      <span className="n">{det.hasConfig && !cfg.writeConfig ? "existing config preserved" : `${envOn} env keys · ${setupOn} setup steps · ${cfg.resetDb || cfg.migrate ? "database configured" : "no database defaults"}`}</span>
                     </summary>
                     <div className="advb">
                       <div className="impline">
-                        <span>Already have a config? Import it instead of re-entering it.</span>
+                        <span>{det.hasConfig && !cfg.writeConfig ? "Existing .worktreemanager.json will be preserved." : "Import a config to replace these suggestions."}</span>
                         <button className="btn sm" onClick={triggerImport}><Download size={11} />Import .worktreemanager.json</button>
                         <input ref={fileRef} type="file" accept=".json,application/json" style={{ display: "none" }} onChange={onImportFile} />
                       </div>
@@ -517,7 +526,7 @@ function AddScreen({
                               value={e.key}
                               spellCheck={false}
                               style={{ opacity: e.on ? 1 : 0.5 }}
-                              onChange={(ev) => setCfg((c) => ({ ...c, env: c.env.map((x) => (x.id === e.id ? { ...x, key: ev.target.value } : x)) }))}
+                              onChange={(ev) => setCfg((c) => ({ ...c, writeConfig: true, env: c.env.map((x) => (x.id === e.id ? { ...x, key: ev.target.value } : x)) }))}
                             />
                             <span className="eq">=</span>
                             <input
@@ -525,9 +534,9 @@ function AddScreen({
                               value={e.value}
                               spellCheck={false}
                               style={{ opacity: e.on ? 1 : 0.5 }}
-                              onChange={(ev) => setCfg((c) => ({ ...c, env: c.env.map((x) => (x.id === e.id ? { ...x, value: ev.target.value } : x)) }))}
+                              onChange={(ev) => setCfg((c) => ({ ...c, writeConfig: true, env: c.env.map((x) => (x.id === e.id ? { ...x, value: ev.target.value } : x)) }))}
                             />
-                            <Chk on={e.on} label={`Write ${e.key || "env key"}`} onClick={() => setCfg((c) => ({ ...c, env: c.env.map((x) => (x.id === e.id ? { ...x, on: !x.on } : x)) }))} />
+                            <Chk on={e.on} label={`Write ${e.key || "env key"}`} onClick={() => setCfg((c) => ({ ...c, writeConfig: true, env: c.env.map((x) => (x.id === e.id ? { ...x, on: !x.on } : x)) }))} />
                           </div>
                         ))}
                       </div>
@@ -537,7 +546,7 @@ function AddScreen({
                         <span className="ln" />
                         <button
                           className="btn sm gh"
-                          onClick={() => setCfg((c) => ({ ...c, setup: c.setup.concat([{ id: uid("u"), on: true, cmd: "" }]) }))}
+                          onClick={() => setCfg((c) => ({ ...c, writeConfig: true, setup: c.setup.concat([{ id: uid("u"), on: true, cmd: "" }]) }))}
                         >
                           <Plus size={10} />Add step
                         </button>
@@ -551,12 +560,12 @@ function AddScreen({
                             value={u.cmd}
                             placeholder="npm install"
                             spellCheck={false}
-                            onChange={(ev) => setCfg((c) => ({ ...c, setup: c.setup.map((x) => (x.id === u.id ? { ...x, cmd: ev.target.value } : x)) }))}
+                            onChange={(ev) => setCfg((c) => ({ ...c, writeConfig: true, setup: c.setup.map((x) => (x.id === u.id ? { ...x, cmd: ev.target.value } : x)) }))}
                           />
-                          <button className="ico bad" title="Remove step" onClick={() => setCfg((c) => ({ ...c, setup: c.setup.filter((x) => x.id !== u.id) }))}>
+                          <button className="ico bad" title="Remove step" onClick={() => setCfg((c) => ({ ...c, writeConfig: true, setup: c.setup.filter((x) => x.id !== u.id) }))}>
                             <Trash size={11} />
                           </button>
-                          <Chk on={u.on} label={`Run step ${i + 1}`} onClick={() => setCfg((c) => ({ ...c, setup: c.setup.map((x) => (x.id === u.id ? { ...x, on: !x.on } : x)) }))} />
+                          <Chk on={u.on} label={`Run step ${i + 1}`} onClick={() => setCfg((c) => ({ ...c, writeConfig: true, setup: c.setup.map((x) => (x.id === u.id ? { ...x, on: !x.on } : x)) }))} />
                         </div>
                       ))}
 
@@ -671,7 +680,7 @@ function Provisioning({ name, steps, onDone, onError, onCancel }: { name: string
 }
 
 /* ── D · ready — ends on the next action, not a dead end ──────────── */
-function Ready({ det, services, cfg, onCreate, onGoToCanopy, onRestart }: { det: RepoDetection; services: WizSvc[]; cfg: Cfg; onCreate: () => void; onGoToCanopy: () => void; onRestart: () => void }) {
+function Ready({ det, services, cfg, onCreate, onGoToCanopy, onRestart, onConnect }: { det: RepoDetection; services: WizSvc[]; cfg: Cfg; onCreate: () => void; onGoToCanopy: () => void; onRestart: () => void; onConnect: () => void }) {
   const on = services.filter((s) => s.on);
   const svcSummary = on.map((s) => (s.port ? `${s.name} :${s.port}` : s.name)).join(" · ") || "none";
   const envOn = cfg.env.filter((e) => e.on).length;
@@ -684,6 +693,7 @@ function Ready({ det, services, cfg, onCreate, onGoToCanopy, onRestart }: { det:
         <p>Canopy is watching this repo. Create a worktree to check out a branch with its own services, ports and database.</p>
         <div className="doneacts">
           <button className="btn pri lg" onClick={onCreate}><Plus size={13} />Create first worktree<span className="k">⌘N</span></button>
+          <button className="btn lg" onClick={onConnect}>Connect to agent</button>
           <button className="btn lg" onClick={onGoToCanopy}>Go to Canopy</button>
         </div>
         <div className="donefacts">
@@ -702,7 +712,7 @@ function Ready({ det, services, cfg, onCreate, onGoToCanopy, onRestart }: { det:
 }
 
 /* ── shell ────────────────────────────────────────────────────────── */
-type View = "empty" | "add" | "run" | "done";
+type View = "empty" | "add" | "run" | "done" | "connect";
 
 export default function Onboarding({
   onClose,
@@ -738,7 +748,7 @@ export default function Onboarding({
   const [over, setOver] = useState(false);
   const [stack, setStack] = useState("node");
   const [services, setServices] = useState<WizSvc[]>([]);
-  const [cfg, setCfg] = useState<Cfg>({ resetDb: "", migrate: "", worktreeDir: "", env: [], setup: [] });
+  const [cfg, setCfg] = useState<Cfg>({ resetDb: "", migrate: "", worktreeDir: "", env: [], setup: [], writeConfig: false });
   const [runSteps, setRunSteps] = useState<RunStep[]>([]);
   const [toast, setToast] = useState<string | null>(null);
 
@@ -863,7 +873,11 @@ export default function Onboarding({
     if (!det) return;
     const on = services.filter((s) => s.on);
     const envPairs = cfg.env.filter((e) => e.on && e.key.trim()).map((e) => [e.key, e.value] as [string, string]);
-    const setupCmds = cfg.setup.filter((u) => u.on && u.cmd.trim()).map((u) => u.cmd);
+    // Onboarding writes plain tasks: no working directory, all enabled —
+    // exactly the shape a bare string in the config file parses to.
+    const setupCmds: SetupTask[] = cfg.setup
+      .filter((u) => u.on && u.cmd.trim())
+      .map((u) => ({ cmd: u.cmd, cwd: "", enabled: true }));
 
     const svcCfg = (): ServiceCfg[] =>
       on.map((s) => ({
@@ -874,6 +888,9 @@ export default function Onboarding({
         cwd: s.dir.trim(),
         basePort: s.port.trim() ? parseInt(s.port, 10) || null : null,
         env: {},
+        // Onboarding can't know a repo's readiness path, and guessing one
+        // would hold every service in "starting" until it timed out.
+        health: "",
       }));
 
     if (!hasBackend()) {
@@ -888,16 +905,19 @@ export default function Onboarding({
       return;
     }
 
-    const ctx: { repo: RepoCfg | null } = { repo: null };
+    const ctx: { repo: RepoCfg | null; added: boolean } = { repo: null, added: false };
     const steps: RunStep[] = [
       {
         t: `Registering ${det.name}`,
         run: async () => {
-          await ipc.addRepo(det.top).catch((e) => {
-            if (!String(e).toLowerCase().includes("already")) throw e;
-          });
-          const settings = await ipc.getSettings();
-          const repo = settings.repos.find((r) => r.path === det.top);
+          let settings = await ipc.getSettings();
+          let repo = settings.repos.find((r) => r.path === det.top);
+          if (!repo) {
+            await ipc.addRepo(det.top);
+            ctx.added = true;
+            settings = await ipc.getSettings();
+            repo = settings.repos.find((r) => r.path === det.top);
+          }
           if (!repo) throw new Error("repo not found after add");
           ctx.repo = repo;
           return "";
@@ -909,6 +929,10 @@ export default function Onboarding({
           const settings = await ipc.getSettings();
           const repo = settings.repos.find((r) => r.path === det.top);
           if (!repo) throw new Error("repo not found");
+          if (!ctx.added) {
+            ctx.repo = repo;
+            return "existing settings preserved";
+          }
           repo.services = svcCfg();
           repo.resetDb = cfg.resetDb;
           repo.migrateDb = cfg.migrate;
@@ -920,9 +944,10 @@ export default function Onboarding({
         },
       },
       {
-        t: "Writing .worktreemanager.json",
+        t: cfg.writeConfig ? "Writing .worktreemanager.json" : "Preserving repository configuration",
         run: async () => {
           if (!ctx.repo) throw new Error("repo not resolved");
+          if (!cfg.writeConfig) return det.hasConfig ? "existing file unchanged" : "no config needed";
           const provision: ProvisionEntry[] = envPairs.length ? [{ path: ".env", format: "dotenv", from: "", interpolate: false, keys: envPairs }] : [];
           await ipc.saveRepoConfig(ctx.repo.id, provision, setupCmds);
           return `${envPairs.length} env ${envPairs.length === 1 ? "key" : "keys"} · ${setupCmds.length} setup`;
@@ -961,7 +986,7 @@ export default function Onboarding({
     setDetErr(null);
     setPhase("idle");
     setServices([]);
-    setCfg({ resetDb: "", migrate: "", worktreeDir: "", env: [], setup: [] });
+    setCfg({ resetDb: "", migrate: "", worktreeDir: "", env: [], setup: [], writeConfig: false });
   }
 
   useEffect(() => {
@@ -1026,7 +1051,7 @@ export default function Onboarding({
         <Provisioning
           name={det?.name ?? "repository"}
           steps={runSteps}
-          onDone={() => setView("done")}
+          onDone={() => setView("connect")}
           onError={(msg) => {
             showToast(`Couldn't add repo — ${msg}`);
             setView("add");
@@ -1034,6 +1059,13 @@ export default function Onboarding({
           onCancel={() => setView("add")}
         />
       )}
+      {view === "connect" && <><div className="mcp-onboarding"><div className="mcp-onboarding-inner">
+        <h1>Connect to agent</h1>
+        <p>Give your coding agent access to Canopy. This step is optional and can be changed later in Settings → MCP.</p>
+        <McpPage preferredRepoPath={det?.top} />
+        </div></div>
+        <div className="mcp-onboarding-footer"><button className="btn" onClick={() => setView("done")}>Skip for now</button><button className="btn pri" onClick={() => setView("done")}>Continue</button></div>
+      </>}
       {view === "done" && det && (
         <Ready
           det={det}
@@ -1045,6 +1077,7 @@ export default function Onboarding({
           }}
           onGoToCanopy={goToCanopy}
           onRestart={restart}
+          onConnect={() => setView("connect")}
         />
       )}
 

@@ -9,6 +9,7 @@ import { Database, Download, Info, Refresh, Restart, Pull, Spinner } from "../..
 import { errText, hasBackend, ipc } from "../../ipc";
 import { opTail, useStore } from "../../store";
 import type { WorktreeNode } from "../../types";
+import RestoreDatabaseModal from "./RestoreDatabaseModal";
 import Modal, { Hint, Spacer, usePrimaryAction } from "./Modal";
 
 /** Which long-running database job is in flight. Only one runs at a time —
@@ -42,6 +43,7 @@ export default function DatabaseModal({ wt, onClose }: { wt: WorktreeNode; onClo
   const [dbs, setDbs] = useState<string[]>([]);
   const [current, setCurrent] = useState<string | null>(wt.dbName);
   const [q, setQ] = useState("");
+  const [restoreOpen, setRestoreOpen] = useState(false);
   const [snap, setSnap] = useState<string | null>(null);
   const [switching, setSwitching] = useState(false);
   const [job, setJob] = useState<Job>(null);
@@ -119,6 +121,8 @@ export default function DatabaseModal({ wt, onClose }: { wt: WorktreeNode; onClo
      field is the database search, and running a migration from a search box
      would be a nasty surprise. */
   usePrimaryAction("enter", snap !== null && !!snap.trim() && !busy, createSnapshot);
+
+  if (restoreOpen) return <RestoreDatabaseModal wt={wt} onClose={onClose} />;
 
   /* ── the snapshot name prompt is its own step, not a separate dialog ── */
   if (snap !== null) {
@@ -266,10 +270,7 @@ export default function DatabaseModal({ wt, onClose }: { wt: WorktreeNode; onClo
           disabled={busy}
           onClick={async () => {
             if (!hasBackend()) return showToast("Restore needs the desktop app");
-            const { open } = await import("@tauri-apps/plugin-dialog");
-            const path = await open({ title: "Restore database", multiple: false });
-            if (!path || typeof path !== "string") return;
-            run("restore", () => ipc.restoreDatabase(wt.wtKey, path), `Restored ${current}`);
+            setRestoreOpen(true);
           }}
         >
           <span className="ic">{job === "restore" ? <Spinner size={12} /> : <Refresh size={12} />}</span>

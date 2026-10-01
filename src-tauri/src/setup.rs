@@ -19,7 +19,6 @@
 use std::collections::{HashMap, VecDeque};
 use std::path::Path;
 use std::process::Stdio;
-use tokio::io::{AsyncBufReadExt, BufReader};
 use tokio::process::Command;
 
 const CONFIG_NAMES: [&str; 2] = [".worktreemanager.json", "wtm.json"];
@@ -42,12 +41,49 @@ pub struct ProvisionFile {
     pub keys: Vec<(String, String)>,
 }
 
+/// One setup task.
+///
+/// The config accepts a bare string *or* an object, and a bare string parses
+/// to an enabled task in the worktree root. That is what makes this change
+/// invisible to every existing `.worktreemanager.json`: the old array of
+/// strings still means exactly what it always did.
+#[derive(Debug, Clone, PartialEq)]
+pub struct SetupTask {
+    pub cmd: String,
+    /// working directory relative to the worktree root; empty = the root
+    pub cwd: String,
+    /// a disabled task is skipped, but stays in the file — the point is to
+    /// turn one off without losing how it was written
+    pub enabled: bool,
+}
+
+impl SetupTask {
+    pub fn plain(cmd: impl Into<String>) -> Self {
+        Self { cmd: cmd.into(), cwd: String::new(), enabled: true }
+    }
+}
+
+/// What to do when a setup task fails, and how long any one may run.
+///
+/// The defaults are the existing behaviour: stop at the first failure (a task
+/// list normally encodes an order, so continuing past a failed install just
+/// produces a second, more confusing failure) and use the built-in one-hour
+/// per-step ceiling.
+#[derive(Debug, Clone, PartialEq, Default)]
+pub struct SetupPolicy {
+    /// keep going after a failed task instead of stopping at the first one
+    pub continue_on_failure: bool,
+    /// per-task ceiling in seconds; 0 = the built-in one hour
+    pub timeout_secs: u64,
+}
+
 #[derive(Default, Clone)]
 pub struct WtmConfig {
     /// files seeded + templated into the worktree (the ".env" root file is just
     /// one entry — legacy top-level `env` is migrated into this list on read)
     pub provision: Vec<ProvisionFile>,
-    pub setup: Vec<String>,
+    pub setup: Vec<SetupTask>,
+    pub setup_policy: SetupPolicy,
     /// commands run before a worktree is deleted (e.g. drop its database)
     pub teardown: Vec<String>,
     /// commands run by the "Run migration" action
@@ -92,6 +128,42 @@ fn parse_provision(v: &serde_json::Value) -> Vec<ProvisionFile> {
         .unwrap_or_default()
 }
 
+/// Parse the `setup` array: a bare string is a plain enabled task, an object
+/// may carry `cwd` and `enabled`. Anything else is skipped rather than
+/// silently becoming an empty command.
+fn parse_setup(v: &serde_json::Value) -> Vec<SetupTask> {
+    v.get("setup")
+        .and_then(|s| s.as_array())
+        .map(|arr| {
+            arr.iter()
+                .filter_map(|item| match item {
+                    serde_json::Value::String(s) => Some(SetupTask::plain(s.clone())),
+                    serde_json::Value::Object(o) => {
+                        let cmd = o.get("cmd").and_then(|c| c.as_str())?.to_string();
+                        Some(SetupTask {
+                            cmd,
+                            cwd: o.get("cwd").and_then(|c| c.as_str()).unwrap_or("").to_string(),
+                            enabled: o.get("enabled").and_then(|e| e.as_bool()).unwrap_or(true),
+                        })
+                    }
+                    _ => None,
+                })
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
+fn parse_policy(v: &serde_json::Value) -> SetupPolicy {
+    let p = v.get("setupPolicy");
+    SetupPolicy {
+        continue_on_failure: p
+            .and_then(|p| p.get("onFailure"))
+            .and_then(|x| x.as_str())
+            .is_some_and(|s| s.eq_ignore_ascii_case("continue")),
+        timeout_secs: p.and_then(|p| p.get("timeoutSecs")).and_then(|x| x.as_u64()).unwrap_or(0),
+    }
+}
+
 pub fn read_config(wt_path: &str, repo_path: &str) -> WtmConfig {
     for dir in [wt_path, repo_path] {
         for name in CONFIG_NAMES {
@@ -104,7 +176,8 @@ pub fn read_config(wt_path: &str, repo_path: &str) -> WtmConfig {
                     .map(|a| a.iter().filter_map(|x| x.as_str().map(String::from)).collect::<Vec<_>>())
                     .unwrap_or_default()
             };
-            let setup = arr("setup");
+            let setup = parse_setup(&v);
+            let setup_policy = parse_policy(&v);
             let teardown = arr("teardown");
             let migrate = arr("migrate");
             let mut provision = parse_provision(&v);
@@ -132,7 +205,7 @@ pub fn read_config(wt_path: &str, repo_path: &str) -> WtmConfig {
                 );
             }
             if !setup.is_empty() || !provision.is_empty() || !teardown.is_empty() || !migrate.is_empty() {
-                return WtmConfig { provision, setup, teardown, migrate };
+                return WtmConfig { provision, setup, setup_policy, teardown, migrate };
             }
         }
     }
@@ -181,13 +254,32 @@ fn provision_to_json(provision: &[ProvisionFile]) -> serde_json::Value {
 /// setup commands. Preserves other top-level keys (teardown/migrate) and drops
 /// the legacy `env` block, which is now folded into `provision`. An existing but
 /// malformed file is an ERROR — rewriting it would silently drop those keys.
-pub fn write_repo_config(repo_path: &str, provision: &[ProvisionFile], setup: &[String]) -> Result<(), String> {
+#[cfg(test)]
+pub fn write_repo_config(
+    repo_path: &str,
+    provision: &[ProvisionFile],
+    setup: &[SetupTask],
+    policy: Option<&SetupPolicy>,
+) -> Result<(), String> {
+    write_repo_config_sections(repo_path, provision, setup, policy, None, None)
+}
+
+pub fn write_repo_config_sections(
+    repo_path: &str,
+    provision: &[ProvisionFile],
+    setup: &[SetupTask],
+    policy: Option<&SetupPolicy>,
+    teardown: Option<&[String]>,
+    migrate: Option<&[String]>,
+) -> Result<(), String> {
     let path = Path::new(repo_path).join(".worktreemanager.json");
     let mut root: serde_json::Value = match std::fs::read_to_string(&path) {
         Ok(txt) if !txt.trim().is_empty() => serde_json::from_str(&txt).map_err(|e| {
             format!(".worktreemanager.json is malformed ({e}) — fix it by hand before saving from Settings")
         })?,
-        _ => serde_json::json!({}),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => serde_json::json!({}),
+        Ok(_) => return Err(format!("{} is empty — fix it before saving", path.display())),
+        Err(e) => return Err(format!("read {}: {e}", path.display())),
     };
     if !root.is_object() {
         return Err(".worktreemanager.json is not a JSON object — fix it by hand before saving from Settings".into());
@@ -197,15 +289,179 @@ pub fn write_repo_config(repo_path: &str, provision: &[ProvisionFile], setup: &[
     }
     root["$schema"] = serde_json::Value::String("canopy://worktree-manager/v1".into());
     root["provision"] = provision_to_json(provision);
+    for (key, commands) in [("teardown", teardown), ("migrate", migrate)] {
+        if let Some(commands) = commands {
+            root[key] = serde_json::json!(commands.iter().filter(|s| !s.trim().is_empty()).collect::<Vec<_>>());
+        }
+    }
+    // A plain task round-trips as a bare string, so turning one option on for
+    // one task doesn't rewrite the whole list into objects and produce a diff
+    // that touches every line.
     root["setup"] = serde_json::Value::Array(
         setup
             .iter()
-            .filter(|c| !c.trim().is_empty())
-            .map(|c| serde_json::Value::String(c.clone()))
+            .filter(|t| !t.cmd.trim().is_empty())
+            .map(|t| {
+                if t.cwd.trim().is_empty() && t.enabled {
+                    serde_json::Value::String(t.cmd.clone())
+                } else {
+                    let mut o = serde_json::Map::new();
+                    o.insert("cmd".into(), serde_json::Value::String(t.cmd.clone()));
+                    if !t.cwd.trim().is_empty() {
+                        o.insert("cwd".into(), serde_json::Value::String(t.cwd.trim().to_string()));
+                    }
+                    if !t.enabled {
+                        o.insert("enabled".into(), serde_json::Value::Bool(false));
+                    }
+                    serde_json::Value::Object(o)
+                }
+            })
             .collect(),
     );
+    match policy {
+        // Only written when it differs from the built-in behaviour, so a repo
+        // that never touched it keeps a config file without the key.
+        Some(p) if *p != SetupPolicy::default() => {
+            let mut o = serde_json::Map::new();
+            o.insert(
+                "onFailure".into(),
+                serde_json::Value::String(if p.continue_on_failure { "continue" } else { "stop" }.into()),
+            );
+            if p.timeout_secs > 0 {
+                o.insert("timeoutSecs".into(), serde_json::Value::from(p.timeout_secs));
+            }
+            root["setupPolicy"] = serde_json::Value::Object(o);
+        }
+        Some(_) => {
+            if let Some(obj) = root.as_object_mut() {
+                obj.remove("setupPolicy");
+            }
+        }
+        None => {}
+    }
     let body = serde_json::to_string_pretty(&root).map_err(|e| e.to_string())?;
     std::fs::write(&path, body + "\n").map_err(|e| e.to_string())
+}
+
+// ── the setup marker ──────────────────────────────────────────────────
+//
+// Whether a worktree has ever been provisioned is a *durable* fact about the
+// worktree, not about this run of Canopy — so it lives next to the worktree
+// (`.canopy/setup.json`) rather than in app state. That survives a restart, a
+// `get_tree` rescan, and a Canopy reinstall, and it is greppable when
+// debugging a repo by hand.
+//
+// `.canopy/` is already the worktree-local Canopy directory (see
+// `write_worktree_context`) and self-ignores via its own `.gitignore`, so the
+// marker never shows up in `git status`.
+
+/// The marker's on-disk shape. `ok` records whether the run that wrote it
+/// succeeded — a failed setup still leaves a marker, so the UI can say "last
+/// run failed" instead of the much weaker "never provisioned".
+#[derive(serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct SetupMarker {
+    /// schema version, so a future field can be added without a silent misread
+    version: u32,
+    /// unix seconds when the run finished
+    ran_at: i64,
+    ok: bool,
+}
+
+/// How we know a worktree was provisioned.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize)]
+#[serde(rename_all = "lowercase")]
+pub enum SetupSource {
+    /// read from `.canopy/setup.json` — authoritative
+    Marker,
+    /// no marker, but every declared provisioned file is already present.
+    /// Worktrees created before the marker existed land here; without this
+    /// they would all claim "never provisioned" and invite a pointless
+    /// re-install of every dependency tree on the machine.
+    Inferred,
+}
+
+/// What Canopy knows about a worktree's provisioning.
+#[derive(Debug, Clone, PartialEq, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SetupState {
+    /// unix seconds of the recorded run; absent when inferred
+    pub ran_at: Option<i64>,
+    /// did the recorded run succeed (inferred state is always `true` —
+    /// the files exist, so *something* provisioned them)
+    pub ok: bool,
+    pub source: SetupSource,
+}
+
+fn marker_path(wt_path: &str) -> std::path::PathBuf {
+    Path::new(wt_path).join(".canopy").join("setup.json")
+}
+
+/// Record that setup finished for a worktree. Best-effort: setup itself
+/// already succeeded (or failed) by the time this runs, and a marker we
+/// couldn't write must never turn a good run into a reported failure — the
+/// worst case is the worktree reads as unprovisioned and offers a re-run.
+pub fn write_setup_marker(wt_path: &str, ok: bool) {
+    let dir = Path::new(wt_path).join(".canopy");
+    if let Err(e) = std::fs::create_dir_all(&dir) {
+        log::warn!("setup marker: mkdir {} failed: {e}", dir.display());
+        return;
+    }
+    // keep `.canopy/` out of git the same way write_worktree_context does,
+    // without ever truncating an existing ignore file
+    let ignore = dir.join(".gitignore");
+    if !ignore.exists() {
+        let _ = std::fs::write(&ignore, "*\n");
+    }
+    let ran_at = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_secs() as i64)
+        .unwrap_or(0);
+    let marker = SetupMarker { version: 1, ran_at, ok };
+    match serde_json::to_string_pretty(&marker) {
+        Ok(body) => {
+            if let Err(e) = std::fs::write(marker_path(wt_path), body + "\n") {
+                log::warn!("setup marker: write failed for {wt_path}: {e}");
+            }
+        }
+        Err(e) => log::warn!("setup marker: serialize failed: {e}"),
+    }
+}
+
+/// A worktree's provisioning state plus whether its repo declares any
+/// provisioning at all — the pair the tree needs, from a single config read.
+///
+/// Called once per worktree per tree rebuild, so it stays cheap: one small
+/// read for the marker, one for the config, and — only when the marker misses
+/// — an `exists()` per declared provisioned file. No directory walks.
+///
+/// Returns `(state, configured)`. `state == None` means "never provisioned as
+/// far as Canopy can tell"; that is only actionable when `configured` is true.
+pub fn setup_status(wt_path: &str, repo_path: &str) -> (Option<SetupState>, bool) {
+    let cfg = read_config(wt_path, repo_path);
+    let configured = !cfg.provision.is_empty() || !cfg.setup.is_empty();
+
+    if let Ok(txt) = std::fs::read_to_string(marker_path(wt_path)) {
+        if let Ok(m) = serde_json::from_str::<SetupMarker>(&txt) {
+            let state = SetupState { ran_at: Some(m.ran_at), ok: m.ok, source: SetupSource::Marker };
+            return (Some(state), configured);
+        }
+        // a corrupt marker is not evidence of anything — fall through to the
+        // file-presence inference rather than trusting a half-written file
+        log::warn!("setup marker at {wt_path} is unreadable — falling back to file inference");
+    }
+
+    // No usable marker. If the repo declares provisioned files and every one
+    // of them already exists here, provisioning demonstrably happened.
+    let declared: Vec<&ProvisionFile> = cfg.provision.iter().filter(|p| !p.path.trim().is_empty()).collect();
+    if declared.is_empty() {
+        // Nothing to infer from: a setup-commands-only repo leaves no
+        // inspectable trace, so absence of a marker is all we have.
+        return (None, configured);
+    }
+    let all_present = declared.iter().all(|p| Path::new(wt_path).join(&p.path).exists());
+    let state = all_present.then_some(SetupState { ran_at: None, ok: true, source: SetupSource::Inferred });
+    (state, configured)
 }
 
 /// Stable, db-safe per-worktree identifier from the worktree folder name:
@@ -227,6 +483,49 @@ fn interpolate(tpl: &str, vars: &HashMap<String, String>) -> String {
         out = out.replace(&format!("${{{k}}}"), v);
     }
     out
+}
+
+/// Restore activation preflights every input before changing any dotenv file.
+/// This also prevents a malformed config or an escaping provision path from
+/// silently switching only part of a worktree.
+pub fn activate_restored_database(wt_path: &str, repo_path: &str, name: &str) -> Result<(), String> {
+    if name.is_empty() || !name.chars().all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '-') {
+        return Err("automatic switching requires a database name containing only letters, digits, '_' or '-'; disable switching for other names".into());
+    }
+    for dir in [wt_path, repo_path] {
+        for filename in CONFIG_NAMES {
+            let path = Path::new(dir).join(filename);
+            match std::fs::read_to_string(&path) {
+                Ok(text) => {
+                    let value: serde_json::Value = serde_json::from_str(&text)
+                        .map_err(|e| format!("invalid {}: {e}", path.display()))?;
+                    if !value.is_object() { return Err(format!("{} must be a JSON object", path.display())); }
+                }
+                Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
+                Err(e) => return Err(format!("read {}: {e}", path.display())),
+            }
+        }
+    }
+    let root = std::fs::canonicalize(wt_path).map_err(|e| e.to_string())?;
+    let mut paths = vec![root.join(".env")];
+    for pf in read_config(wt_path, repo_path).provision {
+        if pf.format != "dotenv" || pf.path == ".env" || !pf.keys.iter().any(|(k, _)| k == "PG_DB") { continue; }
+        check_contained(&pf.path, "path")?;
+        let path = root.join(pf.path);
+        if path.try_exists().map_err(|e| e.to_string())? { paths.push(path); }
+    }
+    let pairs = [("PG_DB".to_owned(), name.to_owned())];
+    let mut writes = Vec::new();
+    for path in paths {
+        let resolved = std::fs::canonicalize(&path).map_err(|e| format!("read {}: {e}", path.display()))?;
+        if !resolved.starts_with(&root) { return Err(format!("{} escapes the worktree", path.display())); }
+        let body = std::fs::read_to_string(&resolved).map_err(|e| format!("read {}: {e}", path.display()))?;
+        writes.push((resolved, upsert_dotenv_str(&body, &pairs)));
+    }
+    for (path, body) in writes {
+        std::fs::write(&path, body).map_err(|e| format!("write {}: {e}", path.display()))?;
+    }
+    Ok(())
 }
 
 /// Add-or-replace literal KEY=VALUE pairs in the worktree's `.env`, preserving
@@ -292,6 +591,34 @@ fn upsert_dotenv_str(existing: &str, pairs: &[(String, String)]) -> String {
     let mut body = lines.join("\n");
     body.push('\n');
     body
+}
+
+/// Read a dotenv file into ordered `(key, value)` pairs, preserving file order
+/// and skipping comments/blanks. Handles the `export KEY=` form and strips one
+/// layer of matching quotes — the same shapes `upsert_dotenv_str` writes and
+/// tolerates. Deliberately not a full shell parser: no `$VAR` expansion, since
+/// the point is to show what is literally on disk.
+pub fn parse_dotenv(text: &str) -> Vec<(String, String)> {
+    let mut out = Vec::new();
+    for line in text.lines() {
+        let line = line.trim();
+        if line.is_empty() || line.starts_with('#') {
+            continue;
+        }
+        let Some((head, value)) = line.split_once('=') else { continue };
+        let key = head.trim().strip_prefix("export ").map(str::trim).unwrap_or_else(|| head.trim());
+        if key.is_empty() {
+            continue;
+        }
+        let value = value.trim();
+        let value = value
+            .strip_prefix('"')
+            .and_then(|v| v.strip_suffix('"'))
+            .or_else(|| value.strip_prefix('\'').and_then(|v| v.strip_suffix('\'')))
+            .unwrap_or(value);
+        out.push((key.to_string(), value.to_string()));
+    }
+    out
 }
 
 /// Set a dotted key (`development.database`) to a string value inside a JSON
@@ -521,18 +848,188 @@ pub async fn run_setup(
     wt_path: &str,
     repo_path: &str,
     vars: &HashMap<String, String>,
-    mut progress: impl FnMut(String),
+    dry_run: bool,
+    parallel: bool,
+    mut progress: impl FnMut(Progress),
 ) -> Result<(), String> {
     let cfg = read_config(wt_path, repo_path);
 
     if !cfg.provision.is_empty() {
-        progress(format!("provisioning {} file(s)", cfg.provision.len()));
+        let n = cfg.provision.len();
+        progress(Progress::Line(format!("provisioning {n} file(s){}", if dry_run { " — dry run" } else { "" })));
         for pf in &cfg.provision {
-            progress(format!("  → {} ({})", pf.path, pf.format));
-            provision_file(wt_path, repo_path, pf, vars)?;
+            progress(Progress::Line(format!("  → {} ({})", pf.path, pf.format)));
+            if !dry_run {
+                provision_file(wt_path, repo_path, pf, vars)?;
+            }
+        }
+        // Provisioning is the one step whose count Canopy knows exactly rather
+        // than having to parse out of someone else's output.
+        progress(Progress::StepResult { index: 0, text: format!("{n} file{}", if n == 1 { "" } else { "s" }) });
+    }
+    run_tasks(wt_path, repo_path, &cfg.setup, &cfg.setup_policy, vars, dry_run, parallel, &mut progress).await
+}
+
+/// Run the setup task list, honouring per-task cwd/enable and the failure and
+/// timeout policy. With `dry_run`, it reports exactly what WOULD run — same
+/// order, same working directories, same skips — and executes nothing.
+#[allow(clippy::too_many_arguments)]
+async fn run_tasks(
+    wt_path: &str,
+    repo_path: &str,
+    tasks: &[SetupTask],
+    policy: &SetupPolicy,
+    vars: &HashMap<String, String>,
+    dry_run: bool,
+    parallel: bool,
+    progress: &mut impl FnMut(Progress),
+) -> Result<(), String> {
+    let live: Vec<&SetupTask> = tasks.iter().filter(|t| !t.cmd.trim().is_empty()).collect();
+    let total = live.iter().filter(|t| t.enabled).count();
+
+    // The parallel-setup experiment runs the ENABLED tasks at once. It has to
+    // go through the same task list rather than the raw command array it was
+    // written against: running a task the user disabled, or running one
+    // outside its configured working directory, would be a bug the experiment
+    // flag doesn't excuse. A dry run still reports sequentially — the plan is
+    // what is being previewed, not the scheduling.
+    if parallel && !dry_run && total > 1 {
+        let enabled: Vec<&SetupTask> = live.iter().copied().filter(|t| t.enabled).collect();
+        return run_tasks_parallel(wt_path, repo_path, &enabled, policy, vars, progress).await;
+    }
+    let mut failures: Vec<String> = Vec::new();
+    let mut n = 0usize;
+
+    for task in live {
+        // A disabled task is reported, not omitted: "why didn't my migration
+        // run?" is answered by seeing it listed as skipped.
+        if !task.enabled {
+            progress(Progress::Line(format!("setup — skipped (disabled): {}", task.cmd)));
+            continue;
+        }
+        n += 1;
+        let where_ = if task.cwd.trim().is_empty() { String::new() } else { format!(" (in {})", task.cwd.trim()) };
+        if dry_run {
+            progress(Progress::Line(format!("setup [{n}/{total}]: {}{where_} — dry run, not executed", task.cmd)));
+            continue;
+        }
+        progress(Progress::Line(format!("setup [{n}/{total}]: {}{where_}", task.cmd)));
+
+        // A per-task cwd must stay inside the worktree, for the same reason a
+        // provision path must: this string comes from a repo config file.
+        let cwd = if task.cwd.trim().is_empty() {
+            wt_path.to_string()
+        } else {
+            check_contained(task.cwd.trim(), "task cwd")?;
+            Path::new(wt_path).join(task.cwd.trim()).to_string_lossy().into_owned()
+        };
+
+        let one = [task.cmd.clone()];
+        let result =
+            run_commands_in(&cwd, wt_path, repo_path, &one, vars, "setup", policy.timeout_secs, Numbering::Caller(n), progress).await;
+        if let Err(e) = result {
+            if !policy.continue_on_failure {
+                return Err(e);
+            }
+            progress(Progress::Line(format!("setup — continuing after failure: {e}")));
+            failures.push(e);
         }
     }
-    run_commands(wt_path, repo_path, &cfg.setup, vars, "setup", &mut progress).await
+
+    match failures.len() {
+        0 => Ok(()),
+        // With continue-on-failure the run finished, but it did NOT succeed —
+        // reporting Ok here would mark the worktree provisioned when it isn't.
+        1 => Err(failures.remove(0)),
+        k => Err(format!("{k} setup tasks failed:\n{}", failures.join("\n"))),
+    }
+}
+
+/// Run every setup command at once (the `parallel-setup` experiment).
+///
+/// Correct only when the tasks are independent; the experiment's own copy says
+/// so, and that is exactly why it is an experiment rather than the default.
+/// Ordinary setup lists routinely encode a dependency ("install, then
+/// migrate") that no static analysis here could detect.
+///
+/// Output is funnelled through one channel rather than shared `&mut` progress,
+/// so interleaved lines stay whole and each is prefixed with its task number —
+/// without that, parallel output is unreadable.
+async fn run_tasks_parallel(
+    wt_path: &str,
+    repo_path: &str,
+    tasks: &[&SetupTask],
+    policy: &SetupPolicy,
+    vars: &HashMap<String, String>,
+    progress: &mut impl FnMut(Progress),
+) -> Result<(), String> {
+    let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel::<Progress>();
+    let n = tasks.len();
+    progress(Progress::Line(format!("setup [parallel]: running {n} tasks at once")));
+
+    // Resolve every working directory BEFORE spawning: a task whose cwd
+    // escapes the worktree must fail the run, not one spawned branch.
+    let mut prepared = Vec::with_capacity(n);
+    for task in tasks {
+        let cwd = if task.cwd.trim().is_empty() {
+            wt_path.to_string()
+        } else {
+            check_contained(task.cwd.trim(), "task cwd")?;
+            Path::new(wt_path).join(task.cwd.trim()).to_string_lossy().into_owned()
+        };
+        prepared.push((task.cmd.clone(), cwd));
+    }
+
+    let mut handles = Vec::with_capacity(n);
+    for (i, (cmd, cwd)) in prepared.into_iter().enumerate() {
+        let (wt, repo, vars, tx) = (wt_path.to_string(), repo_path.to_string(), vars.clone(), tx.clone());
+        let timeout = policy.timeout_secs;
+        // The engine has no host context; its async caller already runs on Tokio.
+        handles.push(tokio::spawn(async move {
+            let step = i + 1;
+            let prefix = format!("setup [{step}/{n}]");
+            // Announced by the task itself, as it starts — which in parallel
+            // is all of them at once, and that is the honest picture.
+            let _ = tx.send(Progress::Line(format!("{prefix}: {cmd}")));
+            let one = [cmd];
+            let tx2 = tx.clone();
+            let mut fwd = move |p: Progress| {
+                let _ = tx2.send(match p {
+                    // interleaved output is unreadable without saying whose it is
+                    Progress::Line(line) => Progress::Line(format!("{prefix} {line}")),
+                    // a result already carries this task's number; forwarding it
+                    // is how parallel steps get their metadata at all
+                    other => other,
+                });
+            };
+            run_commands_in(&cwd, &wt, &repo, &one, &vars, "setup", timeout, Numbering::Caller(step), &mut fwd).await
+        }));
+    }
+    drop(tx); // the loop below ends when every task's sender is gone
+
+    while let Some(p) = rx.recv().await {
+        progress(p);
+    }
+
+    // Every task is awaited even after one fails: leaving the others running
+    // detached would let a half-finished install keep writing into a worktree
+    // the caller has already been told is broken.
+    let mut first_error: Option<String> = None;
+    for h in handles {
+        match h.await {
+            Ok(Ok(())) => {}
+            Ok(Err(e)) => {
+                first_error.get_or_insert(e);
+            }
+            Err(e) => {
+                first_error.get_or_insert(format!("setup task panicked: {e}"));
+            }
+        }
+    }
+    match first_error {
+        Some(e) => Err(e),
+        None => Ok(()),
+    }
 }
 
 /// Run a worktree's teardown commands (e.g. drop its database) before deletion.
@@ -540,7 +1037,7 @@ pub async fn run_teardown(
     wt_path: &str,
     repo_path: &str,
     vars: &HashMap<String, String>,
-    mut progress: impl FnMut(String),
+    mut progress: impl FnMut(Progress),
 ) -> Result<(), String> {
     let cfg = read_config(wt_path, repo_path);
     run_commands(wt_path, repo_path, &cfg.teardown, vars, "teardown", &mut progress).await
@@ -555,7 +1052,7 @@ pub async fn run_migration(
     wt_path: &str,
     repo_path: &str,
     vars: &HashMap<String, String>,
-    mut progress: impl FnMut(String),
+    mut progress: impl FnMut(Progress),
 ) -> Result<(), String> {
     let cfg = read_config(wt_path, repo_path);
     if cfg.migrate.is_empty() {
@@ -571,10 +1068,149 @@ pub async fn run_custom_command(
     repo_path: &str,
     command: &str,
     vars: &HashMap<String, String>,
-    mut progress: impl FnMut(String),
+    mut progress: impl FnMut(Progress),
 ) -> Result<(), String> {
     let cmds = [command.to_string()];
     run_commands(wt_path, repo_path, &cmds, vars, "command", &mut progress).await
+}
+
+// ── step results ──────────────────────────────────────────────────────
+//
+// The setup runner's right-hand column ("1,842 packages", "37 migrations") is
+// what makes the step list worth watching rather than a spinner — "37
+// migrations" tells you the migrate step actually did something, which is
+// exactly why people re-run setup.
+//
+// So this is NOT "the last line of output", which would usually be noise. Each
+// known command kind has a pattern that yields a short, specific quantity;
+// anything unrecognised produces no metadata at all, and the step renders with
+// its bullet alone. A step never claims a count it wasn't given.
+
+/// One progress update from a running command list.
+pub enum Progress {
+    /// a line of output (throttled)
+    Line(String),
+    /// step `index` (1-based) finished and produced a short quantity
+    StepResult { index: usize, text: String },
+}
+
+/// Who owns the step number a command reports under.
+///
+/// `run_commands_in` used to always number over its own `cmds` array. That is
+/// right where the array IS the step list (teardown, migrate, a one-off), but
+/// setup runs ONE task per call: every task then announced itself as "[1/1]",
+/// which clobbered the run's real total ("Step 1 of 1" however many tasks
+/// there were) and — because the runner files output under the last marker it
+/// saw — piled every task's output under task 1.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Numbering {
+    /// Number the commands in this call: `label [i/len]`, results at `i`.
+    Own,
+    /// The caller announced this step and owns its number: emit no header of
+    /// our own, and attach results to `n`.
+    Caller(usize),
+}
+
+impl Numbering {
+    /// The header for command `i` of `len`, or None when the caller printed one.
+    fn header(self, label: &str, i: usize, len: usize, cmd: &str) -> Option<String> {
+        match self {
+            Numbering::Own => Some(format!("{label} [{}/{len}]: {cmd}", i + 1)),
+            Numbering::Caller(_) => None,
+        }
+    }
+
+    /// The step a result belongs to.
+    fn index(self, i: usize) -> usize {
+        match self {
+            Numbering::Own => i + 1,
+            Numbering::Caller(n) => n,
+        }
+    }
+}
+
+/// Group a number with thousands separators — the design writes "1,842", and
+/// a bare "1842" reads as an id rather than a count.
+fn commas(n: u64) -> String {
+    let s = n.to_string();
+    let mut out = String::with_capacity(s.len() + s.len() / 3);
+    for (i, c) in s.chars().enumerate() {
+        if i > 0 && (s.len() - i).is_multiple_of(3) {
+            out.push(',');
+        }
+        out.push(c);
+    }
+    out
+}
+
+/// First run of digits in `line` after `marker`, if any.
+fn number_after(line: &str, marker: &str) -> Option<u64> {
+    let rest = line.to_lowercase();
+    let at = rest.find(marker)? + marker.len();
+    let digits: String = rest[at..].chars().skip_while(|c| !c.is_ascii_digit()).take_while(|c| c.is_ascii_digit()).collect();
+    digits.parse().ok()
+}
+
+/// The leading number on a line, e.g. "37 migrations were executed".
+fn leading_number(line: &str) -> Option<u64> {
+    let t = line.trim_start();
+    let digits: String = t.chars().take_while(|c| c.is_ascii_digit()).collect();
+    digits.parse().ok()
+}
+
+/// Extract a short result quantity from one line of a command's output, given
+/// the command that produced it. `None` for everything unrecognised.
+fn match_step_result(cmd: &str, line: &str) -> Option<String> {
+    let c = cmd.to_lowercase();
+    let l = line.trim();
+    let low = l.to_lowercase();
+
+    // ── dependency installers ──
+    if c.contains("install") || c.contains(" ci") || c.ends_with(" ci") {
+        // npm: "added 1842 packages in 41s"
+        if low.starts_with("added ") {
+            if let Some(n) = number_after(&low, "added ") {
+                return Some(format!("{} packages", commas(n)));
+            }
+        }
+        // pnpm: "Packages: +1842"
+        if low.starts_with("packages:") {
+            if let Some(n) = number_after(&low, "+") {
+                return Some(format!("{} packages", commas(n)));
+            }
+        }
+        // yarn/npm no-op — worth showing, because "nothing happened" is the
+        // answer people re-run setup to confirm
+        if low.contains("up to date") || low.contains("already up-to-date") {
+            return Some("up to date".into());
+        }
+    }
+
+    // ── migrations ──
+    if c.contains("migrat") {
+        // knex: "Batch 1 run: 37 migrations"
+        if low.contains("batch") && low.contains("run:") {
+            if let Some(n) = number_after(&low, "run:") {
+                return Some(format!("{} migrations", commas(n)));
+            }
+        }
+        // typeorm: "37 migrations were successfully executed"
+        if low.contains("migrations") && low.contains("execut") {
+            if let Some(n) = leading_number(l) {
+                return Some(format!("{} migrations", commas(n)));
+            }
+        }
+        if low.contains("no migrations are pending") || low.contains("already up to date") {
+            return Some("none pending".into());
+        }
+    }
+
+    // ── database creation ──
+    if (c.contains("createdb") || c.contains("db:create")) && (low.contains("created") || low.contains("database")) {
+        return Some("created".into());
+    }
+
+    None
 }
 
 /// Minimum gap between forwarded output lines — npm can emit thousands of
@@ -590,52 +1226,88 @@ async fn run_commands(
     cmds: &[String],
     vars: &HashMap<String, String>,
     label: &str,
-    progress: &mut impl FnMut(String),
+    progress: &mut impl FnMut(Progress),
+) -> Result<(), String> {
+    run_commands_in(wt_path, wt_path, repo_path, cmds, vars, label, 0, Numbering::Own, progress).await
+}
+
+/// As `run_commands`, but with an explicit working directory and per-step
+/// timeout. `wt_path` stays separate from `cwd` because WT_PATH/WTM_WORKTREE
+/// must keep pointing at the worktree root even when a task runs in a
+/// subdirectory — a task in `server/` still belongs to the same worktree.
+#[allow(clippy::too_many_arguments)]
+async fn run_commands_in(
+    cwd: &str,
+    wt_path: &str,
+    repo_path: &str,
+    cmds: &[String],
+    vars: &HashMap<String, String>,
+    label: &str,
+    timeout_secs: u64,
+    numbering: Numbering,
+    progress: &mut impl FnMut(Progress),
 ) -> Result<(), String> {
     for (i, cmd) in cmds.iter().enumerate() {
-        progress(format!("{label} [{}/{}]: {cmd}", i + 1, cmds.len()));
-        let wrapped = crate::toolchain::with_pinned_node(wt_path, cmd);
+        if let Some(head) = numbering.header(label, i, cmds.len(), cmd) {
+            progress(Progress::Line(head));
+        }
+        crate::jobs::prepare_output(repo_path, wt_path, cwd, vars);
+        let wrapped = crate::toolchain::with_pinned_node(cwd, cmd);
         let (shell, shargs) = crate::toolchain::shell_argv(&wrapped);
-        let mut child = Command::new(shell)
-            .args(&shargs)
-            .current_dir(wt_path)
-            .envs(vars) // WT_*/WM_* etc.
-            .env("WTM_REPO", repo_path)
-            .env("WTM_WORKTREE", wt_path)
-            .env("REPO_PATH", repo_path)
-            .env("WT_PATH", wt_path)
-            .stdin(Stdio::null())
-            .stdout(Stdio::piped())
-            .stderr(Stdio::piped())
-            .spawn()
-            .map_err(|e| format!("{label} spawn failed: {e}"))?;
+        if crate::jobs::is_cancelled() { return Err("operation interrupted by shutdown".into()); }
+        let mut command = Command::new(shell);
+        command.args(&shargs).current_dir(cwd).envs(vars)
+            .env("WTM_REPO", repo_path).env("WTM_WORKTREE", wt_path)
+            .env("REPO_PATH", repo_path).env("WT_PATH", wt_path)
+            .stdin(Stdio::null()).stdout(Stdio::piped()).stderr(Stdio::piped()).kill_on_drop(true);
+        crate::proc::prepare_group_command(&mut command);
+        let mut child = command.spawn().map_err(|e| format!("{label} spawn failed: {e}"))?;
+        let mut group = match crate::proc::CommandGroup::attach(child.id().unwrap_or(0)) {
+            Ok(group) => group,
+            Err(error) => { let _ = child.kill().await; return Err(error); }
+        };
 
-        let mut out_lines = BufReader::new(child.stdout.take().unwrap()).lines();
-        let mut err_lines = BufReader::new(child.stderr.take().unwrap()).lines();
+        let mut out_lines = crate::services::BoundedLines::new(child.stdout.take().unwrap());
+        let mut err_lines = crate::services::BoundedLines::new(child.stderr.take().unwrap());
         // last stderr lines, kept for the failure message
         let mut stderr_tail: VecDeque<String> = VecDeque::new();
         let mut last_emit = std::time::Instant::now() - STREAM_THROTTLE;
-        let mut emit = |line: &str, progress: &mut dyn FnMut(String)| {
+        // The first recognised quantity this step produced. Scanned on the fly
+        // rather than from a retained buffer: the throttle drops most lines
+        // before they are ever forwarded, and the line carrying the count is
+        // routinely one of the dropped ones.
+        let mut found: Option<String> = None;
+        let mut emit = |line: &str, progress: &mut dyn FnMut(Progress)| {
             let t = line.trim_end();
             if t.is_empty() {
                 return;
             }
+            crate::jobs::capture::line(t);
+            if found.is_none() {
+                found = match_step_result(cmd, t);
+            }
             if last_emit.elapsed() >= STREAM_THROTTLE {
-                progress(t.to_string());
+                progress(Progress::Line(t.to_string()));
                 last_emit = std::time::Instant::now();
             }
         };
         // hard ceiling per command: npm installs legitimately run long, but a
         // command stuck on a dead registry or waiting for input it can never
         // get (stdin is null) must not hang setup forever.
-        const STEP_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(60 * 60);
+        const DEFAULT_STEP_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(60 * 60);
+        let step_timeout = if timeout_secs == 0 {
+            DEFAULT_STEP_TIMEOUT
+        } else {
+            std::time::Duration::from_secs(timeout_secs)
+        };
         let run_fut = async {
             let (mut out_done, mut err_done) = (false, false);
             while !(out_done && err_done) {
                 tokio::select! {
                     l = out_lines.next_line(), if !out_done => match l {
                         Ok(Some(line)) => emit(&line, progress),
-                        _ => out_done = true,
+                        Ok(None) => out_done = true,
+                        Err(_) => { crate::jobs::capture::incomplete(); out_done = true; },
                     },
                     l = err_lines.next_line(), if !err_done => match l {
                         Ok(Some(line)) => {
@@ -645,20 +1317,31 @@ async fn run_commands(
                             }
                             emit(&line, progress);
                         }
-                        _ => err_done = true,
+                        Ok(None) => err_done = true,
+                        Err(_) => { crate::jobs::capture::incomplete(); err_done = true; },
                     },
                 }
             }
             child.wait().await
         };
-        let status = match tokio::time::timeout(STEP_TIMEOUT, run_fut).await {
+        let outcome = tokio::select! {
+            biased;
+            _ = crate::jobs::cancelled() => {
+                group.kill();
+                let _ = child.kill().await;
+                return Err("operation interrupted by shutdown".into());
+            },
+            result = tokio::time::timeout(step_timeout, run_fut) => result,
+        };
+        let status = match outcome {
             Ok(res) => res.map_err(|e| format!("{label} wait failed: {e}"))?,
             Err(_) => {
-                // kills the shell; its own children get EOF on the shared pipes
+                group.kill();
                 let _ = child.kill().await;
-                return Err(format!("{label} step timed out after {}min: {cmd}", STEP_TIMEOUT.as_secs() / 60));
+                return Err(format!("{label} step timed out after {}s: {cmd}", step_timeout.as_secs()));
             }
         };
+        group.disarm();
         if !status.success() {
             // surface the first real error line plus the tail, so messages like
             // "Cannot find module" aren't buried under a stack.
@@ -674,13 +1357,283 @@ async fn run_commands(
             let tail: String = tail.into_iter().rev().collect::<Vec<_>>().join("\n");
             return Err(format!("{label} step failed: {cmd}\n{headline}{tail}"));
         }
+        if let Some(text) = found {
+            progress(Progress::StepResult { index: numbering.index(i), text });
+        }
     }
     Ok(())
 }
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn restore_activation_preflights_and_preserves_env_files() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path();
+        let path = root.to_str().unwrap();
+        std::fs::create_dir(root.join("server")).unwrap();
+        let config = root.join(".worktreemanager.json");
+        let env = root.join(".env");
+        let child = root.join("server/.env");
+        std::fs::write(&env, "# keep\nPG_DB=old\nSECRET=yes\n").unwrap();
+        std::fs::write(&config, r#"{"provision":[{"path":"server/.env","format":"dotenv","keys":{"PG_DB":"old"}}]}"#).unwrap();
+        std::fs::write(&child, [0xff]).unwrap();
+        assert!(super::activate_restored_database(path, path, "fresh").is_err());
+        assert!(std::fs::read_to_string(&env).unwrap().contains("PG_DB=old"));
+        std::fs::write(&child, "PG_DB=old\nPORT=4000\n").unwrap();
+        super::activate_restored_database(path, path, "fresh").unwrap();
+        assert_eq!(std::fs::read_to_string(&env).unwrap(), "# keep\nSECRET=yes\nPG_DB=fresh\n");
+        assert_eq!(std::fs::read_to_string(&child).unwrap(), "PORT=4000\nPG_DB=fresh\n");
+        std::fs::write(&config, "{invalid").unwrap();
+        assert!(super::activate_restored_database(path, path, "next").is_err());
+        assert!(std::fs::read_to_string(&env).unwrap().contains("PG_DB=fresh"));
+        std::fs::write(&config, r#"{"provision":[{"path":"../escape","format":"dotenv","keys":{"PG_DB":"old"}}]}"#).unwrap();
+        assert!(super::activate_restored_database(path, path, "next").is_err());
+    }
+
     use super::*;
+
+    /* Step numbering — the runner builds its step list from these markers.
+
+       `run_tasks` announces each task and then runs it as a ONE-command list,
+       so the inner call must not number it again. When it did, every task
+       reported "[1/1]": the footer read "Step 1 of 1" for a five-task run, and
+       every task's output was filed under task 1. */
+    #[test]
+    fn lifecycle_edits_preserve_unknown_keys_and_fail_closed() {
+        let dir = std::env::temp_dir().join(format!("canopy-lifecycle-edit-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let file = dir.join(".worktreemanager.json");
+        std::fs::write(&file, r#"{"custom":{"keep":true},"teardown":["old"]}"#).unwrap();
+        write_repo_config_sections(dir.to_str().unwrap(), &[], &[], None, Some(&["new".into()]), Some(&["migrate".into()])).unwrap();
+        let value: serde_json::Value = serde_json::from_slice(&std::fs::read(&file).unwrap()).unwrap();
+        assert_eq!(value["custom"]["keep"], true);
+        assert_eq!(value["teardown"][0], "new");
+        assert_eq!(value["migrate"][0], "migrate");
+        std::fs::write(&file, "{broken").unwrap();
+        assert!(write_repo_config_sections(dir.to_str().unwrap(), &[], &[], None, Some(&[]), None).is_err());
+        assert_eq!(std::fs::read_to_string(&file).unwrap(), "{broken");
+        std::fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn a_caller_numbered_step_neither_renumbers_nor_re_announces() {
+        // teardown/migrate hand over the whole list, so that call numbers it
+        assert_eq!(Numbering::Own.header("setup", 0, 3, "pnpm install").as_deref(), Some("setup [1/3]: pnpm install"));
+        assert_eq!(Numbering::Own.index(0), 1);
+        assert_eq!(Numbering::Own.index(2), 3);
+
+        // setup announces the task itself, then runs it alone
+        assert_eq!(Numbering::Caller(4).header("setup", 0, 1, "pnpm install"), None);
+        assert_eq!(Numbering::Caller(4).index(0), 4, "the result belongs to task 4, not step 1");
+    }
+
+    #[tokio::test]
+    async fn every_setup_task_announces_its_own_number_exactly_once() {
+        let dir = std::env::temp_dir().join("canopy_step_numbering_test");
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let d = dir.to_str().unwrap();
+
+        let tasks = vec![
+            SetupTask::plain("echo one"),
+            SetupTask { cmd: "echo two".into(), cwd: String::new(), enabled: false },
+            SetupTask::plain("echo three"),
+        ];
+        let mut lines: Vec<String> = Vec::new();
+        run_tasks(d, d, &tasks, &SetupPolicy::default(), &HashMap::new(), false, false, &mut |p| {
+            if let Progress::Line(l) = p {
+                lines.push(l);
+            }
+        })
+        .await
+        .unwrap();
+
+        let markers: Vec<&str> = lines.iter().filter(|l| l.starts_with("setup [")).map(|s| s.as_str()).collect();
+        assert_eq!(
+            markers,
+            vec!["setup [1/2]: echo one", "setup [2/2]: echo three"],
+            "one marker per enabled task, numbered over the enabled ones — got {lines:?}"
+        );
+        assert!(
+            lines.iter().any(|l| l.contains("skipped (disabled): echo two")),
+            "a disabled task is reported, not omitted — got {lines:?}"
+        );
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn setup_accepts_strings_and_objects_and_round_trips_plainly() {
+        let dir = std::env::temp_dir().join("canopy_setup_tasks_test_xyz");
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let d = dir.to_str().unwrap();
+
+        // A pre-existing config — a bare array of strings — must keep meaning
+        // exactly what it always did.
+        std::fs::write(dir.join(".worktreemanager.json"), r#"{ "setup": ["pnpm install", "pnpm db:migrate"] }"#).unwrap();
+        let c = read_repo_config(d);
+        assert_eq!(c.setup, vec![SetupTask::plain("pnpm install"), SetupTask::plain("pnpm db:migrate")]);
+        assert_eq!(c.setup_policy, SetupPolicy::default(), "no policy key = built-in behaviour");
+
+        // Objects carry cwd/enabled; a mixed array is fine.
+        std::fs::write(
+            dir.join(".worktreemanager.json"),
+            r#"{ "setup": ["pnpm install", {"cmd":"pnpm build","cwd":"server"}, {"cmd":"seed","enabled":false}, 42],
+                 "setupPolicy": {"onFailure":"continue","timeoutSecs":90} }"#,
+        )
+        .unwrap();
+        let c = read_repo_config(d);
+        assert_eq!(c.setup.len(), 3, "a non-string, non-object entry is skipped, not turned into an empty command");
+        assert_eq!(c.setup[1].cwd, "server");
+        assert!(c.setup[0].enabled, "enabled defaults to true");
+        assert!(!c.setup[2].enabled);
+        assert!(c.setup_policy.continue_on_failure);
+        assert_eq!(c.setup_policy.timeout_secs, 90);
+
+        // Writing back: a plain task stays a bare string, so enabling one
+        // option on one task doesn't rewrite every line of the file.
+        let tasks = vec![
+            SetupTask::plain("pnpm install"),
+            SetupTask { cmd: "pnpm build".into(), cwd: "server".into(), enabled: true },
+            SetupTask { cmd: "seed".into(), cwd: String::new(), enabled: false },
+        ];
+        write_repo_config(d, &[], &tasks, Some(&SetupPolicy::default())).unwrap();
+        let v: serde_json::Value = serde_json::from_str(&std::fs::read_to_string(dir.join(".worktreemanager.json")).unwrap()).unwrap();
+        assert_eq!(v["setup"][0], "pnpm install", "plain task round-trips as a string");
+        assert_eq!(v["setup"][1]["cwd"], "server");
+        assert_eq!(v["setup"][2]["enabled"], false);
+        assert!(v.get("setupPolicy").is_none(), "a default policy is not written");
+
+        write_repo_config(d, &[], &tasks, Some(&SetupPolicy { continue_on_failure: true, timeout_secs: 30 })).unwrap();
+        let v: serde_json::Value = serde_json::from_str(&std::fs::read_to_string(dir.join(".worktreemanager.json")).unwrap()).unwrap();
+        assert_eq!(v["setupPolicy"]["onFailure"], "continue");
+        assert_eq!(v["setupPolicy"]["timeoutSecs"], 30);
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn setup_marker_round_trips_and_infers_for_legacy_worktrees() {
+        let dir = std::env::temp_dir().join("canopy_setup_marker_test_xyz");
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let d = dir.to_str().unwrap();
+        // a repo that declares one provisioned file + a setup command
+        std::fs::write(
+            dir.join(".worktreemanager.json"),
+            r#"{ "provision": [{"path": ".env", "format": "dotenv", "keys": {"A": "1"}}], "setup": ["echo hi"] }"#,
+        )
+        .unwrap();
+
+        // no marker, no provisioned file → never provisioned, but configured
+        let (state, configured) = setup_status(d, d);
+        assert!(state.is_none(), "no marker and no provisioned file = never ran");
+        assert!(configured, "the repo declares provisioning");
+
+        // legacy worktree: the declared file exists but no marker was ever
+        // written — inferred rather than reported as unprovisioned
+        std::fs::write(dir.join(".env"), "A=1\n").unwrap();
+        let (state, _) = setup_status(d, d);
+        let state = state.expect("presence of every declared file infers a run");
+        assert_eq!(state.source, SetupSource::Inferred);
+        assert!(state.ran_at.is_none(), "an inferred run has no timestamp");
+        assert!(state.ok);
+
+        // a real run writes the marker, which outranks the inference
+        write_setup_marker(d, true);
+        let (state, _) = setup_status(d, d);
+        let state = state.expect("marker present");
+        assert_eq!(state.source, SetupSource::Marker, "the marker wins over inference");
+        assert!(state.ran_at.unwrap() > 0, "marker carries a timestamp");
+        assert!(state.ok);
+        assert_eq!(std::fs::read_to_string(dir.join(".canopy/.gitignore")).unwrap(), "*\n", "marker dir self-ignores");
+
+        // a failed run is recorded as a failure, not as "never ran" — the UI
+        // needs to distinguish half-provisioned from untouched
+        write_setup_marker(d, false);
+        let (state, _) = setup_status(d, d);
+        assert!(!state.expect("marker present").ok, "failure is recorded");
+
+        // a corrupt marker falls back to inference rather than being trusted
+        std::fs::write(dir.join(".canopy/setup.json"), "{ truncated").unwrap();
+        let (state, _) = setup_status(d, d);
+        assert_eq!(state.expect("falls back").source, SetupSource::Inferred);
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn setup_status_reports_unconfigured_repos() {
+        let dir = std::env::temp_dir().join("canopy_setup_unconfigured_test_xyz");
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let d = dir.to_str().unwrap();
+        // no .worktreemanager.json at all → nothing to provision, so a missing
+        // marker must NOT read as an actionable "never provisioned"
+        let (state, configured) = setup_status(d, d);
+        assert!(state.is_none());
+        assert!(!configured, "no config = nothing to run");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn parse_dotenv_reads_the_shapes_we_write() {
+        let text = "# comment\n\nPORT=3160\nexport PG_DB=tj_history\nQUOTED=\"a b\"\nSINGLE='c d'\nEMPTY=\nURL=postgres://h/db?x=1\nnot a pair\n";
+        let pairs = parse_dotenv(text);
+        assert_eq!(pairs[0], ("PORT".into(), "3160".into()));
+        assert_eq!(pairs[1], ("PG_DB".into(), "tj_history".into()), "export prefix stripped");
+        assert_eq!(pairs[2], ("QUOTED".into(), "a b".into()), "one layer of double quotes");
+        assert_eq!(pairs[3], ("SINGLE".into(), "c d".into()), "one layer of single quotes");
+        assert_eq!(pairs[4], ("EMPTY".into(), String::new()));
+        assert_eq!(pairs[5], ("URL".into(), "postgres://h/db?x=1".into()), "only the first = splits");
+        assert_eq!(pairs.len(), 6, "comments, blanks and non-pairs skipped");
+    }
+
+    #[test]
+    fn step_results_are_specific_quantities_or_nothing() {
+        let install = "pnpm install";
+        // npm
+        assert_eq!(
+            match_step_result(install, "added 1842 packages in 41s"),
+            Some("1,842 packages".into()),
+            "grouped, because a bare 1842 reads as an id"
+        );
+        // pnpm
+        assert_eq!(match_step_result(install, "Packages: +1842"), Some("1,842 packages".into()));
+        // the no-op is worth reporting — it's what people re-run setup to confirm
+        assert_eq!(match_step_result(install, "up to date, audited 12 packages"), Some("up to date".into()));
+
+        // migrations, across the runners a repo might use
+        let migrate = "pnpm db:migrate";
+        assert_eq!(match_step_result(migrate, "Batch 1 run: 37 migrations"), Some("37 migrations".into()));
+        assert_eq!(
+            match_step_result(migrate, "37 migrations were successfully executed"),
+            Some("37 migrations".into())
+        );
+        assert_eq!(match_step_result(migrate, "No migrations are pending"), Some("none pending".into()));
+
+        // ── the negative cases matter more ──
+        // ordinary output from a recognised command is NOT a result
+        assert_eq!(match_step_result(install, "Progress: resolved 900, reused 880"), None);
+        assert_eq!(match_step_result(migrate, "using environment: development"), None);
+        // an unrecognised command produces nothing at all, however chatty
+        assert_eq!(match_step_result("pnpm build:plugins", "added 12 chunks"), None);
+        assert_eq!(match_step_result("pnpm build", "Done in 3.2s"), None);
+        // a count from the wrong command kind is not borrowed
+        assert_eq!(match_step_result("echo hello", "added 1842 packages"), None);
+    }
+
+    #[test]
+    fn commas_groups_thousands() {
+        assert_eq!(commas(0), "0");
+        assert_eq!(commas(37), "37");
+        assert_eq!(commas(999), "999");
+        assert_eq!(commas(1842), "1,842");
+        assert_eq!(commas(12345), "12,345");
+        assert_eq!(commas(1234567), "1,234,567");
+
+    }
 
     #[test]
     fn wt_slug_is_db_safe() {
@@ -768,7 +1721,7 @@ mod tests {
             interpolate: false,
             keys: vec![("A".into(), "1".into())],
         }];
-        write_repo_config(dir.to_str().unwrap(), &prov, &["echo hi".into()]).unwrap();
+        write_repo_config(dir.to_str().unwrap(), &prov, &[SetupTask::plain("echo hi")], None).unwrap();
         let v: serde_json::Value = serde_json::from_str(&std::fs::read_to_string(&cfg_path).unwrap()).unwrap();
         assert!(v.get("env").is_none(), "legacy env dropped");
         assert_eq!(v["teardown"][0], "dropdb", "teardown preserved");
@@ -778,7 +1731,7 @@ mod tests {
 
         // malformed existing file → hard error, file untouched
         std::fs::write(&cfg_path, "{ not json").unwrap();
-        let err = write_repo_config(dir.to_str().unwrap(), &prov, &[]).unwrap_err();
+        let err = write_repo_config(dir.to_str().unwrap(), &prov, &[], None).unwrap_err();
         assert!(err.contains("malformed"), "refuses to overwrite: {err}");
         assert_eq!(std::fs::read_to_string(&cfg_path).unwrap(), "{ not json", "file untouched");
         let _ = std::fs::remove_dir_all(&dir);
@@ -799,7 +1752,7 @@ mod tests {
         assert_eq!(c.provision[0].path, ".env");
         assert_eq!(c.provision[0].format, "dotenv");
         assert_eq!(c.provision[0].keys, vec![("PG_DB".to_string(), "${WT_DB_NAME}".to_string())]);
-        assert_eq!(c.setup, vec!["echo hi"]);
+        assert_eq!(c.setup, vec![SetupTask::plain("echo hi")]);
         let _ = std::fs::remove_dir_all(&dir);
     }
 

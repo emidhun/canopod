@@ -1554,7 +1554,7 @@
   overflow-y: auto;
   overflow-x: auto;
   min-height: 0;
-  --tblmin: 760px;
+  --tblmin: 770px;
 }
 .cxs-ovsec {
   padding: var(--sp-pop-lg) var(--sp-5) var(--sp-xs);
@@ -1605,7 +1605,8 @@
 }
 .cxs-tbl th:nth-child(7),
 .cxs-tbl td:nth-child(7) {
-  width: 62px;
+  /* wide enough for "Measure" as well as "1.7 GB" */
+  width: 72px;
 }
 .cxs-tbl th:nth-child(8),
 .cxs-tbl td:nth-child(8) {
@@ -1675,6 +1676,38 @@
 }
 .cxs-tbl .muted {
   color: var(--text-tertiary);
+}
+/* Unmeasured size — the affordance that replaces the scan-on-open walk.
+
+   The Size column carries values, not chrome: a filled button in every row
+   reads as a toolbar and crowds a column sized for "1.7 GB". So this is
+   value-shaped — quiet at rest, legible once the row is hovered — but it
+   still names the action, because a bare dash is indistinguishable from the
+   CPU and Memory dashes beside it, which are not clickable. */
+.cxs-measure {
+  appearance: none;
+  border: 0;
+  background: none;
+  padding: 2px var(--sp-2);
+  margin-right: calc(var(--sp-2) * -1);
+  border-radius: var(--r-xs);
+  font-family: var(--sans);
+  font-size: var(--fs-micro);
+  font-weight: var(--fw-medium);
+  color: var(--text-tertiary);
+  cursor: pointer;
+  transition: color var(--dur-fast), background var(--dur-fast);
+}
+.cxs-tbl tbody tr:hover .cxs-measure {
+  color: var(--text-secondary);
+}
+.cxs-measure:hover {
+  color: var(--text-primary);
+  background: var(--btn);
+}
+.cxs-measure:focus-visible {
+  outline: var(--border-w) solid var(--action-primary);
+  outline-offset: 1px;
 }
 .cxs-dots {
   display: inline-flex;

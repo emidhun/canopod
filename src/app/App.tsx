@@ -10,6 +10,7 @@ import { initSync, useStore } from "../store";
 import type { RepoNode, WorktreeNode } from "../types";
 import { Plus } from "../icons";
 import { attentionItems, nextAction, type AttnItem, type NextAction } from "./nextAction";
+import { actionFor, resolveBindings } from "./keys";
 import { TopBar, AttentionPop } from "./canopy/TopBar";
 import SidebarNav from "./canopy/SidebarNav";
 import WorktreeView from "./canopy/WorktreeView";
@@ -23,7 +24,7 @@ import NoticeModal from "./canopy/NoticeModal";
 import SetupRunnerModal from "./canopy/SetupRunnerModal";
 import ServiceDetailModal from "./canopy/ServiceDetailModal";
 import ContextModal from "./canopy/ContextModal";
-import SettingsView from "./SettingsView";
+import SettingsView from "./settings/SettingsView";
 import NewWorktreeModal from "./NewWorktreeModal";
 import RemoveWorktreeModal from "./RemoveWorktreeModal";
 import RemoveWorktreesModal from "./RemoveWorktreesModal";
@@ -71,6 +72,11 @@ export default function App() {
   const [showDirty, setShowDirty] = useState(false);
   const [showDb, setShowDb] = useState(false);
   const [showSetup, setShowSetup] = useState(false);
+  /* A setup run handed over by the create dialog. Kept separate from
+     `showSetup` because the worktree is not in the tree yet — the backend
+     rescans only once setup has finished — so there is no `sel` to render
+     from, only the key the run is emitting under. */
+  const [setupFor, setSetupFor] = useState<{ wtKey: string; branch: string } | null>(null);
   const [showCtx, setShowCtx] = useState(false);
   const [svcDetail, setSvcDetail] = useState<string | null>(null);
   const [removeWtFor, setRemoveWtFor] = useState<WorktreeNode | null>(null);
@@ -223,26 +229,47 @@ export default function App() {
   // declared before the keyboard handler, which stands down for it on ⌘N
   const onboardingActive = showOnboarding || addRepoOpen || (tree.length === 0 && !obDismissed);
 
-  /* ── keyboard: the whole app is reachable without the mouse ─────── */
+  
+
+  // Effective bindings: registry defaults with the user's overrides applied.
+  // Re-read whenever settings are saved, so a remap takes effect immediately
+  // rather than on the next launch.
+  const [bindings, setBindings] = useState<Record<string, string>>(() => resolveBindings(null));
+  const settingsRev = useStore((s) => s.settingsRev);
+  useEffect(() => {
+    if (!hasBackend()) return;
+    let alive = true;
+    ipc
+      .getSettings()
+      .then((st) => alive && setBindings(resolveBindings(st)))
+      .catch(() => {});
+    return () => {
+      alive = false;
+    };
+  }, [settingsRev]);
+
+  /* ── keyboard: the whole app is reachable without the mouse ───────
+     Dispatch is table-driven off the registry, so every shortcut is
+     remappable and the Shortcuts page can never drift from what actually
+     fires — both read the same source. */
+
   useEffect(() => {
     const k = (e: KeyboardEvent) => {
-      const meta = e.metaKey || e.ctrlKey;
       const el = document.activeElement;
       const typing = /^(INPUT|TEXTAREA)$/.test(el?.tagName ?? "") || (el as HTMLElement | null)?.isContentEditable === true;
+      const action = actionFor(e, bindings);
 
-      if (meta && e.key.toLowerCase() === "k") {
-        e.preventDefault();
-        setPalette((p) => !p);
-        return;
-      }
+      // Escape is fixed and always wins: a remap that stole it would leave
+      // modals and the palette with no keyboard dismissal at all.
       if (e.key === "Escape") {
         setPalette(false);
         setAttnOpen(false);
         return;
       }
-      // ⌘+ / ⌘- / ⌘0 — app-wide text zoom. Works from anywhere (even a field or
-      // with the palette open) since it never collides with text entry, and
-      // applies live across every Canopy window via appearance.ts.
+      const meta = e.metaKey || e.ctrlKey;
+      // ⌘+ / ⌘- / ⌘0 — app-wide text zoom. Deliberately OUTSIDE the registry
+      // dispatch: it must work from anywhere, even in a field or with the
+      // palette open, because it never collides with text entry.
       if (meta && (e.key === "=" || e.key === "+")) {
         e.preventDefault();
         nudgeFontScale(1);
@@ -258,72 +285,66 @@ export default function App() {
         resetFontScale();
         return;
       }
-      if (palette) return;
-      /* A dialog owns the keyboard while it is up. The two bindings below open
-         a NEW surface, and stacking one behind an open dialog leaves two
-         scrims and no way to tell which has focus — so they stand down for it.
-         The scrim is the reliable signal: every dialog renders exactly one,
-         wherever in the tree it was mounted from. */
+
+      /* A dialog owns the keyboard while it is up. The scrim is the reliable
+         signal: every dialog renders exactly one, wherever it was mounted. */
       const dialogOpen = !!document.querySelector(".cx-scrim");
-      // ⌘, — Settings, the platform convention. The tray's gear has always
-      // shown this hint; nothing listened for it in either window.
-      if (meta && e.key === ",") {
-        e.preventDefault();
-        if (!dialogOpen) setShowSettings(true);
-        return;
-      }
-      // ⇧⌘N — add a repository. The design gives plain ⌘N to "Add a
-      // repository" (cxo-onboard.jsx), but only on the empty state; this app
-      // already advertises ⌘N as "New worktree" in the tray menu and the
-      // onboarding CTA, so taking it here would make those two labels lie.
-      // Shift keeps the family (⌘N makes a worktree, ⇧⌘N makes a repository)
-      // without redefining a key the UI already promises elsewhere.
-      // Also the only way in when the sidebar's repository menu is hidden,
-      // which it is until a second repo exists.
-      if (meta && e.shiftKey && e.key.toLowerCase() === "n") {
-        e.preventDefault();
-        addRepo();
-        return;
-      }
-      // ⇧⌘S — put every submodule back on the commit this worktree pins. Shift
-      // keeps it clear of ⌘S (Save, in Settings), and it pairs with the same
-      // action in the pull popover rather than being a second, separate route.
-      if (meta && e.shiftKey && e.key.toLowerCase() === "s") {
-        e.preventDefault();
-        if (sel) syncSubmodules(sel.wt.wtKey);
-        return;
-      }
-      // ⌘N — new worktree. The tray menu and the onboarding CTA have always
-      // advertised it; the main window was the one place it did nothing.
-      // Onboarding binds ⌘N itself (to its add-repository screen), so stand
-      // down while it is up rather than opening a dialog behind it.
-      if (meta && !e.shiftKey && e.key.toLowerCase() === "n") {
-        e.preventDefault();
-        if (!onboardingActive && !dialogOpen) setShowNewWt(true);
-        return;
-      }
-      if (meta && e.key >= "1" && e.key <= String(LAYOUT_ORDER.length)) {
-        e.preventDefault();
-        setLayout(LAYOUT_ORDER[Number(e.key) - 1]);
-      }
-      if (meta && e.key.toLowerCase() === "b") {
-        e.preventDefault();
-        setSideHidden((s) => !s);
-      }
-      if (meta && e.key === "\\") {
-        e.preventDefault();
-        // Settings can turn the action off; the shortcut has to obey, or the
-        // toggle only hides the button and the feature is still one key away.
-        if (sel && switchBranchEnabled) setShowSwitchBranch(true);
-      }
-      if (meta && e.key.toLowerCase() === "o") {
-        e.preventDefault();
-        setView((v) => (v === "overview" ? "wt" : "overview"));
-      }
-      // ⏎ runs the next action — but never while a terminal or field has focus
-      if (e.key === "Enter" && !meta && !typing && view === "wt" && na && na.kind !== "busy") {
-        e.preventDefault();
-        runNext(na);
+      if (!action) return;
+      // The palette owns the keyboard while open, except for its own toggle.
+      if (palette && action !== "palette") return;
+
+      switch (action) {
+        case "palette":
+          e.preventDefault();
+          setPalette((p) => !p);
+          break;
+        case "new-worktree":
+          // Onboarding binds this itself, and stacking a dialog behind an open
+          // one leaves two scrims with no way to tell which has focus.
+          e.preventDefault();
+          if (!onboardingActive && !dialogOpen) setShowNewWt(true);
+          break;
+        case "settings":
+          e.preventDefault();
+          if (!dialogOpen) setShowSettings(true);
+          break;
+        case "add-repo":
+          e.preventDefault();
+          addRepo();
+          break;
+        case "sync-submodules":
+          e.preventDefault();
+          if (sel) syncSubmodules(sel.wt.wtKey);
+          break;
+        case "toggle-sidebar":
+          e.preventDefault();
+          setSideHidden((s) => !s);
+          break;
+        case "overview":
+          e.preventDefault();
+          setView((v) => (v === "overview" ? "wt" : "overview"));
+          break;
+        case "switch-branch":
+          e.preventDefault();
+          // Settings can turn the action off; the shortcut has to obey, or the
+          // toggle only hides the button and the feature is still one key away.
+          if (sel && switchBranchEnabled) setShowSwitchBranch(true);
+          break;
+        case "run-next":
+          // ⏎ must never fire while a terminal or a field has focus
+          if (typing || view !== "wt" || !na || na.kind === "busy") return;
+          e.preventDefault();
+          runNext(na);
+          break;
+        default:
+          if (action.startsWith("layout-")) {
+            const n = Number(action.slice("layout-".length));
+            if (n >= 1 && n <= LAYOUT_ORDER.length) {
+              e.preventDefault();
+              setLayout(LAYOUT_ORDER[n - 1]);
+            }
+          }
+
       }
     };
     document.addEventListener("keydown", k);
@@ -495,9 +516,18 @@ export default function App() {
       {showDb && sel && <DatabaseModal wt={sel.wt} onClose={() => setShowDb(false)} />}
       {showSetup && sel && (
         <SetupRunnerModal
-          wt={sel.wt}
+          wtKey={sel.wt.wtKey}
+          branch={sel.wt.branch}
           onClose={() => setShowSetup(false)}
           onStartServices={() => startAll(sel.wt.wtKey)}
+        />
+      )}
+      {setupFor && (
+        <SetupRunnerModal
+          wtKey={setupFor.wtKey}
+          branch={setupFor.branch}
+          onClose={() => setSetupFor(null)}
+          onStartServices={() => startAll(setupFor.wtKey)}
         />
       )}
       {svcDetail && sel && <ServiceDetailModal wt={sel.wt} svcKey={svcDetail} onClose={() => setSvcDetail(null)} />}
@@ -513,7 +543,13 @@ export default function App() {
           }}
         />
       )}
-      {showNewWt && <NewWorktreeModal repoId={sel?.repo.repoId ?? ""} onClose={() => setShowNewWt(false)} />}
+      {showNewWt && (
+        <NewWorktreeModal
+          repoId={sel?.repo.repoId ?? ""}
+          onClose={() => setShowNewWt(false)}
+          onSetupStarted={(wtKey, branch) => setSetupFor({ wtKey, branch })}
+        />
+      )}
       {removeWtFor && <RemoveWorktreeModal wt={removeWtFor} onClose={() => setRemoveWtFor(null)} />}
       {removeWtsFor && removeWtsFor.length > 0 && (
         <RemoveWorktreesModal wts={removeWtsFor} onClose={() => setRemoveWtsFor(null)} />
@@ -550,5 +586,8 @@ const EMPTY_WT: WorktreeNode = {
   isMain: false,
   git: null,
   dbName: null,
+  setup: null,
+  setupConfigured: false,
+  pinned: false,
   services: [],
 };

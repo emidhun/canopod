@@ -1,6 +1,6 @@
 // Phase-2 mock backend — reproduces the prototype SEED + simulated behavior.
 // Deleted in Phase 3/4 when the Rust backend takes over via ipc.ts.
-import type { LogLine, RepoNode, ServiceNode, SvcKind } from "./types";
+import type { LogLine, RepoNode, ServiceNode, SetupState, SvcKind } from "./types";
 
 const svc = (
   wtKey: string,
@@ -9,10 +9,13 @@ const svc = (
   kind: SvcKind,
   port: number | null,
   status: ServiceNode["status"],
-): ServiceNode => ({ svcKey: `${wtKey}::${serviceId}`, serviceId, name, kind, port, status });
+): ServiceNode => ({ svcKey: `${wtKey}::${serviceId}`, serviceId, name, kind, port, derivedPort: port, status });
 
 const min = 60;
 const nowS = () => Date.now() / 1000;
+
+/* A provisioned worktree, as the marker file would report it. */
+const RAN: SetupState = { ranAt: nowS() - 3 * 24 * 60 * min, ok: true, source: "marker" };
 
 /* Custom commands for the no-backend dev build, so the rail's command buttons
    render without a real settings file. Mirrors the design's CMDS seed. */
@@ -38,6 +41,9 @@ export function mockTree(): RepoNode[] {
           path: "~/code/acme-web",
           isMain: true,
           dbName: null,
+          setup: RAN,
+          setupConfigured: true,
+          pinned: false,
           git: { ahead: 0, behind: 0, dirty: false, lastCommitTs: nowS() - 2 * 60 * min, lastCommitMsg: "checkout: fix tax rounding" },
           services: [
             svc("~/code/acme-web", "frontend", "Frontend", "web", 3000, "running"),
@@ -50,6 +56,9 @@ export function mockTree(): RepoNode[] {
           path: "~/code/.wt/acme-web-checkout",
           isMain: false,
           dbName: "db_2",
+          setup: RAN,
+          setupConfigured: true,
+          pinned: true,
           git: { ahead: 7, behind: 2, dirty: true, lastCommitTs: nowS() - 11 * min, lastCommitMsg: "wip: express checkout drawer" },
           services: [
             svc("~/code/.wt/acme-web-checkout", "frontend", "Frontend", "web", 3010, "stopped"),
@@ -69,6 +78,9 @@ export function mockTree(): RepoNode[] {
           path: "~/code/payments-api",
           isMain: true,
           dbName: null,
+          setup: RAN,
+          setupConfigured: true,
+          pinned: false,
           git: { ahead: 0, behind: 0, dirty: false, lastCommitTs: nowS() - 24 * 60 * min, lastCommitMsg: "bump stripe sdk to 14.2" },
           services: [
             svc("~/code/payments-api", "api", "API", "server", 8080, "running"),
@@ -81,6 +93,9 @@ export function mockTree(): RepoNode[] {
           path: "~/code/.wt/payments-refund",
           isMain: false,
           dbName: "db_4",
+          setup: null,
+          setupConfigured: true,
+          pinned: false,
           git: { ahead: 3, behind: 0, dirty: true, lastCommitTs: nowS() - 4 * min, lastCommitMsg: "refund: idempotency key guard" },
           services: [svc("~/code/.wt/payments-refund", "api", "API", "server", 8090, "running")],
         },
@@ -97,6 +112,9 @@ export function mockTree(): RepoNode[] {
           path: "~/dev/design-system",
           isMain: true,
           dbName: null,
+          setup: null,
+          setupConfigured: false,
+          pinned: false,
           git: { ahead: 1, behind: 0, dirty: false, lastCommitTs: nowS() - 5 * 60 * min, lastCommitMsg: "Button: focus ring tokens" },
           services: [svc("~/dev/design-system", "storybook", "Storybook", "web", 6006, "running")],
         },

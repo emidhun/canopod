@@ -16,13 +16,14 @@ import { useCallback, useEffect, useState } from "react";
 import { errText, hasBackend, ipc, type AgentCfg } from "../../ipc";
 import { nextTermId, useStore } from "../../store";
 import type { RepoNode, WorktreeNode } from "../../types";
-import { composeAgentPrompt, composeContextMd, readWtContext, runtimeFor } from "../WorktreeContext";
+import { ALL_CONTEXT, composeAgentPrompt, composeContextMd, readWtContext, runtimeFor, type ContextParts } from "../WorktreeContext";
 
 const defaultAgent = (legacy: string): AgentCfg => ({
   id: "default",
   name: "Claude",
   command: legacy.trim() || "claude",
   promptOnLaunch: true,
+  waitingPatterns: "",
 });
 const shellQuote = (value: string) => `'${value.replace(/'/g, `'"'"'`)}'`;
 
@@ -96,12 +97,41 @@ export function useLaneLaunch(defaultRepo: RepoNode, defaultWt: WorktreeNode): L
         return;
       }
       try {
+        const settings = await ipc.getSettings().catch(() => null);
+        const repoCfg = settings?.repos.find((r) => r.id === repo.repoId);
+
+        // Concurrency: an agent is a real CLI doing real work, and several at
+        // once on one machine compete for CPU and for the same dev database.
+        // Counted across the repo, not the worktree — the machine is what's
+        // shared. Refuse rather than queue: a launch that silently waits looks
+        // like one that failed.
+        const limit = repoCfg?.maxParallelAgents ?? 0;
+        if (limit > 0) {
+          const wtKeys = new Set(repo.worktrees.map((w) => w.wtKey));
+          const live = Object.entries(useStore.getState().sessions)
+            .filter(([k]) => wtKeys.has(k))
+            .flatMap(([, ss]) => ss)
+            .filter((s) => s.kind === "agent" && s.running).length;
+          if (live >= limit) {
+            showToast(`${live} of ${limit} agents already running in ${repo.name} — stop one first`);
+            return;
+          }
+        }
+
         const runtime = runtimeFor(repo, wt);
         // read the PERSISTED context, so an edit made moments ago is included
         const ctx = readWtContext(wt.wtKey);
+        const parts: ContextParts = repoCfg?.agentContext ?? ALL_CONTEXT;
+        // The last error lines from this worktree's unhealthy services, only
+        // when the repo opted in.
+        const failing = parts.failingLogs
+          ? wt.services
+              .filter((s) => s.status === "error")
+              .flatMap((s) => (useStore.getState().logs[s.svcKey] ?? []).filter((l) => l.lv === "err").slice(-10).map((l) => `${s.name}: ${l.text}`))
+          : [];
         // Always write the handoff: even a blank brief includes the branch,
         // database and resolved ports the agent needs to work safely.
-        await ipc.writeWorktreeContext(wt.path, composeContextMd(ctx, runtime));
+        await ipc.writeWorktreeContext(wt.path, composeContextMd(ctx, runtime, parts, failing));
         const prompt = composeAgentPrompt(ctx, runtime);
         // A profile can opt out for CLIs that do not accept an initial
         // positional prompt; those still get CANOPY_CONTEXT_FILE.

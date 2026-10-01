@@ -109,17 +109,41 @@ export const isBlank = (c: WtContext) =>
   !c.title.trim() && !c.body.trim() && !c.pr.trim() && !c.prDescription.trim() && !c.issue.trim() && !c.issueDescription.trim() && c.links.length === 0 && c.files.length === 0;
 
 /** Render the context as the markdown seed written to `.canopy/context.md`. */
-export function composeContextMd(c: WtContext, runtime?: WorktreeRuntime): string {
-  let md = `# ${c.title.trim() || "Untitled"}\n\n${c.body.trim()}\n`;
-  if (c.pr.trim() || c.prDescription.trim()) md += `\n## Pull request\n${c.pr.trim() ? `${c.pr.trim()}\n` : ""}${c.prDescription.trim()}\n`;
-  if (c.issue.trim() || c.issueDescription.trim()) md += `\n## Issue\n${c.issue.trim() ? `${c.issue.trim()}\n` : ""}${c.issueDescription.trim()}\n`;
-  if (runtime) {
+/** Which sections of the handoff to include (Settings → Agents). Defaults
+    reproduce what the handoff contained before this was configurable. */
+export interface ContextParts {
+  worktreeContext: boolean;
+  runtimeFacts: boolean;
+  failingLogs: boolean;
+}
+export const ALL_CONTEXT: ContextParts = { worktreeContext: true, runtimeFacts: true, failingLogs: false };
+
+export function composeContextMd(
+  c: WtContext,
+  runtime?: WorktreeRuntime,
+  parts: ContextParts = ALL_CONTEXT,
+  failingLogs: string[] = [],
+): string {
+  // The title always survives: a handoff with no heading at all reads as a
+  // truncation bug rather than a deliberate setting.
+  let md = `# ${c.title.trim() || "Untitled"}\n`;
+  if (parts.worktreeContext) {
+    md += `\n${c.body.trim()}\n`;
+    if (c.pr.trim() || c.prDescription.trim()) md += `\n## Pull request\n${c.pr.trim() ? `${c.pr.trim()}\n` : ""}${c.prDescription.trim()}\n`;
+    if (c.issue.trim() || c.issueDescription.trim()) md += `\n## Issue\n${c.issue.trim() ? `${c.issue.trim()}\n` : ""}${c.issueDescription.trim()}\n`;
+  }
+  if (runtime && parts.runtimeFacts) {
     md += `\n## Worktree\n- Repository: ${runtime.repo}\n- Branch: ${runtime.branch}\n- Path: ${runtime.path}\n`;
     md += `- Database: ${runtime.dbName || "not configured"}\n`;
     md += runtime.ports.length ? `- Ports: ${runtime.ports.map((p) => `${p.name} :${p.port}`).join(", ")}\n` : "- Ports: none configured\n";
   }
-  if (c.files.length) md += "\n## Files\n" + c.files.map((f) => `- ${f}`).join("\n") + "\n";
-  if (c.links.length) md += "\n## Links\n" + c.links.map((l) => `- ${l.label}`).join("\n") + "\n";
+  if (parts.failingLogs && failingLogs.length) {
+    md += "\n## Recent failures\n```\n" + failingLogs.join("\n") + "\n```\n";
+  }
+  if (parts.worktreeContext) {
+    if (c.files.length) md += "\n## Files\n" + c.files.map((f) => `- ${f}`).join("\n") + "\n";
+    if (c.links.length) md += "\n## Links\n" + c.links.map((l) => `- ${l.label}`).join("\n") + "\n";
+  }
   return md;
 }
 
