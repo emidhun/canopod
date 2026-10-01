@@ -524,6 +524,20 @@ mod tests {
             let _ = std::fs::remove_dir_all(&self.0);
         }
     }
+    fn canonical_repo_path(path: &Path) -> String {
+        let canonical = std::fs::canonicalize(path).unwrap();
+        #[cfg(windows)]
+        {
+            let value = canonical.to_string_lossy();
+            if let Some(rest) = value.strip_prefix(r"\\?\UNC\") {
+                return format!(r"\\{rest}");
+            }
+            if let Some(rest) = value.strip_prefix(r"\\?\") {
+                return rest.to_owned();
+            }
+        }
+        canonical.to_string_lossy().into_owned()
+    }
 
     struct Running {
         directory: Directory,
@@ -888,10 +902,7 @@ mod tests {
                 .repos
                 .push(crate::settings::RepoCfg {
                     id: "allowed".into(),
-                    path: std::fs::canonicalize(&self.directory.0)
-                        .unwrap()
-                        .to_string_lossy()
-                        .into_owned(),
+                    path: canonical_repo_path(&self.directory.0),
                     ..Default::default()
                 });
             let response = self
@@ -1070,7 +1081,7 @@ mod tests {
         let second_path = second_job["createdPath"].as_str().unwrap();
         assert!(Path::new(second_path).join("setup-ready").exists());
 
-        let base_port = (0..100).find_map(|_| {
+        let (base_port, mut port_reservations) = (0..100).find_map(|_| {
             let candidate = std::net::TcpListener::bind("127.0.0.1:0").ok()?.local_addr().ok()?.port();
             if candidate > 65000 { return None; }
             let checks = [candidate, candidate + 10, candidate + 20]
@@ -1078,8 +1089,7 @@ mod tests {
                 .map(|port| std::net::TcpListener::bind((std::net::Ipv4Addr::LOCALHOST, port)))
                 .collect::<Result<Vec<_>, _>>()
                 .ok()?;
-            drop(checks);
-            Some(candidate)
+            Some((candidate, checks))
         }).expect("three-port range");
         running.app.state::<AppState>().settings.write().repos[0].services.push(crate::settings::ServiceCfg {
             id: "web".into(),
@@ -1107,19 +1117,36 @@ mod tests {
         }
         assert_ne!(ports[0], ports[1]);
         for (index, key) in keys.iter().enumerate() {
+            let reservation = port_reservations.iter().position(|listener| {
+                listener.local_addr().is_ok_and(|address| address.port() as u32 == ports[index])
+            }).expect("derived port was not reserved");
+            drop(port_reservations.swap_remove(reservation));
             let started = tool_data(&running.tool(&bearer, "canopy_start_service", serde_json::json!({
                 "repoId":"allowed","serviceKey":key,"requestKey":format!("acceptance-start-{index}")
             })).await);
             assert_eq!(running.job_done(&bearer, started["job"]["jobId"].as_str().unwrap()).await["status"], "succeeded");
         }
+        drop(port_reservations);
+        let mut probes = tokio::task::JoinSet::new();
         for port in &ports {
-            tokio::time::timeout(Duration::from_secs(10), async {
-                loop {
-                    if running.client.get(format!("http://127.0.0.1:{port}"))
-                        .send().await.is_ok_and(|response| response.status().is_success()) { break; }
+            let port = *port;
+            let client = running.client.clone();
+            probes.spawn(async move {
+                let mut last = "no response".to_owned();
+                for _ in 0..600 {
+                    match client.get(format!("http://127.0.0.1:{port}")).send().await {
+                        Ok(response) if response.status().is_success() => return Ok(()),
+                        Ok(response) => last = format!("HTTP {}", response.status()),
+                        Err(error) => last = error.to_string(),
+                    }
                     tokio::time::sleep(Duration::from_millis(50)).await;
                 }
-            }).await.expect("service did not become reachable");
+                Err(format!("port {port} did not become reachable: {last}"))
+            });
+        }
+        let mut probe_errors = Vec::new();
+        while let Some(result) = probes.join_next().await {
+            if let Err(error) = result.unwrap() { probe_errors.push(error); }
         }
         for (index, key) in keys.iter().enumerate() {
             let stopped = tool_data(&running.tool(&bearer, "canopy_stop_service", serde_json::json!({
@@ -1127,6 +1154,7 @@ mod tests {
             })).await);
             assert_eq!(running.job_done(&bearer, stopped["job"]["jobId"].as_str().unwrap()).await["status"], "succeeded");
         }
+        assert!(probe_errors.is_empty(), "{}", probe_errors.join("; "));
         assert!(Path::new(&path).join(".worktrees/acceptance-one").exists());
         assert!(Path::new(&path).join(".worktrees/acceptance-two").exists());
         running.finish().await;
@@ -1926,10 +1954,7 @@ mod tests {
             .repos
             .push(crate::settings::RepoCfg {
                 id: "second".into(),
-                path: std::fs::canonicalize(&running.directory.0)
-                    .unwrap()
-                    .to_string_lossy()
-                    .into_owned(),
+                path: canonical_repo_path(&running.directory.0),
                 ..Default::default()
             });
         running
