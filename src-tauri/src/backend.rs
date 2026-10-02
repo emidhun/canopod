@@ -72,7 +72,6 @@ pub async fn serve(
     crate::services::sweep_orphans(&app);
     crate::terminal::sweep_orphans(&app);
     let mut stats = crate::stats::spawn_stats_task(app.clone());
-    let mut updates = crate::updates::spawn_check_task(app.clone());
     let mut refresh = {
         let app = app.clone();
         tokio::spawn(async move {
@@ -100,13 +99,12 @@ pub async fn serve(
     let outcome = tokio::select! {
         result = stop => result,
         result = &mut stats => Err(format!("stats task stopped unexpectedly: {result:?}")),
-        result = &mut updates => Err(format!("update task stopped unexpectedly: {result:?}")),
         result = &mut refresh => Err(format!("refresh task stopped unexpectedly: {result:?}")),
         result = &mut terminals => Err(format!("terminal monitor stopped unexpectedly: {result:?}")),
     };
     // Abort before stopping children so periodic state refresh cannot race
     // cleanup. Join only unfinished handles: select may have consumed one.
-    for task in [&mut stats, &mut updates, &mut refresh, &mut terminals] {
+    for task in [&mut stats, &mut refresh, &mut terminals] {
         if !task.is_finished() {
             task.abort();
             let _ = task.await;

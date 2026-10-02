@@ -52,6 +52,6 @@ describe("SettingsView shell", () => {
   });
 });
 
-it("keeps automatic update checks opt-in in preview", () => {
-  expect(MOCK.updates?.autoCheck).toBe(false);
+it("checks for releases and reminds about GitHub without silently installing", () => {
+  expect(MOCK.updates).toEqual({ autoCheck: true, autoInstall: false, starReminder: true });
 });

@@ -115,7 +115,8 @@ pub fn run() {
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_positioner::init())
         .plugin(tauri_plugin_dialog::init())
-        .plugin(tauri_plugin_notification::init());
+        .plugin(tauri_plugin_notification::init())
+        .plugin(tauri_plugin_updater::Builder::new().build());
     // NSPanel plugin is macOS-only; other platforms use a plain popover window.
     #[cfg(target_os = "macos")]
     let builder = builder.plugin(tauri_nspanel::init());
@@ -178,13 +179,13 @@ pub fn run() {
                 tauri::WebviewWindowBuilder::from_config(app, config)?.build()?;
             }
             tray::init(&handle)?;
-            let desktop = handle;
+            let desktop = handle.clone();
 
 
             // crash reports + the update check need AppState for their
             // preferences, so both are installed after it is managed
             updates::install_panic_hook(context.clone());
-            updates::spawn_check_task(context.clone());
+            updates::spawn_desktop_check_task(context.clone(), handle.clone());
 
             // kill process groups left over from a crashed previous run
             services::sweep_orphans(&context);
@@ -437,6 +438,7 @@ pub fn run() {
             commands::clear_caches,
             commands::reset_settings,
             commands::check_for_update,
+            commands::install_update,
             commands::open_crash_reports,
             commands::crash_report_count,
         ])

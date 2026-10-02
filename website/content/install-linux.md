@@ -80,4 +80,5 @@ icon, the app is still running: the main window appears at launch and normal win
 
 - Window decorations and popover placement are unverified on tiling window managers.
 - The AppImage brings its own WebKitGTK expectations. If it won't start, try the `.deb` or `.rpm`.
-- Nothing is signed and there's no repository to add, so updating means downloading a new package.
+- In-app updater artifacts are signed. Package-manager installs may still need a fresh `.deb` or
+  `.rpm`; the AppImage is the supported self-replacing Linux bundle.

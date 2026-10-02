@@ -46,6 +46,14 @@ framework line includes the fix.
    status, enforces the 50 ms warm p95 budget, then launches the desktop app
    against those exact draft assets. A release stays draft when any install, version or launch
    probe fails. The steps below are for local one-off builds.
+   CI reads the updater private key from the `TAURI_SIGNING_PRIVATE_KEY` repository secret and
+   publishes signed updater bundles plus `latest.json`. Keep an offline backup of that key: losing
+   it permanently prevents existing installations from accepting future updates. For a local signed
+   bundle, set `TAURI_SIGNING_PRIVATE_KEY` to the key contents and add
+   `--config src-tauri/tauri.release.conf.json` to `tauri build`. Ordinary local builds intentionally
+   omit updater artifacts and do not need the release key. This passwordless project key also needs
+   `TAURI_SIGNING_PRIVATE_KEY_PASSWORD=""` set explicitly so the signer never opens an interactive
+   password prompt in CI.
 1. **Build app-only locally.** Tauri's `bundle_dmg.sh` step **hangs** on this machine (it drives
    Finder/AppleScript), so pass `--bundles app`: `npm run tauri build -- --bundles app`
    (CI runners bundle the DMG fine).

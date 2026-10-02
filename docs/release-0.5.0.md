@@ -8,7 +8,7 @@ The top-bar and command-palette **Sync external worktrees** action discovers Git
 
 `.worktreemanager.json` supports `setupPolicy` and object-form setup entries (`cmd`, `cwd`, `enabled`). Setup completion markers live in `.canopy/setup.json`. Existing unrelated configuration keys survive Settings saves.
 
-Agent waiting transitions now notify according to preferences and contribute to the app badge. Background update checks are opt-in; enabling them contacts GitHub on startup and periodically. Manual checking remains available in General settings.
+Agent waiting transitions now notify according to preferences and contribute to the app badge. Canopy checks for releases at most daily, announces available versions, and can install Tauri-signed updates automatically when the user opts in. A separate daily GitHub-star reminder can be disabled at any time. Manual checking and installation remain available in General settings.
 
 Repository onboarding now detects npm, pnpm and Yarn, avoids invented Node commands for unknown projects, keeps database configuration conditional, and preserves existing Canopy configuration unless replacement is explicitly requested.
 

@@ -23,7 +23,7 @@ crate-type = ["staticlib", "cdylib", "rlib"]
 
 [features]
 default = ["desktop"]
-desktop = ["dep:toml_edit", "dep:tauri", "dep:tauri-build", "dep:tauri-plugin-opener", "dep:tauri-plugin-log", "dep:tauri-plugin-positioner", "dep:tauri-plugin-dialog", "dep:tauri-plugin-single-instance", "dep:tauri-plugin-notification", "dep:tauri-nspanel", "dep:fix-path-env"]
+desktop = ["dep:toml_edit", "dep:tauri", "dep:tauri-build", "dep:tauri-plugin-opener", "dep:tauri-plugin-log", "dep:tauri-plugin-positioner", "dep:tauri-plugin-dialog", "dep:tauri-plugin-single-instance", "dep:tauri-plugin-notification", "dep:tauri-plugin-updater", "dep:tauri-nspanel", "dep:fix-path-env"]
 # Headless test harness (WTM_SUITE / WTM_SELFTEST / WTM_SELFTEST_CREATE).
 # Excluded from release builds: it ships ~400 lines of env-var-triggered code
 # that can create/remove worktrees and panics on malformed input.
@@ -84,7 +84,8 @@ tempfile = "3"
 # OS notifications for the states that need a human while Canopy is in the
 # tray — a crashed service, a blocked agent, a finished setup.
 tauri-plugin-notification = { version = "2", optional = true }
-# One HTTPS GET, twice a day, to ask GitHub whether a newer release exists.
+tauri-plugin-updater = { version = "2", optional = true }
+# One HTTPS GET per day, to ask GitHub whether a newer release exists.
 # rustls rather than the platform TLS stack so the Linux build needs no extra
 # system package, and default features off so this stays a client, not a server.
 reqwest = { version = "0.13", default-features = false, features = ["rustls", "json", "http2"] }

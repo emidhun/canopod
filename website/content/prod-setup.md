@@ -123,7 +123,7 @@ check proves the app works under it.
 The Tauri capability set is the default one plus what the app actually uses: dialog, opener, and fs for
 the paths it reads.
 
-Canopy has no telemetry or analytics. In `0.5.0`, update checks are opt-in and contact GitHub only
+Canopy has no telemetry or analytics. Daily release checks contact GitHub only
 when enabled or run manually. The local application API binds to loopback, and MCP remains disabled
 until the user explicitly enables it.
 

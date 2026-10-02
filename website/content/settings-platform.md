@@ -39,16 +39,19 @@ Setup and Migrate pages, except for a repository you're mid-edit on, which is ne
 | **Appearance → Theme** | `Dark`, `Light`, or `Match system`. |
 | **Appearance → Density** | `Comfortable` or `Compact`, which tightens the spacing ramp. |
 | **Appearance → Accent** | Teal, Green, Amber or Violet. |
-| **Check for updates automatically** *(0.5.0 preview)* | Opt-in. Asks GitHub twice a day whether a newer published release exists; never downloads or installs it. |
-| **Check now** *(0.5.0 preview)* | Runs the same release check immediately and links to the release when one is available. |
+| **Check for updates automatically** | Checks GitHub at most once per day and sends a native notification when a newer published release exists. |
+| **Install updates automatically** | Opt-in. Downloads a Tauri-signed update, verifies it, installs it and restarts Canopy. Managed services are stopped during the restart. |
+| **Daily GitHub star reminder** | Sends at most one native reminder per day. Disable it after starring Canopy or whenever you prefer. |
+| **Check now** | Runs the release check immediately. An available update can be installed and restarted in-app or opened on GitHub for its release notes. |
 | **Record crash reports** *(0.5.0 preview)* | Writes a local stack trace to Canopy's crash-report directory after a panic. Nothing is uploaded. |
 
 Text zoom (`⌘+`, `⌘-`, `⌘0`) belongs to appearance too, but it lives on the keyboard rather than on
 this page: 80% to 160% in 10% steps, applied to the whole type ramp.
 
-:::note Update checks are not an installer
-The 0.5.0 preview can notify you about a release, but installing still means downloading the package
-or running `brew upgrade --cask canopy`. Signed automatic installation remains future work.
+:::note Updates are signed separately from macOS notarization
+The updater verifies every downloaded bundle with Canopy's Tauri updater key. That integrity check
+works even while the macOS app remains ad-hoc signed and not notarized. Manual downloads remain the
+fallback for package formats the running platform cannot replace in place.
 :::
 
 ## Terminal

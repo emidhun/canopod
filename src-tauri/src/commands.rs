@@ -766,6 +766,13 @@ pub async fn check_for_update(app: AppHandle) -> Result<crate::updates::UpdateSt
 }
 
 #[tauri::command]
+pub async fn install_update(app: AppHandle) -> Result<bool, CanopyError> {
+    crate::updates::install_available_update(&app)
+        .await
+        .map_err(CanopyError::internal)
+}
+
+#[tauri::command]
 pub fn crash_report_count(app: AppHandle) -> usize {
     let context = runtime(&app);
     crate::operations::crash_report_count(context)

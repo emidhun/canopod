@@ -103,6 +103,16 @@ Sync imports only entries returned by `git worktree list`; it does not scan arbi
 or add unrelated repositories. It also detects worktree registrations whose directories were deleted
 outside Canopy and offers to prune the stale Git entries, with optional branch and database cleanup.
 
+### Updates and project reminders
+
+Under **Settings → General**, Canopy checks GitHub at most once per day and sends a native notification
+only when a newer release exists. **Install updates automatically** is opt-in: downloaded bundles are
+verified with Canopy's updater signing key before installation and the app restarts cleanly. Use
+**Check now** for the same flow on demand.
+
+The separate **Daily GitHub star reminder** sends at most one notification per 24 hours and can be
+disabled at any time. It does not contact GitHub; only opening the project page does.
+
 ---
 
 ## 5. Run services

@@ -19,11 +19,11 @@ jobs:
       matrix:
         include:
           - platform: macos-latest
-            args: --target aarch64-apple-darwin
+            args: --target aarch64-apple-darwin --config src-tauri/tauri.release.conf.json
           - platform: ubuntu-latest
-            args: ""
+            args: --config src-tauri/tauri.release.conf.json
           - platform: windows-latest
-            args: ""
+            args: --config src-tauri/tauri.release.conf.json
     runs-on: ${{ matrix.platform }}
     steps:
       - uses: actions/checkout@v7
@@ -47,8 +47,12 @@ jobs:
       - uses: tauri-apps/tauri-action@v1
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ""
         with:
           tagName: ${{ github.ref_name }}
           releaseName: "Canopy ${{ github.ref_name }}"
           releaseDraft: true
+          uploadUpdaterJson: true
+          retryAttempts: 2
           args: ${{ matrix.args }}

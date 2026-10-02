@@ -860,20 +860,29 @@ impl Handler {
         let settings = self.controller.app.state::<AppState>().settings.read();
         let tree = self.controller.app.state::<AppState>().tree.read();
         let mut repositories = Vec::new();
+        let mut bytes = serde_json::json!({"source":"cache","repositories":[],"nextCursor":null})
+            .to_string()
+            .len();
         let mut next = None;
         for (index, repo_id) in live.policy.repo_ids.iter().enumerate().skip(cursor) {
-            if repositories.len() >= limit {
-                next = Some(index);
-                break;
-            }
             let configured = settings.repos.iter().find(|repo| &repo.id == repo_id);
             let cached = tree.iter().find(|repo| &repo.repo_id == repo_id);
-            repositories.push(serde_json::json!({
+            let entry = serde_json::json!({
                 "repoId": repo_id,
                 "name": configured.map(|repo| repo.name.as_str()).unwrap_or(repo_id),
                 "cacheAvailable": cached.is_some(),
                 "worktrees": cached.map(|repo| repo.worktrees.len()).unwrap_or(0)
-            }));
+            });
+            let size = serde_json::to_vec(&entry).map_err(|_| "encoding_failed")?.len();
+            if size > 12 * 1024 {
+                return Err("repository_metadata_too_large".into());
+            }
+            if repositories.len() >= limit || bytes + size > 12 * 1024 {
+                next = Some(index);
+                break;
+            }
+            bytes += size + 1;
+            repositories.push(entry);
         }
         Ok(serde_json::json!({"source":"cache","repositories":repositories,"nextCursor":next}).to_string())
     }
@@ -1011,6 +1020,56 @@ mod tests {
         let advertised = tools(true, true, true);
         assert_eq!(advertised.len(), 15);
         assert!(advertised.iter().all(|tool| tool.output_schema.is_some()));
+    }
+
+    #[test]
+    fn capability_grants_expose_only_the_expected_tools() {
+        let names = |write, services, configure| {
+            tools(write, services, configure)
+                .into_iter()
+                .map(|tool| tool.name.to_string())
+                .collect::<std::collections::BTreeSet<_>>()
+        };
+        let reads = names(false, false, false);
+        assert_eq!(reads.len(), 9);
+        for name in [
+            "canopy_status", "canopy_repositories", "canopy_worktrees", "canopy_worktree",
+            "canopy_job", "canopy_job_output", "canopy_services", "canopy_service_logs",
+            "canopy_repository_config",
+        ] {
+            assert!(reads.contains(name), "missing read tool {name}");
+        }
+        let writes = names(true, false, false);
+        assert_eq!(writes.difference(&reads).cloned().collect::<Vec<_>>(), [
+            "canopy_create_worktree".to_owned(), "canopy_run_setup".to_owned(),
+        ]);
+        let service_control = names(false, true, false);
+        assert_eq!(service_control.difference(&reads).cloned().collect::<Vec<_>>(), [
+            "canopy_restart_service".to_owned(), "canopy_start_service".to_owned(),
+            "canopy_stop_service".to_owned(),
+        ]);
+        let configuration = names(false, false, true);
+        assert_eq!(configuration.difference(&reads).cloned().collect::<Vec<_>>(), [
+            "canopy_update_configuration".to_owned(),
+        ]);
+    }
+
+    #[test]
+    fn tool_contracts_are_closed_objects_with_safety_annotations() {
+        for tool in tools(true, true, true) {
+            assert_eq!(tool.input_schema.get("type").and_then(serde_json::Value::as_str), Some("object"), "{} input", tool.name);
+            assert_eq!(tool.input_schema.get("additionalProperties").and_then(serde_json::Value::as_bool), Some(false), "{} input", tool.name);
+            let output = tool.output_schema.as_ref().unwrap();
+            assert_eq!(output.get("type").and_then(serde_json::Value::as_str), Some("object"), "{} output", tool.name);
+            assert_eq!(output.get("additionalProperties").and_then(serde_json::Value::as_bool), Some(false), "{} output", tool.name);
+            let annotations = tool.annotations.as_ref().expect("every tool has safety annotations");
+            let read_only = matches!(tool.name.as_ref(),
+                "canopy_status" | "canopy_repositories" | "canopy_worktrees" | "canopy_worktree" |
+                "canopy_job" | "canopy_job_output" | "canopy_services" | "canopy_service_logs" |
+                "canopy_repository_config");
+            assert_eq!(annotations.destructive_hint, Some(!read_only), "{}", tool.name);
+            assert_eq!(annotations.read_only_hint, Some(read_only), "{}", tool.name);
+        }
     }
 
     #[tokio::test]

@@ -1,16 +1,4 @@
-// Update checking and crash reports.
-//
-// ── Why checking, and not installing ──
-//
-// Tauri's updater can download and install a new bundle, but only for
-// *signed* releases: it needs a `pubkey` in tauri.conf.json whose private half
-// lives in CI. This repository has neither, and inventing a public key would
-// ship an app whose update path silently fails on every launch.
-//
-// So Canopy does the honest half: it asks GitHub whether a newer release
-// exists and tells you, with a link. Installing stays a deliberate act until
-// release signing is set up — at which point this module is where the download
-// would attach.
+// Update checking, signed installation, daily project reminders and crash reports.
 //
 // ── Why crash reports are written, not sent ──
 //
@@ -19,18 +7,24 @@
 // at all: with it on, a panic writes its message, backtrace, app version and
 // OS to the log directory, which is the thing a bug report can attach. Nothing
 // leaves the machine, and the UI says so.
+use crate::runtime::RuntimeContext;
 use serde::{Deserialize, Serialize};
 use std::io::Write;
-use crate::runtime::RuntimeContext;
 
 /// Where release metadata comes from. The repository is public, so this needs
 /// no token; unauthenticated GitHub API requests are rate-limited to 60/hour
-/// per IP, which a twice-daily check cannot approach.
+/// per IP, which a daily check cannot approach.
 const RELEASES_URL: &str = "https://api.github.com/repos/emidhun/canopy/releases/latest";
+#[cfg(feature = "desktop")]
+const PROJECT_URL: &str = "https://github.com/emidhun/canopy";
 
-/// How often the background check runs. Deliberately slow: a release lands at
-/// most every few days, and a chattier poll buys nothing.
-const CHECK_INTERVAL: std::time::Duration = std::time::Duration::from_secs(12 * 60 * 60);
+/// The reminders and automatic release check run at most once per day, even
+/// across restarts. The task wakes hourly so a newly enabled preference does
+/// not wait until tomorrow.
+#[cfg(any(feature = "desktop", test))]
+const DAILY_SECS: i64 = 24 * 60 * 60;
+#[cfg(feature = "desktop")]
+const TASK_INTERVAL: std::time::Duration = std::time::Duration::from_secs(60 * 60);
 
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -66,6 +60,11 @@ fn now_secs() -> i64 {
         .unwrap_or(0)
 }
 
+#[cfg(any(feature = "desktop", test))]
+fn daily_due(last: i64, now: i64) -> bool {
+    last <= 0 || now.saturating_sub(last) >= DAILY_SECS
+}
+
 pub fn current_version() -> &'static str {
     env!("CARGO_PKG_VERSION")
 }
@@ -77,11 +76,21 @@ pub fn current_version() -> &'static str {
 /// case a naive check gets wrong and nobody notices until the tenth minor.
 fn is_newer(candidate: &str, current: &str) -> bool {
     fn parts(v: &str) -> Vec<u64> {
-        v.trim().trim_start_matches(['v', 'V']).split('-').next().unwrap_or("").split('.').map(|p| p.parse().unwrap_or(0)).collect()
+        v.trim()
+            .trim_start_matches(['v', 'V'])
+            .split('-')
+            .next()
+            .unwrap_or("")
+            .split('.')
+            .map(|p| p.parse().unwrap_or(0))
+            .collect()
     }
     let (a, b) = (parts(candidate), parts(current));
     for i in 0..a.len().max(b.len()) {
-        let (x, y) = (a.get(i).copied().unwrap_or(0), b.get(i).copied().unwrap_or(0));
+        let (x, y) = (
+            a.get(i).copied().unwrap_or(0),
+            b.get(i).copied().unwrap_or(0),
+        );
         if x != y {
             return x > y;
         }
@@ -108,7 +117,10 @@ async fn fetch_latest() -> Result<GhRelease, String> {
     if !resp.status().is_success() {
         return Err(format!("GitHub returned {}", resp.status()));
     }
-    let rel: GhRelease = resp.json().await.map_err(|e| format!("unreadable release data: {e}"))?;
+    let rel: GhRelease = resp
+        .json()
+        .await
+        .map_err(|e| format!("unreadable release data: {e}"))?;
     if rel.draft || rel.prerelease {
         return Err("the newest release is a draft or prerelease".into());
     }
@@ -140,19 +152,153 @@ pub async fn check_now(app: &RuntimeContext) -> UpdateStatus {
     status
 }
 
-/// Background loop honouring `Settings.updates.auto_check`. The preference is
-/// re-read every tick rather than captured, so turning it off takes effect
-/// without a restart.
-pub fn spawn_check_task(app: RuntimeContext) -> tokio::task::JoinHandle<()> {
+#[cfg(feature = "desktop")]
+fn save_runtime(app: &RuntimeContext) {
+    let runtime = app.state::<crate::state::AppState>().runtime.read().clone();
+    if let Err(error) = crate::settings::save_runtime(app, &runtime) {
+        log::warn!("could not persist update reminder state: {error}");
+    }
+}
+
+#[cfg(feature = "desktop")]
+fn send_star_reminder(app: &RuntimeContext, now: i64) {
+    let settings = app
+        .state::<crate::state::AppState>()
+        .settings
+        .read()
+        .updates
+        .clone();
+    if !settings.star_reminder {
+        return;
+    }
+    let due = daily_due(
+        app.state::<crate::state::AppState>()
+            .runtime
+            .read()
+            .last_star_reminder_at,
+        now,
+    );
+    if !due {
+        return;
+    }
+    let _ = app.host().notify(
+        "Enjoying Canopy?",
+        &format!("Star Canopy on GitHub to support the project: {PROJECT_URL}"),
+        false,
+    );
+    app.state::<crate::state::AppState>()
+        .runtime
+        .write()
+        .last_star_reminder_at = now;
+    save_runtime(app);
+}
+
+#[cfg(feature = "desktop")]
+fn send_update_reminder(app: &RuntimeContext, status: &UpdateStatus, now: i64) {
+    let Some(latest) = status.latest.as_deref().filter(|_| status.available) else {
+        return;
+    };
+    let due = {
+        let runtime = app.state::<crate::state::AppState>().runtime.read();
+        runtime.last_update_reminder_version != latest
+            || daily_due(runtime.last_update_reminder_at, now)
+    };
+    if !due {
+        return;
+    }
+    let _ = app.host().notify(
+        "Canopy update available",
+        &format!("{latest} is ready. Open Canopy Settings to download and install it."),
+        false,
+    );
+    {
+        let mut runtime = app.state::<crate::state::AppState>().runtime.write();
+        runtime.last_update_reminder_version = latest.to_string();
+        runtime.last_update_reminder_at = now;
+    }
+    save_runtime(app);
+}
+
+#[cfg(feature = "desktop")]
+async fn daily_check(app: &RuntimeContext) -> Option<UpdateStatus> {
+    let now = now_secs();
+    let enabled = app
+        .state::<crate::state::AppState>()
+        .settings
+        .read()
+        .updates
+        .auto_check;
+    let due = daily_due(
+        app.state::<crate::state::AppState>()
+            .runtime
+            .read()
+            .last_update_check_at,
+        now,
+    );
+    if !enabled || !due {
+        return None;
+    }
+    let status = check_now(app).await;
+    app.state::<crate::state::AppState>()
+        .runtime
+        .write()
+        .last_update_check_at = now;
+    save_runtime(app);
+    send_update_reminder(app, &status, now);
+    Some(status)
+}
+
+#[cfg(feature = "desktop")]
+pub async fn install_available_update(app: &tauri::AppHandle) -> Result<bool, String> {
+    use tauri_plugin_updater::UpdaterExt;
+
+    let Some(update) = app
+        .updater()
+        .map_err(|error| error.to_string())?
+        .check()
+        .await
+        .map_err(|error| error.to_string())?
+    else {
+        return Ok(false);
+    };
+    update
+        .download_and_install(|_, _| {}, || {})
+        .await
+        .map_err(|error| error.to_string())?;
+    app.restart();
+}
+
+/// Desktop loop: sends the two daily native reminders and optionally installs
+/// a cryptographically signed update. Automatic installation is always opt-in.
+#[cfg(feature = "desktop")]
+pub fn spawn_desktop_check_task(
+    app: RuntimeContext,
+    desktop: tauri::AppHandle,
+) -> tokio::task::JoinHandle<()> {
     app.executor().spawn(async move {
-        // let the app finish starting before spending anything on the network
         tokio::time::sleep(std::time::Duration::from_secs(20)).await;
         loop {
-            let enabled = app.state::<crate::state::AppState>().settings.read().updates.auto_check;
-            if enabled {
-                let _ = check_now(&app).await;
+            let now = now_secs();
+            send_star_reminder(&app, now);
+            if let Some(status) = daily_check(&app).await {
+                let auto_install = app
+                    .state::<crate::state::AppState>()
+                    .settings
+                    .read()
+                    .updates
+                    .auto_install;
+                if status.available && auto_install {
+                    if let Err(error) = install_available_update(&desktop).await {
+                        log::warn!("automatic update failed: {error}");
+                        let _ = app.host().notify(
+                            "Canopy could not update",
+                            "Automatic installation failed. Open Settings to try again.",
+                            false,
+                        );
+                    }
+                }
             }
-            tokio::time::sleep(CHECK_INTERVAL).await;
+            tokio::time::sleep(TASK_INTERVAL).await;
         }
     })
 }
@@ -172,7 +318,12 @@ pub fn crash_dir(app: &RuntimeContext) -> Option<std::path::PathBuf> {
 pub fn install_panic_hook(app: RuntimeContext) {
     let previous = std::panic::take_hook();
     std::panic::set_hook(Box::new(move |info| {
-        let enabled = app.state::<crate::state::AppState>().settings.read().crash_reports.enabled;
+        let enabled = app
+            .state::<crate::state::AppState>()
+            .settings
+            .read()
+            .crash_reports
+            .enabled;
         if enabled {
             if let Err(e) = write_report(&app, info) {
                 // a failure here must never mask the panic itself
@@ -190,11 +341,18 @@ fn write_report(app: &RuntimeContext, info: &std::panic::PanicHookInfo<'_>) -> R
     // Stack traces and environment only — never settings, repo paths or
     // anything the user typed. "Stack traces only" is the promise the
     // preference makes, so the writer is what keeps it.
-    writeln!(f, "Canopy {} ({} {})", current_version(), std::env::consts::OS, std::env::consts::ARCH)
-        .map_err(|e| e.to_string())?;
+    writeln!(
+        f,
+        "Canopy {} ({} {})",
+        current_version(),
+        std::env::consts::OS,
+        std::env::consts::ARCH
+    )
+    .map_err(|e| e.to_string())?;
     writeln!(f, "when: {}", now_secs()).map_err(|e| e.to_string())?;
     if let Some(loc) = info.location() {
-        writeln!(f, "where: {}:{}:{}", loc.file(), loc.line(), loc.column()).map_err(|e| e.to_string())?;
+        writeln!(f, "where: {}:{}:{}", loc.file(), loc.line(), loc.column())
+            .map_err(|e| e.to_string())?;
     }
     writeln!(f, "what: {info}").map_err(|e| e.to_string())?;
     writeln!(f, "\n{}", std::backtrace::Backtrace::force_capture()).map_err(|e| e.to_string())?;
@@ -206,13 +364,95 @@ fn write_report(app: &RuntimeContext, info: &std::panic::PanicHookInfo<'_>) -> R
 pub fn crash_report_count(app: &RuntimeContext) -> usize {
     crash_dir(app)
         .and_then(|d| std::fs::read_dir(d).ok())
-        .map(|rd| rd.flatten().filter(|e| e.path().extension().is_some_and(|x| x == "txt")).count())
+        .map(|rd| {
+            rd.flatten()
+                .filter(|e| e.path().extension().is_some_and(|x| x == "txt"))
+                .count()
+        })
         .unwrap_or(0)
 }
 
 #[cfg(test)]
 mod tests {
-    use super::is_newer;
+    use super::{daily_due, is_newer, DAILY_SECS};
+
+    #[cfg(feature = "desktop")]
+    #[tokio::test]
+    async fn native_reminders_are_daily_and_new_versions_notify_immediately() {
+        use crate::{
+            runtime::{Audience, Host, RuntimeContext, RuntimePaths},
+            settings::{RuntimeState as PersistedState, Settings},
+            state::AppState,
+        };
+        use parking_lot::Mutex;
+        use std::sync::Arc;
+
+        #[derive(Default)]
+        struct RecordingHost(Mutex<Vec<String>>);
+        impl Host for RecordingHost {
+            fn interested(&self, _: Audience) -> bool {
+                false
+            }
+            fn publish(&self, _: Audience, _: &str, _: serde_json::Value) -> Result<(), String> {
+                Ok(())
+            }
+            fn notify(&self, title: &str, _: &str, _: bool) -> Result<(), String> {
+                self.0.lock().push(title.to_string());
+                Ok(())
+            }
+            fn badge(&self, _: &str, _: i64) {}
+        }
+
+        let directory = tempfile::tempdir().unwrap();
+        let host = Arc::new(RecordingHost::default());
+        let app = RuntimeContext::new(
+            AppState::new(Settings::default(), PersistedState::default()),
+            RuntimePaths {
+                config: directory.path().into(),
+                data: directory.path().into(),
+                logs: directory.path().into(),
+            },
+            tokio::runtime::Handle::current(),
+            host.clone(),
+        );
+        let available = super::UpdateStatus {
+            current: "0.5.0".into(),
+            latest: Some("v0.6.0".into()),
+            available: true,
+            url: Some("https://example.invalid/release".into()),
+            error: None,
+            checked_at: 1_000,
+        };
+
+        super::send_star_reminder(&app, 1_000);
+        super::send_star_reminder(&app, 1_001);
+        super::send_update_reminder(&app, &available, 1_000);
+        super::send_update_reminder(&app, &available, 1_001);
+        assert_eq!(
+            host.0.lock().as_slice(),
+            ["Enjoying Canopy?", "Canopy update available"]
+        );
+
+        let next = super::UpdateStatus {
+            latest: Some("v0.7.0".into()),
+            ..available
+        };
+        super::send_update_reminder(&app, &next, 1_002);
+        super::send_star_reminder(&app, 1_000 + DAILY_SECS);
+        assert_eq!(host.0.lock().len(), 4);
+        assert!(directory.path().join("state.json").exists());
+    }
+
+    #[test]
+    fn daily_work_is_due_once_per_twenty_four_hours() {
+        assert!(daily_due(0, 1));
+        assert!(!daily_due(1_000, 1_000 + DAILY_SECS - 1));
+        assert!(daily_due(1_000, 1_000 + DAILY_SECS));
+        assert!(
+            !daily_due(2_000, 1_000),
+            "a backwards clock must not create a reminder storm"
+        );
+    }
 
     #[test]
     fn version_comparison_is_numeric_not_lexical() {

@@ -66,6 +66,41 @@ fn a_contended_process_port_is_retried_once() {
 }
 
 #[test]
+fn cli_rejects_incomplete_or_ambiguous_repository_and_smoke_arguments() {
+    let dir = Directory(std::env::temp_dir().join(format!(
+        "canopy-backend-cli-validation-{}",
+        std::process::id()
+    )));
+    std::fs::create_dir_all(&dir.0).unwrap();
+
+    let missing_repository = backend_command(&dir, "repo add").output().unwrap();
+    assert!(!missing_repository.status.success());
+    assert!(String::from_utf8_lossy(&missing_repository.stderr)
+        .contains("repo add requires a repository path"));
+
+    let absent = dir.0.join("does-not-exist");
+    let invalid_repository = backend_command(&dir, "repo add")
+        .arg(&absent)
+        .output()
+        .unwrap();
+    assert!(!invalid_repository.status.success());
+    assert!(String::from_utf8_lossy(&invalid_repository.stderr)
+        .contains("repository path must be an existing directory"));
+
+    let missing_scope = backend_command(&dir, "mcp smoke").output().unwrap();
+    assert!(!missing_scope.status.success());
+    assert!(String::from_utf8_lossy(&missing_scope.stderr)
+        .contains("mcp smoke requires exactly one --repo ID"));
+
+    let ambiguous_scope = backend_command(&dir, "mcp smoke --repo one --repo two")
+        .output()
+        .unwrap();
+    assert!(!ambiguous_scope.status.success());
+    assert!(String::from_utf8_lossy(&ambiguous_scope.stderr)
+        .contains("mcp smoke requires exactly one --repo ID"));
+}
+
+#[test]
 fn foreground_duplicate_launch_status_and_stop_release_the_owner() {
     #[cfg(unix)]
     let methods = ["api", "signal"];
@@ -131,7 +166,7 @@ fn fresh_headless_backend_bootstraps_and_smokes_mcp_without_a_gui() {
     assert_eq!(report["status"], "ok");
     assert_eq!(report["server"], "canopy-mcp");
     assert_eq!(report["workflowPrompt"], "canopy_worktree_delivery");
-    assert!(report["tools"].as_u64().unwrap() >= 7);
+    assert_eq!(report["tools"], 9);
     assert_eq!(report["outputSchemas"], report["tools"]);
     assert!(report["cachedStatusMs"]["p95"].as_f64().unwrap() <= 50.0);
 

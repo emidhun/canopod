@@ -63,16 +63,12 @@ export default function GeneralPage({ settings, patch, markDirty }: PageProps) {
   );
 }
 
-/* Updates + crash reports.
-
-   Canopy checks whether a newer release exists and links to it; it does not
-   download or install. That needs signed release bundles, which this project
-   does not produce yet — an updater that silently fails every launch would be
-   worse than an honest link. Crash reports are written to the log directory
-   and never transmitted, because there is nowhere to transmit them to. */
+/* Updates + crash reports. Signed update bundles are verified by Tauri before
+   installation. Crash reports stay local because there is no report server. */
 function UpdatesSection({ settings, patch, markDirty }: Pick<PageProps, "settings" | "patch" | "markDirty">) {
   const [status, setStatus] = useState<UpdateStatus | null>(null);
   const [checking, setChecking] = useState(false);
+  const [installing, setInstalling] = useState(false);
   const [crashes, setCrashes] = useState(0);
 
   useEffect(() => {
@@ -93,14 +89,43 @@ function UpdatesSection({ settings, patch, markDirty }: Pick<PageProps, "setting
     }
   };
 
+  const install = async () => {
+    if (!hasBackend()) return;
+    setInstalling(true);
+    try {
+      const installed = await ipc.installUpdate();
+      if (!installed) setStatus((current) => current ? { ...current, available: false } : current);
+    } catch (error) {
+      setStatus((current) => current ? { ...current, error: String(error) } : current);
+    } finally {
+      setInstalling(false);
+    }
+  };
+
   return (
     <div className="sec">
       <div className="slab">Updates &amp; diagnostics</div>
       <TRow
         title="Check for updates automatically"
-        hint="Asks GitHub twice a day whether a newer release exists. Nothing is downloaded or installed."
-        on={settings.updates?.autoCheck === true}
-        onToggle={() => { patch({ updates: { autoCheck: !(settings.updates?.autoCheck === true) } }); markDirty("general"); }}
+        hint="Checks GitHub once a day and notifies you when a newer signed release is available."
+        on={settings.updates?.autoCheck !== false}
+        onToggle={() => {
+          const autoCheck = !(settings.updates?.autoCheck !== false);
+          patch({ updates: { ...settings.updates, autoCheck, autoInstall: autoCheck ? settings.updates?.autoInstall === true : false } });
+          markDirty("general");
+        }}
+      />
+      <TRow
+        title="Install updates automatically"
+        hint="Downloads a signed update, verifies it, installs it, and restarts Canopy. Services are stopped cleanly first."
+        on={settings.updates?.autoInstall === true}
+        onToggle={() => { patch({ updates: { ...settings.updates, autoCheck: true, autoInstall: !(settings.updates?.autoInstall === true) } }); markDirty("general"); }}
+      />
+      <TRow
+        title="Daily GitHub star reminder"
+        hint="Shows at most one reminder per day. Turn it off whenever you've starred Canopy or prefer not to."
+        on={settings.updates?.starReminder !== false}
+        onToggle={() => { patch({ updates: { ...settings.updates, starReminder: !(settings.updates?.starReminder !== false) } }); markDirty("general"); }}
       />
       <div className="row" style={{ marginTop: 8, alignItems: "center", gap: 10 }}>
         <button className="btn" onClick={check} disabled={checking || !hasBackend()}>
@@ -116,10 +141,18 @@ function UpdatesSection({ settings, patch, markDirty }: Pick<PageProps, "setting
                 : `Up to date (${status.current}).`}
         </span>
         {status?.available && status.url && (
-          <button className="btn" onClick={() => openUrl(status.url as string).catch(() => {})}>
-            Open release
-          </button>
+          <>
+            <button className="btn" onClick={install} disabled={installing}>
+              {installing ? "Installing…" : "Install & restart"}
+            </button>
+            <button className="btn" onClick={() => openUrl(status.url as string).catch(() => {})}>
+              Release notes
+            </button>
+          </>
         )}
+        <button className="btn" onClick={() => openUrl("https://github.com/emidhun/canopy").catch(() => {})}>
+          Star on GitHub
+        </button>
       </div>
 
       <div style={{ marginTop: 14 }}>

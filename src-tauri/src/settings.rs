@@ -175,15 +175,26 @@ impl Default for NotifyCfg {
     }
 }
 
-/// Update-check preferences. Canopy checks the project's GitHub releases for a
-/// newer tag; it never downloads or installs anything on its own (see
-/// `updates.rs` for why).
-#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+/// Update and project-reminder preferences.
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", default)]
-// Background checking is opt-in until its result has a visible update notice.
 pub struct UpdatesCfg {
     /// check for a newer release in the background
     pub auto_check: bool,
+    /// install a signed update automatically and restart Canopy
+    pub auto_install: bool,
+    /// show at most one native reminder per day to star the project
+    pub star_reminder: bool,
+}
+
+impl Default for UpdatesCfg {
+    fn default() -> Self {
+        Self {
+            auto_check: true,
+            auto_install: false,
+            star_reminder: true,
+        }
+    }
 }
 
 
@@ -393,6 +404,18 @@ pub struct RuntimeState {
     /// pgids of embedded terminal sessions, swept on startup after a crash
     #[serde(default)]
     pub terminal_orphans: Vec<TermOrphan>,
+    /// Last native GitHub-star reminder, as Unix seconds.
+    #[serde(default)]
+    pub last_star_reminder_at: i64,
+    /// Release tag last announced through a native notification.
+    #[serde(default)]
+    pub last_update_reminder_version: String,
+    /// Last native release reminder, as Unix seconds.
+    #[serde(default)]
+    pub last_update_reminder_at: i64,
+    /// Last completed automatic release check, as Unix seconds.
+    #[serde(default)]
+    pub last_update_check_at: i64,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
@@ -536,6 +559,9 @@ mod tests {
         let loaded: Settings = load_json(&path);
         assert_eq!(loaded.terminal, "iTerm", "pre-pinning settings still parse");
         assert!(loaded.pinned_worktrees.is_empty(), "absent pin list defaults to empty");
+        assert!(loaded.updates.auto_check, "existing installs gain daily release checks");
+        assert!(loaded.updates.star_reminder, "existing installs gain the daily star reminder");
+        assert!(!loaded.updates.auto_install, "updates never install without explicit consent");
 
         // pins round-trip
         let s = Settings { pinned_worktrees: vec!["/wt/a".into()], ..Default::default() };

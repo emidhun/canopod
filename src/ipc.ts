@@ -102,7 +102,7 @@ export interface Settings {
   notifications: NotifyCfg;
   /** keybinding overrides: action id → binding ("Mod+k"). See app/keys.ts. */
   keybindings: Record<string, string>;
-  updates: { autoCheck: boolean };
+  updates: { autoCheck: boolean; autoInstall: boolean; starReminder: boolean };
   crashReports: { enabled: boolean };
 }
 export interface SecurityCfg {
@@ -172,8 +172,7 @@ export interface NotifyCfg {
   badge: string;
 }
 
-/** Result of an update check. Canopy reports what exists; it never downloads
-    or installs (release signing isn't set up — see updates.rs). */
+/** Result of an update check. */
 export interface UpdateStatus {
   current: string;
   latest: string | null;
@@ -435,6 +434,7 @@ export const ipc = {
   resetSettings: () => invoke<Settings>("reset_settings"),
 
   checkForUpdate: () => invoke<UpdateStatus>("check_for_update"),
+  installUpdate: () => invoke<boolean>("install_update"),
   crashReportCount: () => invoke<number>("crash_report_count"),
   openCrashReports: () => invoke<void>("open_crash_reports"),
 

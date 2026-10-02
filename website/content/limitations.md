@@ -74,11 +74,12 @@ JSON preview, export and import, and you can edit them in the file directly.
 **Context is per machine.** Worktree context lives in `localStorage`, not in the repo. Whether it
 should become a committed file that travels with the branch is still an open question.
 
-**No automatic in-app installation.** The 0.5.0 preview can check GitHub and link to a newer release,
-but updating still means downloading a package or running `brew upgrade --cask canopy`.
+**Package-specific update fallback.** Signed in-app installation is available for updater-supported
+bundles. If the current package cannot replace itself, use the release download or your package
+manager instead.
 
-**No telemetry.** Canopy sends no analytics. Opt-in automatic update checks and the manual **Check
-now** action contact GitHub for public release metadata.
+**No telemetry.** Canopy sends no analytics. Daily release checks, the manual **Check now** action,
+and signed update downloads contact GitHub. The star reminder itself makes no network request.
 
 ## Reading "coming soon"
 

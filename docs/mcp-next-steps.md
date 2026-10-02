@@ -53,9 +53,12 @@ process tests per build, targeted settings/MCP UI tests, frontend production
 build, and desktop/headless Clippy passed locally. Concurrent stale revisions,
 failed patches and external edits preserve the winning configuration.
 
-Release-gate validation: 208 desktop and 200 headless Rust unit tests plus four
-real backend process tests passed, including fresh headless registration and the
-credential-safe MCP smoke. Strict desktop/headless Clippy passed. The frontend
-passed 182 tests and its production build; the documentation site built 34 pages
+Release-gate validation: 211 desktop and 203 headless Rust unit tests plus five
+real backend process tests passed, including CLI argument rejection, fresh
+headless registration and the credential-safe MCP smoke. Strict desktop/headless
+Clippy passed. Runtime results from all 15 advertised tools are checked against
+their output schemas; discovery also covers stale caches, policy narrowing,
+pagination exhaustion, byte-budget splits and oversized metadata. The frontend
+passed 179 tests and its production build; the documentation site built 34 pages
 with all 80 screenshots resolved. Tagged packaged-platform results remain pending
 until a new release workflow runs against rebuilt artifacts.

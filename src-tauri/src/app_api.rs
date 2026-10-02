@@ -1032,7 +1032,218 @@ mod tests {
     }
     fn tool_data(result: &serde_json::Value) -> serde_json::Value {
         assert_ne!(result["isError"], true, "{result}");
-        serde_json::from_str(result["content"][0]["text"].as_str().unwrap()).unwrap()
+        let text: serde_json::Value = serde_json::from_str(result["content"][0]["text"].as_str().unwrap()).unwrap();
+        assert_eq!(result["structuredContent"], text, "structured and text tool results diverged");
+        text
+    }
+
+    fn assert_schema_matches(schema: &serde_json::Value, value: &serde_json::Value) {
+        if let Some(options) = schema.get("oneOf").and_then(serde_json::Value::as_array) {
+            let matching: Vec<_> = options
+                .iter()
+                .filter(|candidate| match candidate.get("type").and_then(serde_json::Value::as_str) {
+                    Some("object") => value.is_object(),
+                    Some("null") => value.is_null(),
+                    Some("string") => value.is_string(),
+                    _ => false,
+                })
+                .collect();
+            assert_eq!(matching.len(), 1, "oneOf mismatch: schema={schema} value={value}");
+            assert_schema_matches(matching[0], value);
+            return;
+        }
+        if let Some(expected) = schema.get("const") {
+            assert_eq!(value, expected, "const mismatch");
+        }
+        if let Some(choices) = schema.get("enum").and_then(serde_json::Value::as_array) {
+            assert!(choices.contains(value), "enum mismatch: schema={schema} value={value}");
+        }
+        if let Some(expected) = schema.get("type") {
+            let accepts = |kind: &str| match kind {
+                "object" => value.is_object(),
+                "array" => value.is_array(),
+                "string" => value.is_string(),
+                "integer" => value.as_i64().is_some() || value.as_u64().is_some(),
+                "boolean" => value.is_boolean(),
+                "null" => value.is_null(),
+                _ => false,
+            };
+            let valid = expected.as_str().is_some_and(accepts)
+                || expected
+                    .as_array()
+                    .is_some_and(|types| types.iter().filter_map(serde_json::Value::as_str).any(accepts));
+            assert!(valid, "type mismatch: schema={schema} value={value}");
+        }
+        if let Some(object) = value.as_object() {
+            let properties = schema.get("properties").and_then(serde_json::Value::as_object);
+            if let Some(required) = schema.get("required").and_then(serde_json::Value::as_array) {
+                for name in required.iter().filter_map(serde_json::Value::as_str) {
+                    assert!(object.contains_key(name), "missing required property {name}: {value}");
+                }
+            }
+            if let Some(properties) = properties {
+                for (name, child) in object {
+                    if let Some(child_schema) = properties.get(name) {
+                        assert_schema_matches(child_schema, child);
+                    } else if schema.get("additionalProperties") == Some(&serde_json::Value::Bool(false)) {
+                        panic!("unexpected property {name}: {value}");
+                    }
+                }
+            }
+        }
+        if let (Some(items), Some(array)) = (schema.get("items"), value.as_array()) {
+            for item in array {
+                assert_schema_matches(items, item);
+            }
+        }
+    }
+
+    fn output_schema<'a>(tools: &'a [serde_json::Value], name: &str) -> &'a serde_json::Value {
+        &tools
+            .iter()
+            .find(|tool| tool["name"] == name)
+            .unwrap_or_else(|| panic!("missing tool schema for {name}"))["outputSchema"]
+    }
+
+    #[tokio::test]
+    async fn mcp_repository_and_worktree_discovery_is_paged_scoped_and_private() {
+        let running = Running::start().await;
+        let (bearer, path) = running.write_fixture("echo configured").await;
+        {
+            let mut settings = running.app.state::<AppState>().settings.write();
+            settings.repos[0].name = "Allowed repository".into();
+            settings.repos[0].services.push(crate::settings::ServiceCfg {
+                id: "private-service".into(),
+                name: "Web".into(),
+                kind: "web".into(),
+                command: "echo secret-command".into(),
+                env: [("SECRET_TOKEN".into(), "never-return-this".into())]
+                    .into_iter()
+                    .collect(),
+                ..Default::default()
+            });
+            settings.repos.push(crate::settings::RepoCfg {
+                id: "second".into(),
+                name: "Second repository".into(),
+                path: path.clone(),
+                ..Default::default()
+            });
+        }
+        std::fs::write(Path::new(&path).join(".env"), "PG_DB=private_database\n").unwrap();
+        crate::state::refresh_tree(&running.app).await.unwrap();
+        crate::state::refresh_all_git_meta(&running.app).await;
+        running
+            .mcp
+            .configure(true, Some(vec!["allowed".into(), "second".into()]))
+            .await
+            .unwrap();
+        let contracts: serde_json::Value = running
+            .rpc(&bearer, "tools/list", serde_json::json!({}))
+            .send()
+            .await
+            .unwrap()
+            .json()
+            .await
+            .unwrap();
+        let contracts = contracts["result"]["tools"].as_array().unwrap();
+
+        let first = tool_data(
+            &running
+                .tool(&bearer, "canopy_repositories", serde_json::json!({"limit":1}))
+                .await,
+        );
+        assert_eq!(first["repositories"].as_array().unwrap().len(), 1);
+        assert_eq!(first["repositories"][0]["repoId"], "allowed");
+        assert_eq!(first["repositories"][0]["name"], "Allowed repository");
+        assert_eq!(first["nextCursor"], 1);
+        assert!(first["repositories"][0].get("path").is_none());
+        assert_schema_matches(output_schema(contracts, "canopy_repositories"), &first);
+        let second = tool_data(
+            &running
+                .tool(
+                    &bearer,
+                    "canopy_repositories",
+                    serde_json::json!({"cursor":1,"limit":1}),
+                )
+                .await,
+        );
+        assert_eq!(second["repositories"][0]["repoId"], "second");
+        assert!(second["nextCursor"].is_null());
+        assert_schema_matches(output_schema(contracts, "canopy_repositories"), &second);
+
+        let listing = tool_data(
+            &running
+                .tool(
+                    &bearer,
+                    "canopy_worktrees",
+                    serde_json::json!({"repoId":"allowed"}),
+                )
+                .await,
+        );
+        let key = listing["worktrees"][0]["worktreeKey"].as_str().unwrap();
+        assert_schema_matches(output_schema(contracts, "canopy_worktrees"), &listing);
+        let detail = tool_data(
+            &running
+                .tool(
+                    &bearer,
+                    "canopy_worktree",
+                    serde_json::json!({"repoId":"allowed","worktreeKey":key}),
+                )
+                .await,
+        );
+        assert_eq!(detail["worktreeKey"], key);
+        assert_eq!(detail["branch"], "main");
+        assert_eq!(detail["isMain"], true);
+        assert!(detail["git"].is_object());
+        assert_eq!(detail["services"]["total"], 1);
+        assert!(detail.get("path").is_none());
+        assert!(detail.get("dbName").is_none());
+        assert!(detail["git"].get("lastCommitMsg").is_none());
+        assert!(detail["services"].get("command").is_none());
+        assert!(!detail.to_string().contains("never-return-this"));
+        assert!(!detail.to_string().contains("private_database"));
+        assert_schema_matches(output_schema(contracts, "canopy_worktree"), &detail);
+
+        let status = tool_data(&running.tool(&bearer, "canopy_status", serde_json::json!({"repoId":"allowed"})).await);
+        assert_schema_matches(output_schema(contracts, "canopy_status"), &status);
+        let configuration = tool_data(&running.tool(&bearer, "canopy_repository_config", serde_json::json!({"repoId":"allowed"})).await);
+        assert_schema_matches(output_schema(contracts, "canopy_repository_config"), &configuration);
+        let services = tool_data(&running.tool(&bearer, "canopy_services", serde_json::json!({"repoId":"allowed","worktreeKey":key})).await);
+        assert_schema_matches(output_schema(contracts, "canopy_services"), &services);
+        let service_key = services["services"][0]["serviceKey"].as_str().unwrap();
+        let logs = tool_data(&running.tool(&bearer, "canopy_service_logs", serde_json::json!({"repoId":"allowed","serviceKey":service_key})).await);
+        assert_schema_matches(output_schema(contracts, "canopy_service_logs"), &logs);
+
+        assert_eq!(running.tool(&bearer, "canopy_worktree", serde_json::json!({"repoId":"forbidden","worktreeKey":key})).await["isError"], true);
+        assert_eq!(running.tool(&bearer, "canopy_worktree", serde_json::json!({"repoId":"allowed","worktreeKey":"missing"})).await["isError"], true);
+        assert_eq!(running.tool(&bearer, "canopy_repositories", serde_json::json!({"limit":0})).await["isError"], true);
+        assert_eq!(running.tool(&bearer, "canopy_repositories", serde_json::json!({"extra":true})).await["isError"], true);
+        let exhausted = tool_data(&running.tool(&bearer, "canopy_repositories", serde_json::json!({"cursor":99})).await);
+        assert!(exhausted["repositories"].as_array().unwrap().is_empty());
+        assert!(exhausted["nextCursor"].is_null());
+
+        {
+            let mut settings = running.app.state::<AppState>().settings.write();
+            settings.repos[0].name = "a".repeat(7 * 1024);
+            settings.repos[1].name = "b".repeat(7 * 1024);
+        }
+        let bounded_result = running.tool(&bearer, "canopy_repositories", serde_json::json!({"limit":100})).await;
+        let bounded = tool_data(&bounded_result);
+        assert_eq!(bounded["repositories"].as_array().unwrap().len(), 1);
+        assert_eq!(bounded["nextCursor"], 1);
+        assert!(bounded_result["content"][0]["text"].as_str().unwrap().len() <= 12 * 1024);
+
+        running.mcp.configure(true, Some(vec!["second".into()])).await.unwrap();
+        let narrowed = tool_data(&running.tool(&bearer, "canopy_repositories", serde_json::json!({})).await);
+        assert_eq!(narrowed["repositories"].as_array().unwrap().len(), 1);
+        assert_eq!(narrowed["repositories"][0]["repoId"], "second");
+        assert_eq!(running.tool(&bearer, "canopy_worktrees", serde_json::json!({"repoId":"allowed"})).await["isError"], true);
+
+        running.app.state::<AppState>().settings.write().repos[1].name = "x".repeat(13 * 1024);
+        let oversized = running.tool(&bearer, "canopy_repositories", serde_json::json!({})).await;
+        assert_eq!(oversized["isError"], true);
+        assert_eq!(oversized["content"][0]["text"], "repository_metadata_too_large");
+        running.finish().await;
     }
 
     #[tokio::test]
@@ -1045,11 +1256,17 @@ mod tests {
         assert!(!Path::new(&path).join(".worktrees/agent-test").exists());
         running.grant_writes(true).await;
         let listing: serde_json::Value = running.rpc(&bearer, "tools/list", serde_json::json!({})).send().await.unwrap().json().await.unwrap();
-        assert_eq!(listing["result"]["tools"].as_array().unwrap().len(), 9);
+        let listed = listing["result"]["tools"].as_array().unwrap();
+        assert!(listed.iter().any(|tool| tool["name"] == "canopy_create_worktree"));
+        assert!(listed.iter().any(|tool| tool["name"] == "canopy_run_setup"));
         let accepted = tool_data(&running.tool(&bearer, "canopy_create_worktree", args.clone()).await);
+        assert_schema_matches(output_schema(listed, "canopy_create_worktree"), &accepted);
         let id = accepted["job"]["jobId"].as_str().unwrap();
         let job = running.job_done(&bearer, id).await;
+        assert_schema_matches(output_schema(listed, "canopy_job"), &job);
         assert_eq!(job["status"], "succeeded", "{job}");
+        let output = tool_data(&running.tool(&bearer, "canopy_job_output", serde_json::json!({"repoId":"allowed","jobId":id})).await);
+        assert_schema_matches(output_schema(listed, "canopy_job_output"), &output);
         let created = job["createdPath"].as_str().unwrap();
         assert_eq!(std::fs::read_to_string(Path::new(created).join("setup-ran")).unwrap().trim(), "configured");
         let retry = tool_data(&running.tool(&bearer, "canopy_create_worktree", args.clone()).await);
@@ -1068,6 +1285,7 @@ mod tests {
             let result = tool_data(&running.tool(&bearer, "canopy_run_setup", serde_json::json!({
                 "repoId":"allowed","worktreeKey":created,"dryRun":dry_run,"requestKey":format!("setup-{dry_run}")
             })).await);
+            assert_schema_matches(output_schema(listed, "canopy_run_setup"), &result);
             let job = running.job_done(&bearer, result["job"]["jobId"].as_str().unwrap()).await;
             assert_eq!(job["status"], "succeeded", "{job}");
             assert_eq!(Path::new(created).join("setup-ran").exists(), !dry_run);
@@ -1285,7 +1503,10 @@ mod tests {
         let args=serde_json::json!({"repoId":"allowed","revision":read["revision"],"repository":{"name":"Agent edited","worktreeDefaults":{"runSetup":false}},"serviceId":"api","service":{"name":"API renamed","command":"echo configured","basePort":null}});
         assert_eq!(running.tool(&bearer,"canopy_update_configuration",args.clone()).await["isError"],true);
         running.mcp.configure_capabilities(true,None,None,None,Some(true)).await.unwrap();
+        let contracts:serde_json::Value=running.rpc(&bearer,"tools/list",serde_json::json!({})).send().await.unwrap().json().await.unwrap();
+        let contracts=contracts["result"]["tools"].as_array().unwrap();
         let changed=tool_data(&running.tool(&bearer,"canopy_update_configuration",args.clone()).await);
+        assert_schema_matches(output_schema(contracts,"canopy_update_configuration"),&changed);
         assert_eq!(changed["applied"],true);
         assert_ne!(changed["revision"],read["revision"]);
         assert_eq!(changed["runningServicesRestarted"],false);
@@ -1338,12 +1559,16 @@ mod tests {
         running.grant_writes(true).await;
         assert_eq!(running.tool(&bearer,"canopy_start_service",args.clone()).await["isError"],true);
         running.mcp.configure_access(true,None,Some(false),Some(true)).await.unwrap();
+        let contracts:serde_json::Value=running.rpc(&bearer,"tools/list",serde_json::json!({})).send().await.unwrap().json().await.unwrap();
+        let contracts=contracts["result"]["tools"].as_array().unwrap();
         let lease = crate::state::try_lease(&running.app,&path,"test").unwrap();
         let busy = tool_data(&running.tool(&bearer,"canopy_start_service",serde_json::json!({"repoId":"allowed","serviceKey":key,"requestKey":"busy"})).await);
+        assert_schema_matches(output_schema(contracts,"canopy_start_service"),&busy);
         assert_eq!(running.job_done(&bearer,busy["job"]["jobId"].as_str().unwrap()).await["status"],"failed");
         assert!(running.app.state::<crate::services::ProcTable>().procs.lock().is_empty());
         drop(lease);
         let started = tool_data(&running.tool(&bearer,"canopy_start_service",args.clone()).await);
+        assert_schema_matches(output_schema(contracts,"canopy_start_service"),&started);
         assert_eq!(running.job_done(&bearer,started["job"]["jobId"].as_str().unwrap()).await["status"],"succeeded");
         let pid = running.app.state::<crate::services::ProcTable>().procs.lock()[&key].pid;
         let retry = tool_data(&running.tool(&bearer,"canopy_start_service",args).await);
@@ -1351,10 +1576,12 @@ mod tests {
         assert_eq!(retry["reused"],true);
         assert_eq!(running.app.state::<crate::services::ProcTable>().procs.lock()[&key].pid,pid);
         let restarted = tool_data(&running.tool(&bearer,"canopy_restart_service",serde_json::json!({"repoId":"allowed","serviceKey":key,"requestKey":"restart"})).await);
+        assert_schema_matches(output_schema(contracts,"canopy_restart_service"),&restarted);
         assert_eq!(running.job_done(&bearer,restarted["job"]["jobId"].as_str().unwrap()).await["status"],"succeeded");
         assert_ne!(running.app.state::<crate::services::ProcTable>().procs.lock()[&key].pid,pid);
         assert_eq!(running.tool(&bearer,"canopy_stop_service",serde_json::json!({"repoId":"other","serviceKey":key,"requestKey":"bad"})).await["isError"],true);
         let stopped = tool_data(&running.tool(&bearer,"canopy_stop_service",serde_json::json!({"repoId":"allowed","serviceKey":key,"requestKey":"stop"})).await);
+        assert_schema_matches(output_schema(contracts,"canopy_stop_service"),&stopped);
         assert_eq!(running.job_done(&bearer,stopped["job"]["jobId"].as_str().unwrap()).await["status"],"succeeded");
         assert!(!running.app.state::<crate::services::ProcTable>().procs.lock().contains_key(&key));
         running.mcp.configure_access(true,None,None,Some(false)).await.unwrap();
@@ -1523,12 +1750,12 @@ mod tests {
             .await
             .unwrap();
         let body: serde_json::Value = response.json().await.unwrap();
-        assert_eq!(
-            body["result"]["tools"].as_array().unwrap().len(),
-            7,
-            "{body}"
-        );
-        assert_eq!(body["result"]["tools"][0]["name"], "canopy_status");
+        let listed = body["result"]["tools"].as_array().unwrap();
+        assert_eq!(listed.len(), 9, "{body}");
+        assert_eq!(listed[0]["name"], "canopy_status");
+        assert!(listed.iter().all(|tool| tool["outputSchema"].is_object()));
+        assert!(listed.iter().any(|tool| tool["name"] == "canopy_repositories"));
+        assert!(listed.iter().any(|tool| tool["name"] == "canopy_worktree"));
         assert_eq!(body["result"]["ttlMs"], 0);
         assert_eq!(body["result"]["cacheScope"], "private");
         for repo in ["allowed", "forbidden"] {
@@ -1556,6 +1783,15 @@ mod tests {
                 assert_eq!(body["result"]["isError"], true, "{body}");
             }
         }
+        let repositories = tool_data(&running.tool(&bearer, "canopy_repositories", serde_json::json!({})).await);
+        assert_eq!(repositories["repositories"].as_array().unwrap().len(), 1);
+        assert_eq!(repositories["repositories"][0]["repoId"], "allowed");
+        assert_eq!(repositories["repositories"][0]["cacheAvailable"], false);
+        assert_eq!(repositories["repositories"][0]["worktrees"], 0);
+        let worktrees = tool_data(&running.tool(&bearer, "canopy_worktrees", serde_json::json!({"repoId":"allowed"})).await);
+        assert_eq!(worktrees["cacheAvailable"], false);
+        assert!(worktrees["worktrees"].as_array().unwrap().is_empty());
+        assert_eq!(running.tool(&bearer, "canopy_worktree", serde_json::json!({"repoId":"allowed","worktreeKey":"missing"})).await["content"][0]["text"], "worktree_not_found");
         // A distinct connection has no session to recover and gets the same tool.
         let response = running
             .rpc(&bearer, "tools/list", serde_json::json!({}))
@@ -1589,6 +1825,15 @@ mod tests {
                 .status(),
             StatusCode::UNAUTHORIZED
         );
+        assert_eq!(
+            running
+                .rpc(&bearer, "tools/call", serde_json::json!({"name":"canopy_repositories","arguments":{}}))
+                .send()
+                .await
+                .unwrap()
+                .status(),
+            StatusCode::UNAUTHORIZED
+        );
         let rotated = running.mcp_bearer();
         assert!(!rotated.matches(bearer.expose()));
         assert_eq!(
@@ -1612,6 +1857,15 @@ mod tests {
         assert_eq!(
             running
                 .rpc(&rotated, "tools/list", serde_json::json!({}))
+                .send()
+                .await
+                .unwrap()
+                .status(),
+            StatusCode::NOT_FOUND
+        );
+        assert_eq!(
+            running
+                .rpc(&rotated, "tools/call", serde_json::json!({"name":"canopy_repositories","arguments":{}}))
                 .send()
                 .await
                 .unwrap()
