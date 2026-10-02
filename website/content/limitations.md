@@ -32,7 +32,6 @@ These render, and say so, instead of pretending:
 
 | Where | What isn't wired |
 |---|---|
-| Settings → General | Automatic updates, crash reporting. |
 | Settings → Terminal | Embedded shell program, font, size, scrollback. |
 | Settings → Notifications | Every toggle: crash alerts, agent-blocked alerts, setup-finished. The in-app attention queue works regardless. |
 | Settings → Advanced | Copy diagnostics, open logs, experiments (parallel setup, predictive warmup), clear caches, reset all settings. |
@@ -75,9 +74,11 @@ JSON preview, export and import, and you can edit them in the file directly.
 **Context is per machine.** Worktree context lives in `localStorage`, not in the repo. Whether it
 should become a committed file that travels with the branch is still an open question.
 
-**No in-app updater.** Download a new build, or `brew upgrade --cask canopy`.
+**No automatic in-app installation.** The 0.5.0 preview can check GitHub and link to a newer release,
+but updating still means downloading a package or running `brew upgrade --cask canopy`.
 
-**No telemetry.** Canopy makes no network requests of its own.
+**No telemetry.** Canopy sends no analytics. Opt-in automatic update checks and the manual **Check
+now** action contact GitHub for public release metadata.
 
 ## Reading "coming soon"
 

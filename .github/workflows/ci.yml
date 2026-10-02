@@ -11,6 +11,19 @@ on:
   pull_request:
 
 jobs:
+  security:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      checks: write
+    steps:
+      - uses: actions/checkout@v7
+      - name: Audit Rust dependencies
+        uses: rustsec/audit-check@69366f33c96575abad1ee0dba8212993eecbe998 # v2.0.0
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          working-directory: src-tauri
+
   core:
     # No Node build, display server, GTK or WebKit packages: the shared runtime
     # must compile and exercise domain operations independently of Tauri.

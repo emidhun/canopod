@@ -66,7 +66,18 @@ configuration uses `CANOPY_MCP_TOKEN` through `bearer_token_env_var`, so copying
 the TOML does not copy the bearer token. Automatic setup continues to use the
 client's dynamic header helper so token rotation works after reconnect.
 
-Still unverified: packaged macOS/Linux/Windows client flows, browser attachment,
-window-close behavior after backend migration, reconnect after grant/revoke in a
-packaged build, and first-connect/idle/performance budgets. These checks do not
-mark epic #145 or transport issue #140 complete.
+## Packaged release gate
+
+Every tagged macOS, Linux and Windows package now runs the packaged
+`canopy-backend` through a fresh isolated lifecycle: start without a GUI,
+register a temporary Git repository, enable read-only MCP, initialize the
+official protocol, discover tools and the `canopy_worktree_delivery` prompt,
+verify advertised output schemas and typed `structuredContent`, execute 25 cached
+status calls, and stop cleanly. The command prints p50/p95/p99 and fails when
+warm p95 exceeds 50 ms.
+The private bearer is loaded internally and never printed.
+
+This gate is configured but does not count as passed for a release until the
+tagged release-smoke matrix is green. Browser attachment, desktop-as-client
+migration, destructive approvals, idle CPU/RSS measurement and a current Claude
+model/tool call remain unverified.

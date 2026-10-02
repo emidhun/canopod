@@ -74,6 +74,81 @@ fn foreground_duplicate_launch_status_and_stop_release_the_owner() {
     for method in methods { run_lifecycle(method); }
 }
 
+#[test]
+fn fresh_headless_backend_bootstraps_and_smokes_mcp_without_a_gui() {
+    let dir = Directory(std::env::temp_dir().join(format!(
+        "canopy-backend-mcp-smoke-{}",
+        std::process::id()
+    )));
+    std::fs::create_dir_all(&dir.0).unwrap();
+    let repository = dir.0.join("fixture-repo");
+    std::fs::create_dir_all(&repository).unwrap();
+    let initialized = Command::new("git")
+        .args(["init", "-b", "main"])
+        .current_dir(&repository)
+        .output()
+        .unwrap();
+    assert!(
+        initialized.status.success(),
+        "{}",
+        String::from_utf8_lossy(&initialized.stderr)
+    );
+
+    let Started {
+        mut child,
+        reader,
+        ..
+    } = start_backend(&dir, None);
+    let registered = backend_command(&dir, "repo add")
+        .arg(&repository)
+        .output()
+        .unwrap();
+    assert!(
+        registered.status.success(),
+        "{}",
+        String::from_utf8_lossy(&registered.stderr)
+    );
+    let repository_json: serde_json::Value = serde_json::from_slice(&registered.stdout).unwrap();
+    assert_eq!(repository_json["id"], "fixture-repo");
+
+    let enabled = backend_command(&dir, "mcp enable --repo fixture-repo --read-only")
+        .output()
+        .unwrap();
+    assert!(
+        enabled.status.success(),
+        "{}",
+        String::from_utf8_lossy(&enabled.stderr)
+    );
+    let smoke = backend_command(&dir, "mcp smoke --repo fixture-repo")
+        .output()
+        .unwrap();
+    assert!(
+        smoke.status.success(),
+        "{}",
+        String::from_utf8_lossy(&smoke.stderr)
+    );
+    let report: serde_json::Value = serde_json::from_slice(&smoke.stdout).unwrap();
+    assert_eq!(report["status"], "ok");
+    assert_eq!(report["server"], "canopy-mcp");
+    assert_eq!(report["workflowPrompt"], "canopy_worktree_delivery");
+    assert!(report["tools"].as_u64().unwrap() >= 7);
+    assert_eq!(report["outputSchemas"], report["tools"]);
+    assert!(report["cachedStatusMs"]["p95"].as_f64().unwrap() <= 50.0);
+
+    let stopped = backend_command(&dir, "stop").output().unwrap();
+    assert!(
+        stopped.status.success(),
+        "{}",
+        String::from_utf8_lossy(&stopped.stderr)
+    );
+    let deadline = Instant::now() + Duration::from_secs(12);
+    while child.0.try_wait().unwrap().is_none() {
+        assert!(Instant::now() < deadline, "backend shutdown timed out");
+        std::thread::sleep(Duration::from_millis(20));
+    }
+    reader.join().unwrap();
+}
+
 fn run_lifecycle(method: &str) {
     let dir = Directory(std::env::temp_dir().join(format!("canopy-backend-process-{}-{method}", std::process::id())));
     std::fs::create_dir_all(&dir.0).unwrap();

@@ -93,6 +93,18 @@ The new worktree appears in the sidebar and becomes active.
 
 ---
 
+## 4.1 Sync worktrees created by another agent
+
+If another agent or terminal runs `git worktree add` for a repository already registered in Canopy,
+click **Sync external worktrees** in the top bar or run it from the `⌘K` command palette. Canopy asks
+Git for the repository's registered worktrees, refreshes the sidebar, and reports what it added.
+
+Sync imports only entries returned by `git worktree list`; it does not scan arbitrary copied folders
+or add unrelated repositories. It also detects worktree registrations whose directories were deleted
+outside Canopy and offers to prune the stale Git entries, with optional branch and database cleanup.
+
+---
+
 ## 5. Run services
 
 - **Start all / Stop all** — the primary button in the worktree header boots or stops every service.

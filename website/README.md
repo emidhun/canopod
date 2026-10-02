@@ -17,7 +17,7 @@ node scripts/serve.mjs      # http://localhost:4180, rebuilds on every page load
 
 ```text
 plan.md                  the plan this repo was built to, including the feature inventory
-content/*.md             30 pages of documentation (Markdown + a few shortcodes)
+content/*.md             33 pages of documentation (Markdown + a few shortcodes)
 scripts/nav.mjs          the information architecture — sidebar order and prev/next
 scripts/md.mjs           the Markdown renderer (a deliberate subset)
 scripts/build.mjs        content + theme + screenshots → site/

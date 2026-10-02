@@ -4,6 +4,20 @@
 
 Only the latest release receives security fixes.
 
+## Dependency security
+
+- Dependabot monitors npm, Cargo and GitHub Actions dependencies.
+- CI runs RustSec against the committed `src-tauri/Cargo.lock`; known vulnerabilities fail the
+  security job.
+- Security-sensitive Git overrides are pinned to full immutable commit hashes and include a comment
+  explaining the upstream constraint and removal condition.
+- Advisories are upgraded or backported rather than dismissed solely to clear the alert. RustSec's
+  informational maintenance warnings are reviewed separately from vulnerabilities.
+
+Tauri 2's GTK3 dependency graph still requires the `glib` 0.18 API. Canopy pins a minimal fork that
+backports the upstream `VariantStrIter` soundness fix until a supported stable Tauri line moves to a
+fixed GTK generation. The exact source commit is recorded in `src-tauri/Cargo.toml` and the lockfile.
+
 ## Reporting a vulnerability
 
 Please **do not** open a public issue for security problems. Instead:

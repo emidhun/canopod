@@ -252,6 +252,29 @@ async fn mcp_request(State(state): State<ApiState>, request: Request) -> Respons
     state.mcp.handle(request).await
 }
 
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct AddRepository {
+    path: String,
+}
+
+async fn add_repository(
+    State(state): State<ApiState>,
+    Json(input): Json<AddRepository>,
+) -> Response {
+    if input.path.trim().is_empty() || input.path.len() > 4096 {
+        return error(StatusCode::BAD_REQUEST, "invalid_repository_path");
+    }
+    match crate::operations::add_repo(state.app.clone(), input.path).await {
+        Ok(repository) => (StatusCode::CREATED, Json(serde_json::json!(repository))).into_response(),
+        Err(error) => (
+            StatusCode::CONFLICT,
+            Json(serde_json::json!({"code":error.code,"message":error.message})),
+        )
+            .into_response(),
+    }
+}
+
 async fn stop(State(state): State<ApiState>) -> impl IntoResponse {
     state.stop.send_replace(true);
     (
@@ -353,6 +376,7 @@ impl Server {
             .fallback(|| async { error(StatusCode::NOT_FOUND, "not_found") })
             .route("/api/v1/status", get(status))
             .route("/api/v1/stop", post(stop))
+            .route("/api/v1/repositories", post(add_repository))
             .route("/api/v1/mcp/status", get(mcp_status))
             .route("/api/v1/mcp/enable", post(mcp_enable))
             .route("/api/v1/mcp/disable", post(mcp_disable))
@@ -745,6 +769,41 @@ mod tests {
         assert_eq!(status["mcpEnabled"], false);
         // Dropping a client response/connection never requests shutdown.
         assert!(!*running.shutdown.borrow());
+        running.finish().await;
+    }
+
+    #[tokio::test]
+    async fn authenticated_control_api_registers_a_repository_for_headless_bootstrap() {
+        let running = Running::start().await;
+        let repository = running.directory.0.join("fixture-repo");
+        std::fs::create_dir_all(&repository).unwrap();
+        crate::git::run_git(repository.to_str().unwrap(), &["init", "-b", "main"])
+            .await
+            .unwrap();
+
+        let response = running
+            .request(reqwest::Method::POST, "repositories")
+            .json(&serde_json::json!({"path":repository}))
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::CREATED);
+        let registered: serde_json::Value = response.json().await.unwrap();
+        assert_eq!(registered["id"], "fixture-repo");
+        assert_eq!(registered["path"], canonical_repo_path(&repository));
+        assert_eq!(running.app.state::<AppState>().settings.read().repos.len(), 1);
+
+        let duplicate = running
+            .request(reqwest::Method::POST, "repositories")
+            .json(&serde_json::json!({"path":repository}))
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(duplicate.status(), StatusCode::CONFLICT);
+        assert_eq!(
+            duplicate.json::<serde_json::Value>().await.unwrap()["code"],
+            "config"
+        );
         running.finish().await;
     }
 

@@ -117,3 +117,8 @@ tauri-nspanel = { git = "https://github.com/ahkohd/tauri-nspanel", rev = "a3122e
 [dev-dependencies]
 # Deterministic log-pump deadlines without wall-clock sleeps.
 tokio = { version = "1", features = ["test-util"] }
+
+[patch.crates-io]
+# Tauri 2's GTK3 stack is pinned to glib 0.18.5. Backport the upstream
+# VariantStrIter soundness fix until Tauri's GTK4 migration reaches stable.
+glib = { git = "https://github.com/emidhun/gtk-rs-core", rev = "a2350c74f8102ed46816e84c7aaff88b37463c3e" }

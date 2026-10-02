@@ -36,6 +36,29 @@ The destination path is the repo's worktree directory (absolute, or relative to 
 `<repo>/.worktrees`) plus the branch name with every character outside `[letters, digits, -, .]`
 replaced by `_`, case preserved.
 
+## Sync worktrees created elsewhere
+
+:::note Available in the 0.5.0 preview
+This action is present on the `release/0.5.0` source branch and is not part of the currently published
+0.4.7 downloads.
+:::
+
+Use the **Sync external worktrees** button in the top bar, or run the same action from `⌘K`, after
+another agent or terminal creates a worktree outside Canopy.
+
+Sync asks Git for the registered worktrees of every repository already configured in Canopy, refreshes
+the sidebar, and reports how many new worktrees it found. The new worktree is immediately available to
+select, configure and run; you do not need to add the repository again.
+
+:::note Git registration is the source of truth
+The directory must have been created with `git worktree add` (or otherwise appear in
+`git worktree list`). Sync does not import arbitrary copied folders, scan unrelated directories, or
+register a new repository.
+:::
+
+The same action also detects registrations whose folders were deleted outside Canopy and opens the
+prune reconciliation described below.
+
 ## Re-running setup
 
 ⋯ → **Run setup…** re-applies provisioned files and re-runs `setup` on an existing worktree.
@@ -143,9 +166,10 @@ version, which applies the same two choices to the whole set.
 
 ## Pruning deleted worktrees
 
-`rm -rf` a worktree folder and git still holds a stale registration for it. **Sync** in the top bar
-finds those and offers to reconcile them. Pruning removes git's stale entry, and per item you can also
-delete the branch and drop the leftover database (on by default, since it's orphaned now).
+`rm -rf` a worktree folder and git still holds a stale registration for it. **Sync external
+worktrees** in the top bar finds those and offers to reconcile them. Pruning removes git's stale
+entry, and per item you can also delete the branch and drop the leftover database (on by default,
+since it's orphaned now).
 
 The folder is already gone, so there's nothing left to warn you about losing. The database name comes
 from the snapshot Canopy took before refreshing, because the worktree's `.env` doesn't exist any more.

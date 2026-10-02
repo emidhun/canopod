@@ -84,8 +84,8 @@ Carry on with [Adding a repository](onboarding.html).
 ## Updating
 
 Download the newer DMG, or run `brew upgrade --cask canopy`, and replace the app. Your settings and
-runtime state sit outside the bundle, so they survive. There's no in-app updater yet; the Advanced
-settings page marks it coming soon.
+runtime state sit outside the bundle, so they survive. The 0.5.0 preview can check GitHub and link to
+a newer release from **Settings → General**, but it does not download or install updates.
 
 ## Uninstalling
 

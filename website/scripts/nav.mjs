@@ -36,6 +36,7 @@ export const NAV = [
     group: "Settings",
     items: [
       ["settings-platform", "Application settings"],
+      ["mcp", "MCP and coding agents"],
       ["settings-repository", "Repository settings"],
       ["settings-storage", "Where settings live"],
     ],
@@ -68,6 +69,7 @@ export const NAV = [
     group: "Reference",
     items: [
       ["reference-ipc", "Commands and events"],
+      ["security", "Security"],
       ["troubleshooting", "Troubleshooting"],
       ["limitations", "Limitations"],
     ],

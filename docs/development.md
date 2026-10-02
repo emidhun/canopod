@@ -26,9 +26,26 @@ cargo test --lib       # from src-tauri/ — unit tests
 npm run tauri build    # release .app (see DMG note below)
 ```
 
+## Dependency security
+
+Dependabot monitors npm, Cargo and GitHub Actions dependencies. The `security` job in
+`.github/workflows/ci.yml` runs the RustSec audit against the committed `src-tauri/Cargo.lock` on
+pull requests and pushes to `main`; known vulnerabilities fail the job.
+
+Run the same check locally with `cargo audit --file src-tauri/Cargo.lock` when `cargo-audit` is
+installed. Do not dismiss an advisory merely to make CI green. Upgrade to a patched compatible
+release where possible. If a framework blocks the upgrade, use a minimal reviewed backport pinned to
+an immutable Git commit, document why it exists in `Cargo.toml`, and remove it when the supported
+framework line includes the fix.
+
 ## Building a release DMG (important workarounds)
-0. **Official releases come from CI** — pushing a `v*` tag builds and uploads the DMG + Linux
-   packages via `.github/workflows/release.yml`. The steps below are for local one-off builds.
+0. **Official releases come from CI** — pushing a `v*` tag builds draft macOS, Linux and Windows
+   packages via `.github/workflows/release.yml`, then runs `.github/workflows/release-smoke.yml`.
+   The packaged smoke starts the GUI-free backend, registers a temporary repository,
+   enables read-only MCP, verifies protocol/prompt/tool discovery and typed cached
+   status, enforces the 50 ms warm p95 budget, then launches the desktop app
+   against those exact draft assets. A release stays draft when any install, version or launch
+   probe fails. The steps below are for local one-off builds.
 1. **Build app-only locally.** Tauri's `bundle_dmg.sh` step **hangs** on this machine (it drives
    Finder/AppleScript), so pass `--bundles app`: `npm run tauri build -- --bundles app`
    (CI runners bundle the DMG fine).

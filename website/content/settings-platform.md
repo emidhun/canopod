@@ -39,13 +39,16 @@ Setup and Migrate pages, except for a repository you're mid-edit on, which is ne
 | **Appearance → Theme** | `Dark`, `Light`, or `Match system`. |
 | **Appearance → Density** | `Comfortable` or `Compact`, which tightens the spacing ramp. |
 | **Appearance → Accent** | Teal, Green, Amber or Violet. |
+| **Check for updates automatically** *(0.5.0 preview)* | Opt-in. Asks GitHub twice a day whether a newer published release exists; never downloads or installs it. |
+| **Check now** *(0.5.0 preview)* | Runs the same release check immediately and links to the release when one is available. |
+| **Record crash reports** *(0.5.0 preview)* | Writes a local stack trace to Canopy's crash-report directory after a panic. Nothing is uploaded. |
 
 Text zoom (`⌘+`, `⌘-`, `⌘0`) belongs to appearance too, but it lives on the keyboard rather than on
 this page: 80% to 160% in 10% steps, applied to the whole type ramp.
 
-:::note Coming soon on this page
-Automatic updates and crash reporting aren't configurable yet. The Advanced disclosure says so instead
-of showing switches that do nothing.
+:::note Update checks are not an installer
+The 0.5.0 preview can notify you about a release, but installing still means downloading the package
+or running `brew upgrade --cask canopy`. Signed automatic installation remains future work.
 :::
 
 ## Terminal

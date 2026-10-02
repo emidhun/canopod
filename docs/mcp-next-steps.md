@@ -20,18 +20,22 @@ gain new capabilities. Keep the shared operations and worktree leases.
 3. **Configuration — complete for existing repository/service patches.** Public-field configuration reads, revisions and
    stable-ID patches, external/UI/MCP conflict checks and atomic ordered writes.
    Separate configure permission; never expose environment values.
-4. **Independent host and browser — next.** Complete authenticated application
-   RPC/event reconciliation, desktop attachment/bootstrap and native capability
-   routing, browser static assets/pairing/session/CSRF, disconnect preservation.
-   Do not switch desktop ownership until attachment is working end-to-end.
+4. **Independent host bootstrap — partial.** A fresh headless host can register
+   an existing Git repository through the authenticated CLI, enable MCP, run a
+   credential-safe protocol smoke and operate without a GUI. Complete application
+   RPC/event reconciliation, desktop attachment and native capability routing
+   before switching desktop ownership. Browser static assets, pairing/session/
+   CSRF and disconnect reconciliation remain separate post-v0.5 work.
 5. **Approvals and destructive tools — pending.** Authenticated human UI approval
    tied to exact request, single use, expiry, permission/precondition revalidation
    and bounded audit. Then worktree removal/database operations with dirty/main/
    shared-database protections. No destructive tool before its approval path.
-6. **Release acceptance — pending.** Real client workflow examples and diagnostics,
-   reproducible latency/resource measurements and packaged platform matrix.
-   Record unavailable platforms as unverified; never substitute unit tests for
-   packaged client acceptance.
+6. **Release acceptance — in progress.** A discoverable permission-aware workflow
+   prompt and `mcp smoke` now validate initialize, prompt/tool discovery, typed
+   cached status and 25-call p50/p95/p99, failing above the 50 ms warm p95 budget.
+   Every tagged macOS/Linux/Windows package runs this smoke before publication.
+   Real client checks remain separately recorded; unavailable clients/platforms
+   stay unverified rather than being replaced by unit tests.
 
 The stages are independent delivery checkpoints, not a claim that all roadmap
 issues are complete. Detailed requirements remain in mcp-delivery.md.
@@ -48,3 +52,10 @@ Configuration validation: 203 desktop and 195 headless Rust unit tests, three
 process tests per build, targeted settings/MCP UI tests, frontend production
 build, and desktop/headless Clippy passed locally. Concurrent stale revisions,
 failed patches and external edits preserve the winning configuration.
+
+Release-gate validation: 208 desktop and 200 headless Rust unit tests plus four
+real backend process tests passed, including fresh headless registration and the
+credential-safe MCP smoke. Strict desktop/headless Clippy passed. The frontend
+passed 182 tests and its production build; the documentation site built 34 pages
+with all 80 screenshots resolved. Tagged packaged-platform results remain pending
+until a new release workflow runs against rebuilt artifacts.

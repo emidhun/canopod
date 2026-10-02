@@ -44,7 +44,7 @@ jobs:
           pages=$(ls site/*.html | wc -l | tr -d ' ')
           shots=$(ls site/assets/screens/light/*.png site/assets/screens/dark/*.png | wc -l | tr -d ' ')
           echo "built $pages pages, $shots screenshots"
-          test "$pages" -ge 31
+          test "$pages" -ge 33
           test "$shots" -ge 80
       - name: Disable Jekyll
         run: touch website/site/.nojekyll

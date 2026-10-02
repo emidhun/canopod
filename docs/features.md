@@ -11,7 +11,9 @@
 
 ## Main window
 The window has a slim **top drag-bar** (clears the macOS traffic lights; drag to move the window) with the
-Canopy mark on the left and **Rescan** + **Settings** icons on the right, then a sidebar + main pane.
+Canopy mark on the left and **Sync external worktrees** + **Settings** icons on the right, then a
+sidebar + main pane. Sync discovers worktrees registered by Git outside Canopy and offers to reconcile
+registrations whose directories were deleted.
 
 **Sidebar** — a flat list of every worktree (`Worktrees · N`), each row showing the branch (mono) and
 `<repo> · <N running | idle>` with a status dot (green=all running, amber=partial, faint=idle). The active
@@ -46,6 +48,9 @@ when you scroll up; **Clear** empties the active filter. 160-line ring buffer pe
   picker), **Fetch all** (`git fetch --all --prune --recurse-submodules`). On create: `git worktree
   add` → submodule init/update with `--reference` object-sharing → apply `env` → run `setup`. Streams
   progress.
+- **Sync external worktrees** (top bar or command palette): refresh every configured repository from
+  `git worktree list`, add worktrees created by another agent or terminal, and open the prune flow for
+  stale registrations. Arbitrary copied directories are not imported.
 - **Remove** (confirm modal): dirty precheck (incl. submodules), **Also delete branch** (off),
   **Drop database** (on). Stops services → runs `teardown` (drop DB) → `git worktree remove --force`
   → optional branch delete → prune.

@@ -25,7 +25,7 @@ subsequent transition. The foreground headless executable is described below; th
 
 | Issue | Implementation and verification gates |
 | --- | --- |
-| #156 | Ownership lock before state reads/sweeps; inject paths, state, Tokio handle and event delivery; extract shared operations; GUI-free executable; authenticated versioned app API; desktop becomes a client; graceful stop/crash/duplicate-start tests. |
+| #156 | Ownership lock before state reads/sweeps; inject paths, state, Tokio handle and event delivery; extract shared operations; GUI-free executable; authenticated versioned app API and terminal repository bootstrap; desktop becomes a client; graceful stop/crash/duplicate-start tests. |
 | #139 | Durable bounded jobs, request-key deduplication, reconnectable redacted output, one shared lease; preserve seven UI commands' awaited results; interruption, disk failure and partial-create tests. |
 | #140 | Official Rust SDK Streamable HTTP on the backend; MCP settings/CLI, private credentials, per-call authorization, bounded admission/sessions; Host/Origin, rotation, disablement, port collision and packaged-client tests. |
 | #157 | Static assets, separate browser pairing/auth and CSRF protection, snapshot/event reconciliation, explicit IPC transports and capability inventory; disconnects preserve work and never silently enable mock data. |
@@ -256,12 +256,21 @@ Native controls (also available under the application-authenticated
 `/api/v1/mcp/` routes):
 
 ```sh
+canopy-backend repo add /path/to/repository
 canopy-backend mcp status
 canopy-backend mcp enable --repo <registered-repo-id>
 canopy-backend mcp rotate-token
 canopy-backend mcp disable
 canopy-backend mcp enable
+canopy-backend mcp smoke --repo <registered-repo-id>
 ```
+
+`repo add` is the headless bootstrap path. It calls the same canonicalizing,
+revisioned registration operation as the desktop and requires the private
+application credential. `mcp smoke` reads the private MCP credential without
+printing it, negotiates the protocol, discovers tools and the
+`canopy_worktree_delivery` prompt, performs 25 cached status calls, reports
+p50/p95/p99, and fails when warm p95 exceeds 50 ms.
 
 Repeating `enable` with `--repo` replaces the allowlist; omitting it preserves the
 previous list. Enable requires a nonempty list of registered IDs. The policy is
@@ -287,11 +296,20 @@ the allowlist cancels the old authorization generation, including stalled bodies
 each tool call checks live policy again. Request cancellation cleans up its SDK
 workers. Disabling leaves the application listener and domain runtime running.
 
-`canopy_status` currently requires `repoId` and returns only small cached
-aggregate service/worktree counts, plus `cacheAvailable`. It launches no
-subprocesses and returns no paths, branch names, env values or command text.
-It does not claim readiness or refreshed data. This is the transport acceptance
-probe, not completion of the richer #141 read-tools requirements.
+Every advertised tool includes a stable output schema. All tool successes include
+typed `structuredContent` plus a compact JSON text fallback for clients that
+render only text. Read tools cover allowlisted repository discovery, cached
+status, worktree listings and detailed Git/setup state, durable jobs and output,
+configured services and bounded redacted logs, and public revisioned repository configuration. Mutating tools are listed
+only when their explicit capability is enabled. `canopy_status` still requires
+`repoId`, launches no subprocesses, and never claims readiness from process
+state alone.
+
+The discoverable `canopy_worktree_delivery` prompt requires an allowed
+repository ID and user task. Branch is never invented; omitted branch input is
+sent back to the user. Omitted base uses the repository's configured default or
+requires clarification. The workflow polls durable jobs, preserves retry keys,
+uses only configured operations, and distinguishes running from verified ready.
 
 ### Desktop setup
 
@@ -322,11 +340,12 @@ provides a copyable read-only first task that checks status, worktrees and servi
 Reads include `canopy_status`, `canopy_worktrees`, and `canopy_job`. Worktree
 creation and setup require an explicit write grant.
 
-Still required by the epic: browser controls, read/write/destructive
-permission profiles, private client configuration export, roots inference,
-remaining read tools, broader job operations, human approvals, packaged client validation on every
-platform, and measured performance budgets. Local debug client checks do not
-substitute for the packaged cross-platform acceptance matrix.
+Destructive MCP tools remain intentionally unavailable in v0.5 because the
+human approval and audit path is not implemented. Browser controls, desktop
+attachment to the independent owner, roots inference, destructive approvals,
+and broader database/removal jobs remain post-v0.5 work. Tagged packages now run
+the protocol and 50 ms cached-status smoke on macOS, Linux and Windows; a green
+release-smoke matrix is required before publishing the draft release.
 
 ## Durable job journal foundation
 

@@ -161,7 +161,7 @@ environment gotchas that have bitten us (Node 18 vs 22, `pg_dump` versioning, th
 
 ## Documentation
 
-The full documentation is a static site in **[`website/`](website/)** — 31 pages covering install,
+The full documentation is a static site in **[`website/`](website/)** — 33 pages covering install,
 onboarding, every feature, both settings scopes, the config-file reference, worked examples, and
 building from source, with screenshots of every screen in light and dark.
 
