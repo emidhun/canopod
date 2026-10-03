@@ -192,11 +192,15 @@ mod tests {
             assert!(!exited.load(Ordering::Acquire));
         }
         let callback_exited = exited.clone();
-        let restarted = DesktopApi::start(app.clone(), move |_| {
+        // Other parallel tests can claim the old ephemeral port after shutdown.
+        // Keep the restarted listener reserved instead of probing and rebinding.
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let origin = format!("http://127.0.0.1:{}", listener.local_addr().unwrap().port());
+        let (stop, _) = watch::channel(false);
+        let network = app_api::Server::from_listener(app.clone(), listener, stop.clone()).unwrap();
+        let restarted = DesktopApi::spawn(network, stop, move |_| {
             callback_exited.store(true, Ordering::Release);
-        })
-        .await
-        .unwrap();
+        });
         assert!(credential(&app, CredentialKind::Mcp).matches(mcp.expose()));
         assert_eq!(restarted.mcp.status()["allowWorktreeWrite"], true);
         assert_eq!(restarted.mcp.status()["allowServiceControl"], true);
