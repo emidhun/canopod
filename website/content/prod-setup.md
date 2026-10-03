@@ -1,13 +1,13 @@
 ---
 title: Building a release
-description: How a Canopy release is built, signed and published, and how this documentation is built and deployed.
+description: How a Canopod release is built, signed and published, and how this documentation is built and deployed.
 ---
 
 # Building a release
 
-Two production paths here: shipping Canopy itself, and building and deploying this documentation site.
+Two production paths here: shipping Canopod itself, and building and deploying this documentation site.
 
-## Releasing Canopy
+## Releasing Canopod
 
 ### The release pipeline
 
@@ -28,7 +28,7 @@ needs `contents: write`, because the default token on a new repository is read-o
 ```sh
 # 1. bump the version consistently
 #    package.json, src-tauri/Cargo.toml, src-tauri/tauri.conf.json
-#    and the canopy package entry in src-tauri/Cargo.lock
+#    and the canopod package entry in src-tauri/Cargo.lock
 
 # 2. verify locally
 npm run build && npm run csp:check
@@ -72,13 +72,13 @@ export PATH="$HOME/.asdf/installs/nodejs/v22.15.1/bin:$PATH" && source "$HOME/.c
 npm run tauri build -- --bundles app
 
 # 2. verify the ad-hoc signature
-codesign --verify --deep --strict src-tauri/target/release/bundle/macos/Canopy.app
+codesign --verify --deep --strict src-tauri/target/release/bundle/macos/Canopod.app
 
 # 3. make the DMG with hdiutil
-APP=src-tauri/target/release/bundle/macos/Canopy.app
-STAGE=/tmp/canopy-dmg; rm -rf "$STAGE" ~/Desktop/Canopy-0.5.0-arm64.dmg; mkdir -p "$STAGE"
+APP=src-tauri/target/release/bundle/macos/Canopod.app
+STAGE=/tmp/canopod-dmg; rm -rf "$STAGE" ~/Desktop/Canopod-0.5.0-arm64.dmg; mkdir -p "$STAGE"
 cp -R "$APP" "$STAGE/"; ln -s /Applications "$STAGE/Applications"
-hdiutil create -volname Canopy -srcfolder "$STAGE" -ov -format UDZO ~/Desktop/Canopy-0.5.0-arm64.dmg
+hdiutil create -volname Canopod -srcfolder "$STAGE" -ov -format UDZO ~/Desktop/Canopod-0.5.0-arm64.dmg
 rm -rf "$STAGE"
 ```
 
@@ -103,7 +103,7 @@ account rather than borrowing personal credentials.
 
 ### Why not the Mac App Store
 
-Canopy can't be sandboxed. It spawns arbitrary process trees (`npm`, `git`, `webpack`, `killpg`),
+Canopod can't be sandboxed. It spawns arbitrary process trees (`npm`, `git`, `webpack`, `killpg`),
 touches arbitrary filesystem paths since worktrees live wherever you put them, and uses private window
 APIs (`NSPanel`, `macOSPrivateApi`) for the menu-bar popover. All three are disallowed or crippled by
 the App Store sandbox, which is why most developer tools ship outside it.
@@ -123,7 +123,7 @@ check proves the app works under it.
 The Tauri capability set is the default one plus what the app actually uses: dialog, opener, and fs for
 the paths it reads.
 
-Canopy has no telemetry or analytics. Daily release checks contact GitHub only
+Canopod has no telemetry or analytics. Daily release checks contact GitHub only
 when enabled or run manually. The local application API binds to loopback, and MCP remains disabled
 until the user explicitly enables it.
 
@@ -179,7 +179,7 @@ Every screenshot on this site comes from the real UI in
 [mock mode](dev-setup.html#mock-mode), not from a mockup:
 
 ```sh
-# in the Canopy repo
+# in the Canopod repo
 npm run dev                                    # Vite on :1420
 
 # in this repo
@@ -188,7 +188,7 @@ THEME=dark node scripts/screenshots.mjs        # dark theme   → assets/screens
 node scripts/build.mjs                         # rebuild with both sets wired up
 ```
 
-The script drives Chromium through Playwright (resolved from the Canopy repo's `node_modules`), seeds
+The script drives Chromium through Playwright (resolved from the Canopod repo's `node_modules`), seeds
 `localStorage` with the theme before load, then walks each surface (layouts, dialogs, menus, every
 Settings page) and writes one PNG per shot. Both runs use the same viewport and the same mock data, so
 the light and dark sets differ only in palette. Filenames match across the two directories, and the

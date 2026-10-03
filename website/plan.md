@@ -1,6 +1,6 @@
-# Canopy documentation — plan
+# Canopod documentation — plan
 
-Source of truth for this repo: the Canopy app at `~/learnSpace/worktreemanager`, branch
+Source of truth for this repo: the Canopod app at `~/learnSpace/worktreemanager`, branch
 `ux-font-zoom-and-fixes` (version **0.4.7**). Everything documented here was read out of that
 tree — frontend (`src/`), backend (`src-tauri/src/`), config (`src-tauri/tauri.conf.json`),
 CI/release workflows, and the existing `docs/*.md`. Where the app says a feature is
@@ -10,11 +10,11 @@ CI/release workflows, and the existing `docs/*.md`. Where the app says a feature
 
 ## 1. Goals
 
-1. A complete, organised **documentation website** for Canopy — every feature, every screen,
+1. A complete, organised **documentation website** for Canopod — every feature, every screen,
    every setting, every variable, every keyboard shortcut.
 2. Install instructions for **macOS, Windows and Linux**, honest about what is supported.
 3. A **step-by-step onboarding** path: install → add repository → first worktree → run services.
-4. Settings split into **platform level** (Canopy itself) and **worktree/repository level**.
+4. Settings split into **platform level** (Canopod itself) and **worktree/repository level**.
 5. **Guides** (task-oriented), **examples** (real configs), **dev setup** and **prod setup**.
 6. **Screenshots on every page**, in **both light and dark mode**, theme-aware in the browser.
 
@@ -41,7 +41,7 @@ Confirmed by reading the source. Each bullet maps to at least one documentation 
   ready.
 - **Settings** (`src/app/SettingsView.tsx`): 5 platform pages + 7 repository pages.
 - **Tray icon**: click toggles popover (macOS NSPanel); Linux/Windows get a menu
-  (Open Canopy / Quit Canopy).
+  (Open Canopod / Quit Canopod).
 
 ### 3.2 Top bar
 Brand, repo → branch breadcrumb, ⌘K search button, `N running` chip, agents chip,
@@ -130,11 +130,11 @@ major version; 15-minute per-invocation cap.
 
 ### 3.14 Agents
 Per-repo agent profiles (id, name, command, promptOnLaunch); first is default; picker when
-more than one. Launch writes `.canopy/context.md` (with a self-ignoring `.gitignore`), then
+more than one. Launch writes `.canopod/context.md` (with a self-ignoring `.gitignore`), then
 runs the CLI as its own PTY with the composed prompt as the first argument.
 Context editor: task title + markdown body (Write/Preview), PR/issue + descriptions, links,
 "Runtime the agent inherits" (branch, ports, database), Copy as PR body, Start agent ⌘⏎.
-Context is stored per worktree in `localStorage` (`canopy.ctx.<wtKey>`).
+Context is stored per worktree in `localStorage` (`canopod.ctx.<wtKey>`).
 
 ### 3.15 Provisioning (`.worktreemanager.json`)
 `provision[]` (path, format `dotenv|json|yaml|text`, from, interpolate, keys) + `setup[]` +
@@ -152,7 +152,7 @@ prepended to PATH; other language managers resolve through the login shell.
 ### 3.17 Appearance
 Theme (dark / light / match system), density (comfortable / compact), accent
 (teal / green / amber / violet), **text zoom ⌘+ / ⌘- / ⌘0** (0.8–1.6, 10% steps).
-Stored in `localStorage` under `canopy.appearance`, applied live to every window.
+Stored in `localStorage` under `canopod.appearance`, applied live to every window.
 
 ### 3.18 Settings pages
 - Platform: **General** (editor command, Show switch-branch action, Appearance),
@@ -168,8 +168,8 @@ Stored in `localStorage` under `canopy.appearance`, applied live to every window
 
 ### 3.19 Storage locations
 `settings.json` and `state.json` in the platform app-config dir
-(macOS `~/Library/Application Support/com.midhunkumare.canopy/`), logs in the platform log
-dir (`~/Library/Logs/…/canopy.log`), appearance + per-worktree context in `localStorage`,
+(macOS `~/Library/Application Support/com.midhunkumare.canopod/`), logs in the platform log
+dir (`~/Library/Logs/…/canopod.log`), appearance + per-worktree context in `localStorage`,
 pins/multiselect in `localStorage`.
 
 ### 3.20 Architecture facts worth documenting
@@ -184,7 +184,7 @@ guard; 62 IPC commands.
 ## 4. Information architecture
 
 ```
-Home  (what Canopy is, the 60-second model, screenshot)
+Home  (what Canopod is, the 60-second model, screenshot)
 │
 ├── Getting started
 │   ├── Install — macOS            (Homebrew, DMG, quarantine, Apple Silicon)
@@ -193,7 +193,7 @@ Home  (what Canopy is, the 60-second model, screenshot)
 │   ├── Onboarding, step by step   (empty state → add repo → provisioning → ready)
 │   └── Your first worktree        (create → setup → start → open → clean up)
 │
-├── Using Canopy
+├── Using Canopod
 │   ├── The main window            (top bar, sidebar, worktree bar, rail, status bar)
 │   ├── The next action            (the engine, all ten states, the four surfaces)
 │   ├── Worktrees                  (create, switch branch, pull, sync, remove, prune)
@@ -230,7 +230,7 @@ Home  (what Canopy is, the 60-second model, screenshot)
     └── Limitations and roadmap    (what is not wired yet, with issue numbers)
 ```
 
-Total: **30 pages** (the tree above expanded to 30 once "Using Canopy" was split the way the app's
+Total: **30 pages** (the tree above expanded to 30 once "Using Canopod" was split the way the app's
 surfaces actually divide).
 
 ---
@@ -244,7 +244,7 @@ surfaces actually divide).
   blockquotes, `:::note/tip/warn/danger` callouts, `{{screenshot}}` shortcode).
 - **Layout**: fixed header (brand, search, theme toggle), left nav grouped exactly as the IA
   above, right-hand "On this page" table of contents, prev/next footer.
-- **Design**: light-first palette matching Canopy's own tokens (teal accent `#0f9aa2` in
+- **Design**: light-first palette matching Canopod's own tokens (teal accent `#0f9aa2` in
   light, `#5cc7cd` in dark), Inter-ish system sans + system mono, 1120px content column.
 - **Dark mode**: CSS custom properties on `:root`, `@media (prefers-color-scheme: dark)`
   guarded with `:root:not([data-theme="light"])`, plus `:root[data-theme="dark"]` so the
@@ -259,8 +259,8 @@ surfaces actually divide).
 
 ## 6. Screenshot plan
 
-Driven by `scripts/screenshots.mjs` (Playwright, resolved from the Canopy repo's
-`node_modules`) against `npm run dev` in the Canopy repo (Vite, port 1420). In a plain
+Driven by `scripts/screenshots.mjs` (Playwright, resolved from the Canopod repo's
+`node_modules`) against `npm run dev` in the Canopod repo (Vite, port 1420). In a plain
 browser `hasBackend()` is false, so the app runs on `src/mock.ts` — three repos, five
 worktrees, live-ticking stats and logs. Theme, density, accent and text zoom are seeded
 into `localStorage` before load, so light and dark runs are pixel-identical apart from

@@ -1,4 +1,4 @@
-/* Skin: native — the docs wearing Canopy's own design language.
+/* Skin: native — the docs wearing Canopod's own design language.
  *
  * Values are lifted from src/styles/tokens.css: the layered charcoal ramp
  * (never flat near-black), one scarce teal accent, Inter and JetBrains Mono
@@ -51,7 +51,7 @@
   --hd-h: 50px;
 }
 
-/* dark: Canopy's actual surfaces, borders and text tiers */
+/* dark: Canopod's actual surfaces, borders and text tiers */
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme="light"]) {
     --bg: #1d1e22;

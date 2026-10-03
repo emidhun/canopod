@@ -73,7 +73,7 @@ fn now_secs() -> i64 {
         .unwrap_or(0)
 }
 
-/// Every measurement Canopy currently holds. Read by `get_disk_usage` so a
+/// Every measurement Canopod currently holds. Read by `get_disk_usage` so a
 /// window that opens the overview late gets what earlier scans already found
 /// instead of waiting for a re-scan.
 pub fn snapshot(app: &RuntimeContext) -> HashMap<String, DiskUsage> {
@@ -219,7 +219,7 @@ mod tests {
 
     #[test]
     fn measure_totals_files_recursively() {
-        let dir = std::env::temp_dir().join("canopy_disk_test_xyz");
+        let dir = std::env::temp_dir().join("canopod_disk_test_xyz");
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(dir.join("node_modules/pkg")).unwrap();
         std::fs::write(dir.join("a.txt"), vec![0u8; 1000]).unwrap();
@@ -235,7 +235,7 @@ mod tests {
 
     #[test]
     fn measure_does_not_follow_symlinks_out_of_the_tree() {
-        let base = std::env::temp_dir().join("canopy_disk_link_test_xyz");
+        let base = std::env::temp_dir().join("canopod_disk_link_test_xyz");
         let _ = std::fs::remove_dir_all(&base);
         let inside = base.join("wt");
         let outside = base.join("elsewhere");
@@ -262,7 +262,7 @@ mod tests {
     #[test]
     fn measure_survives_a_missing_root() {
         // a worktree deleted between the request and the walk must not panic
-        let u = measure("/canopy/definitely/not/a/real/path");
+        let u = measure("/canopod/definitely/not/a/real/path");
         assert_eq!(u.bytes, 0);
         assert!(!u.partial, "nothing to walk is complete, not truncated");
     }

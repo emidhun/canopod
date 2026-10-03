@@ -45,7 +45,7 @@ pub(crate) fn initial_disk_revision(path: &Path, settings: &Settings) -> Result<
     let mut memory=serde_json::to_value(settings).map_err(|e|e.to_string())?;
     loaded.as_object_mut().unwrap().remove("revision");
     memory.as_object_mut().unwrap().remove("revision");
-    if loaded!=memory { return Err("Settings changed during startup; restart Canopy".into()); }
+    if loaded!=memory { return Err("Settings changed during startup; restart Canopod".into()); }
     Ok(Some(hash(&bytes)))
 }
 pub(crate) fn revision(_settings: &Settings) -> String {
@@ -57,7 +57,7 @@ pub(crate) fn ensure_current(app: &RuntimeContext) -> Result<(), String> {
     let expected = app.state::<AppState>().settings_disk.lock();
     let actual = disk_revision(&app.path().config.join("settings.json"))?;
     if actual != *expected.as_ref().map_err(Clone::clone)? {
-        return Err("Settings changed on disk; restart Canopy to load the external edit".into());
+        return Err("Settings changed on disk; restart Canopod to load the external edit".into());
     }
     Ok(())
 }
@@ -71,7 +71,7 @@ pub(crate) fn mutate<R>(
     let path = app.path().config.join("settings.json");
     let expected_disk = disk.as_ref().map_err(Clone::clone)?.clone();
     if disk_revision(&path)? != expected_disk {
-        return Err("Settings changed on disk; restart Canopy to load the external edit".into());
+        return Err("Settings changed on disk; restart Canopod to load the external edit".into());
     }
     let mut current = state.settings.write();
     if expected_revision.is_some_and(|r| r.is_empty() || r != current.revision) {

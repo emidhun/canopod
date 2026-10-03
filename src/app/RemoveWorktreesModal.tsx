@@ -10,7 +10,7 @@ import { backgroundOp, useStore } from "../store";
 import type { WorktreeNode } from "../types";
 import { Alert, Info, Spinner, Trash } from "../icons";
 import { clear as clearSelection } from "./multiselect";
-import Modal, { Hint, Spacer } from "./canopy/Modal";
+import Modal, { Hint, Spacer } from "./canopod/Modal";
 
 export default function RemoveWorktreesModal({ wts, onClose }: { wts: WorktreeNode[]; onClose: () => void }) {
   const removeWorktrees = useStore((s) => s.removeWorktrees);

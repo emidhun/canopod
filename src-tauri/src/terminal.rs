@@ -172,7 +172,7 @@ fn kind_of(id: &str) -> &str {
 // ── agent activity detection ──────────────────────────────────────────
 //
 // "An agent is waiting on a human" is the second-highest priority state in the
-// app, so it has to be inferred from the only thing Canopy can actually see:
+// app, so it has to be inferred from the only thing Canopod can actually see:
 // the PTY byte stream. The rule is deliberately conservative — a false
 // "waiting" sends the user to a terminal that doesn't need them, which erodes
 // trust in the whole attention queue faster than a missed prompt does.
@@ -228,7 +228,7 @@ fn strip_ansi(raw: &str) -> String {
 
 /// Does this tail look like something waiting for a human?
 ///
-/// Matching is on literal snippets, not regex: Canopy carries no regex engine,
+/// Matching is on literal snippets, not regex: Canopod carries no regex engine,
 /// and a user-supplied pattern that fails to compile would silently disable
 /// detection for that profile — a worse failure than a missed match.
 fn looks_like_prompt(tail: &str, extra: &[String]) -> bool {
@@ -325,7 +325,7 @@ pub fn poll_states(app: &RuntimeContext) {
                 crate::notify::Kind::AgentWaiting,
                 &id,
                 "An agent is waiting",
-                "Open Canopy to respond to the agent.",
+                "Open Canopod to respond to the agent.",
             );
         }
         let _ = app.emit("terminal:state", &StateEvent { id: &id, state });
@@ -451,7 +451,7 @@ pub fn open(
     // (login flag, and the `-i` interactive flag) match as they do on Unix
     let name = name.strip_suffix(".exe").unwrap_or(name);
     if custom_program {
-        // The user chose the program, so they own its arguments. Canopy's
+        // The user chose the program, so they own its arguments. Canopod's
         // -l/-i flags are for a shell IT picked and would be wrong (or fatal)
         // for an arbitrary binary.
         for a in term_cfg.args.split_whitespace() {
@@ -488,10 +488,11 @@ pub fn open(
     // Every agent profile can read the same durable handoff even when it opts
     // out of positional prompts because its CLI has a different interface.
     if kind_of(id) == "agent" {
-        cmd.env(
-            "CANOPY_CONTEXT_FILE",
-            std::path::Path::new(cwd).join(".canopy/context.md"),
-        );
+        let context = crate::legacy::worktree_dir(std::path::Path::new(cwd)).join("context.md");
+        cmd.env("CANOPOD_CONTEXT_FILE", &context);
+        cmd.env("CANOPOD_WORKTREE", cwd);
+        // the names 0.4.x exported as "Canopy", for agent profiles that read them
+        cmd.env("CANOPY_CONTEXT_FILE", &context);
         cmd.env("CANOPY_WORKTREE", cwd);
     }
     if let Some(bin) = crate::toolchain::pinned_node_bin(cwd) {

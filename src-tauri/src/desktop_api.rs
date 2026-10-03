@@ -133,7 +133,7 @@ mod tests {
         let status = client
             .get(format!("{origin}/api/v1/mcp/status"))
             .bearer_auth(application.expose())
-            .header("x-canopy-api-version", "1")
+            .header("x-canopod-api-version", "1")
             .send()
             .await
             .unwrap()
@@ -155,7 +155,7 @@ mod tests {
         let response = client
             .post(format!("{origin}/api/v1/mcp/enable"))
             .bearer_auth(application.expose())
-            .header("x-canopy-api-version", "1")
+            .header("x-canopod-api-version", "1")
             .json(&serde_json::json!({"repoIds": ["desktop-repo"]}))
             .send()
             .await
@@ -174,7 +174,7 @@ mod tests {
                 .header("mcp-protocol-version", "2025-03-26")
                 .json(
                     &serde_json::json!({"jsonrpc":"2.0", "id":1, "method":"tools/call",
-                    "params":{"name":"canopy_status", "arguments":{"repoId":"desktop-repo"}}}),
+                    "params":{"name":"canopod_status", "arguments":{"repoId":"desktop-repo"}}}),
                 )
                 .send()
                 .await
@@ -239,7 +239,7 @@ mod tests {
         let response = client
             .post(format!("{origin}/api/v1/stop"))
             .bearer_auth(credential(&app, CredentialKind::Application).expose())
-            .header("x-canopy-api-version", "1")
+            .header("x-canopod-api-version", "1")
             .send()
             .await
             .unwrap();

@@ -77,7 +77,7 @@ how many need you) plus **Start all** and **Stop all**.
 :::note Not measured yet
 The **Size** column always reads `—`. Nothing in the backend measures a worktree's on-disk footprint.
 The column stays so the table geometry matches the design and wiring it up is purely additive
-([issue #55](https://github.com/emidhun/canopy/issues/55)).
+([issue #55](https://github.com/emidhun/canopod/issues/55)).
 :::
 
 ## Choosing between them

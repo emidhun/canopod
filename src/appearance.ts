@@ -1,7 +1,7 @@
 // Appearance settings — theme + density + accent (the "Appearance" section of
 // Settings).
 //
-// Persisted in localStorage, which every Canopy window shares (they're all the
+// Persisted in localStorage, which every Canopod window shares (they're all the
 // same origin), and applied as root data-attributes that tokens.css keys off.
 // Appearance applies LIVE and instantly — it never goes through the Settings
 // save step. A `storage` event re-applies it in the app's other windows, and a
@@ -21,7 +21,7 @@ export interface Appearance {
   fontScale: number;
 }
 
-const KEY = "canopy.appearance";
+const KEY = "canopod.appearance";
 const THEMES: Theme[] = ["dark", "light", "system"];
 const ACCENTS: Accent[] = ["teal", "green", "amber", "violet"];
 
@@ -74,7 +74,7 @@ export function applyAppearance(a: Appearance = getAppearance()): void {
 }
 
 /** Bump the app-wide text zoom by whole steps (⌘+ / ⌘-). Persists + applies
-    live across every Canopy window. Returns the resolved scale. */
+    live across every Canopod window. Returns the resolved scale. */
 export function nudgeFontScale(steps: number): number {
   const next = normScale(getAppearance().fontScale + steps * FONT_SCALE_STEP);
   return setAppearance({ fontScale: next }).fontScale;
@@ -94,7 +94,7 @@ export function setAppearance(patch: Partial<Appearance>): Appearance {
     /* storage unavailable — still apply for this session */
   }
   applyAppearance(next);
-  window.dispatchEvent(new CustomEvent("canopy:appearance", { detail: next }));
+  window.dispatchEvent(new CustomEvent("canopod:appearance", { detail: next }));
   return next;
 }
 

@@ -9,10 +9,10 @@ description: Symptom, cause, fix. The failures that actually happen, and what to
 
 | Symptom | Cause | Fix |
 |---|---|---|
-| "Canopy is damaged and can't be opened" | macOS quarantine on a non-notarized app | `xattr -dr com.apple.quarantine /Applications/Canopy.app` |
+| "Canopod is damaged and can't be opened" | macOS quarantine on a non-notarized app | `xattr -dr com.apple.quarantine /Applications/Canopod.app` |
 | "unidentified developer" / "can't check for malicious software" | Same | Same, or System Settings → Privacy & Security → **Open Anyway** |
 | No window and no menu-bar icon | It launched into the tray and the icon is easy to miss | Look for the fork mark in the menu bar. On Linux with GNOME you may need an AppIndicator extension |
-| Nothing happens on launch, or an old version reappears | Another instance is already running | Canopy is single-instance by design, so the running one gets focused. Quit it from the tray first |
+| Nothing happens on launch, or an old version reappears | Another instance is already running | Canopod is single-instance by design, so the running one gets focused. Quit it from the tray first |
 | The window is blank | A CSP or asset failure in a release build | Check the log file. This is what `npm run csp:check` guards against in CI |
 
 ## Adding a repository
@@ -44,7 +44,7 @@ description: Symptom, cause, fix. The failures that actually happen, and what to
 | The frontend talks to the wrong API | The server URL was baked from the environment at launch | Set it from a port variable in the provisioned `.env` (`http://localhost:${WT_SERVER_PORT}`), and give the frontend `--port $PORT` |
 | A command can't find your tools | Commands run through `$SHELL` as a login shell | Make sure your `PATH` and version-manager setup live in that shell's profile, not only in an interactive rc file |
 | A service exits immediately | Usually a bad command or a missing dependency | Read the fix bar → **Jump to error**. The exit code is in service detail |
-| Stopping leaves child processes behind | Shouldn't happen: services run in their own process group | If it does, quit Canopy, which kills every group. The next launch also sweeps recorded orphans |
+| Stopping leaves child processes behind | Shouldn't happen: services run in their own process group | If it does, quit Canopod, which kills every group. The next launch also sweeps recorded orphans |
 
 ## Databases
 
@@ -73,7 +73,7 @@ description: Symptom, cause, fix. The failures that actually happen, and what to
 |---|---|---|
 | A worktree you deleted by hand still appears | git keeps a stale registration | **Sync**, then use the prune dialog it opens |
 | Ports changed after you deleted `state.json` | Indices get reassigned from scratch | Don't hand-edit `state.json`. Re-set any overrides you needed |
-| Settings edits you made in a text editor didn't appear | The app holds the authoritative copy while running | Edit `settings.json` with Canopy closed. For `.worktreemanager.json`, press **Sync** |
+| Settings edits you made in a text editor didn't appear | The app holds the authoritative copy while running | Edit `settings.json` with Canopod closed. For `.worktreemanager.json`, press **Sync** |
 | Settings shows an old `.worktreemanager.json` | It changed outside the app | **Sync** re-reads it, except for a repository you have unsaved changes on, which is never clobbered |
 
 ## Further diagnostics
@@ -81,7 +81,7 @@ description: Symptom, cause, fix. The failures that actually happen, and what to
 **Needs you** holds every failed background job with its error and log tail, and the notice modal lets
 you copy it.
 
-The app's own log is `canopy.log` in the platform log directory (see
+The app's own log is `canopod.log` in the platform log directory (see
 [Where settings live](settings-storage.html)). `RUST_LOG=debug` raises the level for a run started from
 a terminal.
 

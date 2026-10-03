@@ -1,4 +1,4 @@
-/* Canopy component primitives — the single source of truth.
+/* Canopod component primitives — the single source of truth.
    Extracted from the shipped app and the redesign so screens stop carrying
    private copies of these rules. Obeys the radius rule in tokens/layout.css:
    controls and floating surfaces get radius; layout regions stay flat. */

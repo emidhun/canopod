@@ -424,7 +424,7 @@ function App() {
   return (
     <div className="wrap" style={{ "--accent": tw.accent, "--accent-dim": tw.accent + "29" }}>
       <div className="caption">
-        <p className="eyebrow">Canopy</p>
+        <p className="eyebrow">Canopod</p>
         <h1>Main window</h1>
         <p>The full app the menu-bar popover launches into — every worktree's services with per-service start/stop, restart, live logs, ports, and git status. Depth lives here; the <a href="Worktree Manager Popover.html">popover</a> stays a glanceable launcher.</p>
       </div>
@@ -432,7 +432,7 @@ function App() {
       <div className="win">
         <div className="titlebar">
           <div className="lights"><i className="r" /><i className="y" /><i className="g" /></div>
-          <div className="tb-title"><span className="fork"><I.fork size={15} /></span>Canopy</div>
+          <div className="tb-title"><span className="fork"><I.fork size={15} /></span>Canopod</div>
           <span className="tb-spacer" />
           <div className="tb-actions">
             <button className="iconbtn" title="Refresh" onClick={() => flash("Rescanning worktrees…")}><I.refresh /></button>

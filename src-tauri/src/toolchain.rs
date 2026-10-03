@@ -118,7 +118,7 @@ pub fn with_pinned_node(cwd: &str, command: &str) -> String {
     }
 }
 
-/// The shell Canopy runs commands through. Honors `$SHELL` (so bash/fish/etc.
+/// The shell Canopod runs commands through. Honors `$SHELL` (so bash/fish/etc.
 /// users get their own shell + profile), falling back to zsh on macOS, Git Bash
 /// on Windows, and sh on other Unix. Commands run as a *login* shell so version
 /// managers (nvm/asdf/volta) and the user's PATH are initialized.
@@ -212,7 +212,7 @@ pub fn effective_path() -> String {
     std::env::var("PATH").unwrap_or_default()
 }
 
-/// Fast non-login shell for INTERNAL tool invocations — command lines Canopy
+/// Fast non-login shell for INTERNAL tool invocations — command lines Canopod
 /// composes itself (psql/pg_dump/pg_restore/createdb/dropdb), which are pure
 /// POSIX and need only PATH (see `effective_path`). User-authored commands
 /// (services, setup, custom, reset) MUST keep `shell_argv`'s login shell:
@@ -274,10 +274,10 @@ mod tests {
     #[cfg(unix)]
     #[test]
     fn fast_shell_executes_posix() {
-        let (shell, args) = fast_shell_argv("printf %s canopy-ok");
+        let (shell, args) = fast_shell_argv("printf %s canopod-ok");
         let out = std::process::Command::new(shell).args(args).output().expect("spawn");
         assert!(out.status.success());
-        assert_eq!(String::from_utf8_lossy(&out.stdout), "canopy-ok");
+        assert_eq!(String::from_utf8_lossy(&out.stdout), "canopod-ok");
     }
 
     /// Composed db command lines must stay pure POSIX: dash (Debian/Ubuntu

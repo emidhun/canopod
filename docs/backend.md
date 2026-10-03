@@ -4,7 +4,7 @@
 | File | Responsibility |
 |---|---|
 | `lib.rs` | Tauri builder: plugins, state, tray init, orphan sweep, stats task, background git refresh, `invoke_handler` (all commands), `RunEvent::ExitRequested` → kill-all. Also env-gated `WTM_SELFTEST*` / `WTM_SUITE*` test hooks. |
-| `main.rs` | thin entry → `canopy_lib::run()` |
+| `main.rs` | thin entry → `canopod_lib::run()` |
 | `state.rs` | `AppState` (settings/runtime/tree/statuses), `RepoNode`/`WorktreeNode`/`ServiceNode`, `refresh_tree` (derive tree from `git worktree list` + settings), `refresh_git_meta`, `port_index`, **`effective_port`**, **`worktree_vars`**, `env_value` (read a key from a worktree `.env`) |
 | `settings.rs` | `Settings`/`RepoCfg`/`ServiceCfg` (settings.json) and `RuntimeState` (state.json: `port_indices`, `port_overrides`, `orphans`); load/save |
 | `git.rs` | shell-outs: list worktrees, status v2 (ahead/behind/dirty), last commit, pull (+submodules), branches, fetch_all, create_worktree (+submodule `--reference`), dirty_report, remove_worktree, validate_repo, submodule_paths |
@@ -40,4 +40,4 @@ Registered in `lib.rs`; typed wrappers in `src/ipc.ts`.
 
 ### Windows data-directory moves
 
-While the backend is running, Windows may refuse to rename or move directories containing Canopy's data directory with a sharing violation. Stop the backend before moving those folders; the open directory handles protect credential paths from replacement.
+While the backend is running, Windows may refuse to rename or move directories containing Canopod's data directory with a sharing violation. Stop the backend before moving those folders; the open directory handles protect credential paths from replacement.

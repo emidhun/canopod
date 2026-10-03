@@ -61,23 +61,23 @@ framework line includes the fix.
    run a real ad-hoc `codesign` pass. (The linker's default per-binary signature seals resource
    metadata that doesn't survive copying the app off a DMG → "damaged". Never again.) Verify:
    ```sh
-   codesign --verify --deep --strict src-tauri/target/release/bundle/macos/Canopy.app
+   codesign --verify --deep --strict src-tauri/target/release/bundle/macos/Canopod.app
    ```
 3. **Make the DMG with hdiutil** (not bundle_dmg):
    ```sh
-   STAGE=/tmp/canopy-dmg; rm -rf "$STAGE" ~/Desktop/Canopy-0.3.0-arm64.dmg; mkdir -p "$STAGE"
+   STAGE=/tmp/canopod-dmg; rm -rf "$STAGE" ~/Desktop/Canopod-0.3.0-arm64.dmg; mkdir -p "$STAGE"
    cp -R "$APP" "$STAGE/"; ln -s /Applications "$STAGE/Applications"
-   hdiutil create -volname Canopy -srcfolder "$STAGE" -ov -format UDZO ~/Desktop/Canopy-0.3.0-arm64.dmg
+   hdiutil create -volname Canopod -srcfolder "$STAGE" -ov -format UDZO ~/Desktop/Canopod-0.3.0-arm64.dmg
    rm -rf "$STAGE"
    ```
-4. Relaunch: `pkill -f "Canopy.app"; open "$APP"`.
+4. Relaunch: `pkill -f "Canopod.app"; open "$APP"`.
 
 The full one-shot block is what the assistant runs each ship; keep it together.
 
 ## App icon
-Regenerated from a 1024px PNG (dark squircle + Canopy mark) via `npm run tauri icon <png>` →
-`src-tauri/icons/*` (incl. `.icns`/`.ico`). Source PNG: `design/canopy-appicon-1024.png`. The
-icon HTML used to render it is ephemeral (`/tmp/canopy-appicon.html` in history). Android/iOS icon
+Regenerated from a 1024px PNG (dark squircle + Canopod mark) via `npm run tauri icon <png>` →
+`src-tauri/icons/*` (incl. `.icns`/`.ico`). Source PNG: `design/canopod-appicon-1024.png`. The
+icon HTML used to render it is ephemeral (`/tmp/canopod-appicon.html` in history). Android/iOS icon
 dirs are deleted (macOS-only).
 
 ## Visual verification without the GUI
@@ -92,7 +92,7 @@ Note: in a plain browser the app falls back to **mock data** (`src/mock.ts`); `h
 Some UI (e.g. the database bar) only shows when a worktree has a `dbName`.
 
 ## Gotchas that have bitten us (read before debugging)
-- **Node 18 vs 22.** asdf default is 18; ToolJet's server is `engine-strict` Node 22.15.1. Canopy
+- **Node 18 vs 22.** asdf default is 18; ToolJet's server is `engine-strict` Node 22.15.1. Canopod
   prepends the worktree's pinned Node (`toolchain.rs`) for setup/service/reset/migrate/teardown. Don't
   remove that or installs fail with `notsup`.
 - **Plugins must be built per worktree.** ToolJet server imports `@tooljet/plugins/dist/server`; setup

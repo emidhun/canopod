@@ -1,11 +1,11 @@
 ---
-title: What Canopy is
-description: What Canopy does, the words it uses for things, and the two windows you'll spend time in.
+title: What Canopod is
+description: What Canopod does, the words it uses for things, and the two windows you'll spend time in.
 ---
 
-# What Canopy is
+# What Canopod is
 
-Canopy manages git worktrees and the dev servers that run inside them. It finds every worktree of the
+Canopod manages git worktrees and the dev servers that run inside them. It finds every worktree of the
 repositories you register, sets each one up (config files, its own database, ports that don't clash),
 and gives you one window to start and stop services, read logs, run agents and terminals, manage
 databases, and create or retire branches.
@@ -16,7 +16,7 @@ databases, and create or retire branches.
 
 If you work on three branches at once with `git worktree`, each checkout wants its own dependencies,
 its own database, and its own ports. Otherwise they fight. Setting that up by hand is dull and easy to
-get wrong, so Canopy does it:
+get wrong, so Canopod does it:
 
 - **Each worktree is isolated.** It gets a database named after itself (`<repo>_<slug>`) and ports
   derived from a stable index (`basePort + index × 10`), so you can run several branches together.
@@ -28,14 +28,14 @@ get wrong, so Canopy does it:
 
 ## The 60-second mental model
 
-| Concept | What it means in Canopy |
+| Concept | What it means in Canopod |
 |---|---|
-| **Repository** | A git repo you register. Canopy tracks its main checkout and every worktree of it. |
+| **Repository** | A git repo you register. Canopod tracks its main checkout and every worktree of it. |
 | **Worktree** | A branch checked out into its own folder. The unit everything else hangs off. |
-| **Service** | A long-running process for a worktree (frontend, API, worker). You give a command; Canopy runs, monitors and stops it. |
+| **Service** | A long-running process for a worktree (frontend, API, worker). You give a command; Canopod runs, monitors and stops it. |
 | **Isolation** | Each worktree gets its own database and its own ports, derived from a stable index. |
 | **Provisioning** | The files and commands that prepare a worktree, declared in the repo so they travel with the branch. |
-| **Next action** | Canopy ranks what to do next in each worktree and offers that one thing in a button. |
+| **Next action** | Canopod ranks what to do next in each worktree and offers that one thing in a button. |
 
 The Rust backend holds the truth about all of it: which repos are registered, which worktrees exist,
 what is running, and which ports are assigned. Both windows read from it and then follow its events.
@@ -57,7 +57,7 @@ because their tray backends don't report clicks.
 
 ## What this documentation covers
 
-Everything in Canopy **0.5.0**, written from the app's source. Some screens exist but have no backend
+Everything in Canopod **0.5.0**, written from the app's source. Some screens exist but have no backend
 behind them yet; those are marked *coming soon* here, the same way the app marks them, so nothing on
 these pages describes behaviour the build doesn't have.
 [Limitations](limitations.html) lists all of them in one place.

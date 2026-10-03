@@ -9,7 +9,7 @@ import { errText, hasBackend, ipc } from "../ipc";
 import { backgroundOp, useStore } from "../store";
 import type { WorktreeNode } from "../types";
 import { Alert, Info, Spinner, Trash } from "../icons";
-import Modal, { Hint, Spacer } from "./canopy/Modal";
+import Modal, { Hint, Spacer } from "./canopod/Modal";
 
 /** git::dirty_report truncates `status --porcelain` with .take(10), so a
     result of exactly this length is a floor rather than a total. */

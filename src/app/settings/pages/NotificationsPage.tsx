@@ -1,10 +1,10 @@
-// Notifications — what Canopy is allowed to interrupt you for.
+// Notifications — what Canopod is allowed to interrupt you for.
 import { type NotifyCfg } from "../../../ipc";
 import { TRow } from "../primitives";
 import { DEFAULT_NOTIFY } from "../provision";
 import type { PageProps } from "../types";
 
-/* Notifications only fire while no Canopy window is on screen — the pip, the
+/* Notifications only fire while no Canopod window is on screen — the pip, the
    attention queue and the toast have already said it otherwise. */
 export default function NotificationsPage({ settings, patch, markDirty }: PageProps) {
   const n = settings.notifications ?? DEFAULT_NOTIFY;
@@ -12,7 +12,7 @@ export default function NotificationsPage({ settings, patch, markDirty }: PagePr
   return (
     <>
       <div className="sec">
-        <div className="slab">Notify me when<span className="n">only while Canopy isn't on screen</span></div>
+        <div className="slab">Notify me when<span className="n">only while Canopod isn't on screen</span></div>
         <TRow title="A service crashes" hint="It exited on its own. Nothing else in that worktree works until it's back." on={n.serviceCrash} onToggle={() => set({ serviceCrash: !n.serviceCrash })} />
         <TRow title="An agent needs a decision" hint="An agent is blocked waiting on input." on={n.agentWaiting} onToggle={() => set({ agentWaiting: !n.agentWaiting })} />
         <TRow title="Setup finishes" hint="Provisioning and setup tasks completed, or failed." on={n.setupDone} onToggle={() => set({ setupDone: !n.setupDone })} />

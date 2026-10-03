@@ -1,4 +1,4 @@
-/* First-run onboarding — ported from the redesign handoff (Canopy
+/* First-run onboarding — ported from the redesign handoff (Canopod
    Onboarding.html / cxo-onboard.jsx, revised). The shipped 5-step wizard
    (Repository → Stack → Services → Commands → Review) collapses into ONE
    adaptive screen. The empty state makes the case for worktrees (a checkout-vs-
@@ -720,7 +720,7 @@
   flex: none;
 }
 
-/* what Canopy found — grouped, editable, the real payload */
+/* what Canopod found — grouped, editable, the real payload */
 .ob-root .dsec {
   border-top: 1px solid var(--divider);
   padding: var(--sp-pop-lg) var(--sp-pop-lg);

@@ -51,7 +51,7 @@ jobs:
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ""
         with:
           tagName: ${{ github.ref_name }}
-          releaseName: "Canopy ${{ github.ref_name }}"
+          releaseName: "Canopod ${{ github.ref_name }}"
           releaseDraft: true
           uploadUpdaterJson: true
           retryAttempts: 2

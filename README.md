@@ -1,42 +1,42 @@
 <p align="center">
   <picture>
     <source media="(prefers-color-scheme: dark)" srcset="docs/assets/brandmark-dark.svg" />
-    <img src="docs/assets/brandmark-light.svg" width="108" alt="Canopy brandmark — a git fork: two parents converging into one branch" />
+    <img src="docs/assets/brandmark-light.svg" width="108" alt="Canopod brandmark — a git fork: two parents converging into one branch" />
   </picture>
 </p>
 
-<h1 align="center">canopy</h1>
+<h1 align="center">canopod</h1>
 
 <p align="center">A lightweight <b>menu-bar git-worktree + dev-service manager</b>.<br/>
 Every branch checked out, provisioned, and running — side by side.</p>
 
 <p align="center">
-  <a href="https://github.com/emidhun/canopy/actions/workflows/ci.yml"><img src="https://github.com/emidhun/canopy/actions/workflows/ci.yml/badge.svg" alt="ci" /></a>
+  <a href="https://github.com/emidhun/canopod/actions/workflows/ci.yml"><img src="https://github.com/emidhun/canopod/actions/workflows/ci.yml/badge.svg" alt="ci" /></a>
 </p>
 
 <p align="center">
   <picture>
     <source media="(prefers-color-scheme: dark)" srcset="docs/assets/demo-dark.gif" />
-    <img src="docs/assets/demo.gif" alt="Canopy demo — onboard a repository, then add several git worktrees and watch each one appear in the sidebar with its own database and isolated ports" width="900" />
+    <img src="docs/assets/demo.gif" alt="Canopod demo — onboard a repository, then add several git worktrees and watch each one appear in the sidebar with its own database and isolated ports" width="900" />
   </picture>
 </p>
 
 <p align="center">
-  <a href="https://github.com/emidhun/canopy/releases/download/v0.5.0/Canopy_0.5.0_aarch64.dmg"><img src="https://img.shields.io/badge/macOS-Download_.dmg_(Apple_Silicon)-58c2c8?style=for-the-badge&logo=apple&logoColor=white&labelColor=1e1f22" alt="Download DMG for macOS (Apple Silicon)" /></a>
-  <a href="#install"><img src="https://img.shields.io/badge/Homebrew-brew_install_canopy-58c2c8?style=for-the-badge&logo=homebrew&logoColor=white&labelColor=1e1f22" alt="Install with Homebrew" /></a>
+  <a href="https://github.com/emidhun/canopod/releases/download/v0.5.0/Canopod_0.5.0_aarch64.dmg"><img src="https://img.shields.io/badge/macOS-Download_.dmg_(Apple_Silicon)-58c2c8?style=for-the-badge&logo=apple&logoColor=white&labelColor=1e1f22" alt="Download DMG for macOS (Apple Silicon)" /></a>
+  <a href="#install"><img src="https://img.shields.io/badge/Homebrew-brew_install_canopod-58c2c8?style=for-the-badge&logo=homebrew&logoColor=white&labelColor=1e1f22" alt="Install with Homebrew" /></a>
 </p>
 
 <p align="center">
-  <a href="https://github.com/emidhun/canopy/releases/download/v0.5.0/Canopy_0.5.0_amd64.deb"><img src="https://img.shields.io/badge/Linux-.deb-9a9ba0?style=flat-square&logo=debian&logoColor=white&labelColor=1e1f22" alt="Download .deb" /></a>
-  <a href="https://github.com/emidhun/canopy/releases/download/v0.5.0/Canopy-0.5.0-1.x86_64.rpm"><img src="https://img.shields.io/badge/Linux-.rpm-9a9ba0?style=flat-square&logo=fedora&logoColor=white&labelColor=1e1f22" alt="Download .rpm" /></a>
-  <a href="https://github.com/emidhun/canopy/releases/download/v0.5.0/Canopy_0.5.0_amd64.AppImage"><img src="https://img.shields.io/badge/Linux-.AppImage-9a9ba0?style=flat-square&logo=linux&logoColor=white&labelColor=1e1f22" alt="Download AppImage" /></a>
-  <a href="https://github.com/emidhun/canopy/releases/latest"><img src="https://img.shields.io/badge/Windows-.exe-9a9ba0?style=flat-square&logo=windows&logoColor=white&labelColor=1e1f22" alt="Download Windows installer" /></a>
-  <a href="https://github.com/emidhun/canopy/releases"><img src="https://img.shields.io/github/v/release/emidhun/canopy?style=flat-square&label=all%20releases&color=58c2c8&labelColor=1e1f22" alt="All releases" /></a>
+  <a href="https://github.com/emidhun/canopod/releases/download/v0.5.0/Canopod_0.5.0_amd64.deb"><img src="https://img.shields.io/badge/Linux-.deb-9a9ba0?style=flat-square&logo=debian&logoColor=white&labelColor=1e1f22" alt="Download .deb" /></a>
+  <a href="https://github.com/emidhun/canopod/releases/download/v0.5.0/Canopod-0.5.0-1.x86_64.rpm"><img src="https://img.shields.io/badge/Linux-.rpm-9a9ba0?style=flat-square&logo=fedora&logoColor=white&labelColor=1e1f22" alt="Download .rpm" /></a>
+  <a href="https://github.com/emidhun/canopod/releases/download/v0.5.0/Canopod_0.5.0_amd64.AppImage"><img src="https://img.shields.io/badge/Linux-.AppImage-9a9ba0?style=flat-square&logo=linux&logoColor=white&labelColor=1e1f22" alt="Download AppImage" /></a>
+  <a href="https://github.com/emidhun/canopod/releases/latest"><img src="https://img.shields.io/badge/Windows-.exe-9a9ba0?style=flat-square&logo=windows&logoColor=white&labelColor=1e1f22" alt="Download Windows installer" /></a>
+  <a href="https://github.com/emidhun/canopod/releases"><img src="https://img.shields.io/github/v/release/emidhun/canopod?style=flat-square&label=all%20releases&color=58c2c8&labelColor=1e1f22" alt="All releases" /></a>
   <br/>
-  <sub>Linux &amp; Windows builds are experimental — <a href="https://github.com/emidhun/canopy/issues">feedback welcome</a>. See <a href="#install">Install</a> for the one-line quarantine fix on macOS.</sub>
+  <sub>Linux &amp; Windows builds are experimental — <a href="https://github.com/emidhun/canopod/issues">feedback welcome</a>. See <a href="#install">Install</a> for the one-line quarantine fix on macOS.</sub>
 </p>
 
-Canopy discovers every worktree of your registered repos, provisions each one (dependencies, an
+Canopod discovers every worktree of your registered repos, provisions each one (dependencies, an
 isolated database, deterministic ports), and lets you start/stop services, watch logs, manage
 databases, and change ports — from a tray popover and a main window. Built for fast multi-repo /
 submodule workflows like ToolJet.
@@ -47,11 +47,11 @@ submodule workflows like ToolJet.
 
 ---
 
-## Why Canopy
+## Why Canopod
 
 Working on several branches at once with `git worktree` means each checkout needs its own
 dependencies, its own database, and its own set of ports — otherwise they collide. Doing that by
-hand is tedious and error-prone. Canopy automates it:
+hand is tedious and error-prone. Canopod automates it:
 
 - **Isolated per worktree** — each worktree gets its own database (`<repo>_<slug>`) and a
   deterministic set of ports (`basePort + index*10`), so multiple branches run side by side.
@@ -67,7 +67,7 @@ hand is tedious and error-prone. Canopy automates it:
 - **git**
 - macOS on Apple Silicon (arm64) for the primary tested desktop build; Linux and Windows packages
   are experimental
-- The runtimes and package managers your repository's configured commands use; Canopy itself does
+- The runtimes and package managers your repository's configured commands use; Canopod itself does
   not require Node
 - A local database only when your project or configured database actions need one
 - Optionally, a committed `.worktreemanager.json` so setup travels with each branch — see the
@@ -82,52 +82,52 @@ hand is tedious and error-prone. Canopy automates it:
 **Homebrew** (recommended — handles quarantine for you):
 
 ```sh
-brew install --cask emidhun/canopy/canopy
+brew install --cask emidhun/canopod/canopod
 ```
 
-**Or the DMG** from [Releases](https://github.com/emidhun/canopy/releases): Canopy isn't notarized
+**Or the DMG** from [Releases](https://github.com/emidhun/canopod/releases): Canopod isn't notarized
 yet, so macOS quarantines it on download — clearing that quarantine is the step that matters:
 
 ```sh
-hdiutil attach ~/Downloads/Canopy_<version>_aarch64.dmg
-cp -R "/Volumes/Canopy/Canopy.app" /Applications/
-hdiutil detach "/Volumes/Canopy"
-xattr -dr com.apple.quarantine /Applications/Canopy.app      # clears quarantine
-open /Applications/Canopy.app
+hdiutil attach ~/Downloads/Canopod_<version>_aarch64.dmg
+cp -R "/Volumes/Canopod/Canopod.app" /Applications/
+hdiutil detach "/Volumes/Canopod"
+xattr -dr com.apple.quarantine /Applications/Canopod.app      # clears quarantine
+open /Applications/Canopod.app
 ```
 
-Or drag **Canopy** to Applications and run only the `xattr -dr com.apple.quarantine` line. On macOS Sequoia you can
+Or drag **Canopod** to Applications and run only the `xattr -dr com.apple.quarantine` line. On macOS Sequoia you can
 instead use System Settings → Privacy & Security → **Open Anyway**.
 
 ### Linux (experimental)
 
-`.AppImage`, `.deb`, and `.rpm` packages are on the [Releases](https://github.com/emidhun/canopy/releases)
+`.AppImage`, `.deb`, and `.rpm` packages are on the [Releases](https://github.com/emidhun/canopod/releases)
 page. They build and pass CI but haven't been validated on a real desktop yet — issues welcome.
 
 ### Windows (experimental)
 
-An NSIS installer (`Canopy_<version>_x64-setup.exe`) is published on the
-[Releases](https://github.com/emidhun/canopy/releases/latest) page. Download it, run it, and launch
-**Canopy** from the Start menu — it lives in the system tray. Windows SmartScreen may warn on first
+An NSIS installer (`Canopod_<version>_x64-setup.exe`) is published on the
+[Releases](https://github.com/emidhun/canopod/releases/latest) page. Download it, run it, and launch
+**Canopod** from the Start menu — it lives in the system tray. Windows SmartScreen may warn on first
 run because the installer isn't code-signed yet; choose **More info → Run anyway**. Like Linux, the
 Windows port compiles and is published for early adopters but hasn't been validated on a real
-desktop — [feedback welcome](https://github.com/emidhun/canopy/issues). Step-by-step notes are in the
-[Windows install guide](https://emidhun.github.io/canopy/install-windows.html).
+desktop — [feedback welcome](https://github.com/emidhun/canopod/issues). Step-by-step notes are in the
+[Windows install guide](https://emidhun.github.io/canopod/install-windows.html).
 
-Canopy runs as a **menu-bar / tray app** — look for the fork icon after launch. Full
+Canopod runs as a **menu-bar / tray app** — look for the fork icon after launch. Full
 install/signing details are in [docs/distribution.md](docs/distribution.md).
 
 ---
 
 ## Quick start (users)
 
-1. Click the Canopy icon in the menu bar → **Open Manager**.
+1. Click the Canopod icon in the menu bar → **Open Manager**.
 2. On first launch, choose **Add a repository**, pick the main checkout, and review the detected
    services and editable setup suggestions. Existing configuration should be reviewed, not replaced.
 3. Optionally commit a `.worktreemanager.json` describing env overrides and setup commands so they
    travel with the branch (see the [Configuration guide](docs/configuration.md); a ToolJet example
    is in [docs/tooljet-config.md](docs/tooljet-config.md)).
-4. **New worktree** → pick a new or existing branch/tag → Canopy creates the worktree, provisions it,
+4. **New worktree** → pick a new or existing branch/tag → Canopod creates the worktree, provisions it,
    and streams progress.
 5. **Start all** to boot the worktree's services, then click a service's port (`:3000`) to open it
    in the browser.
@@ -198,7 +198,7 @@ five-step wizard). Kept for now; `website/` is the current source of truth.
 
 ## Notes
 
-- **Settings & state** live in `~/Library/Application Support/com.midhunkumare.canopy/`
+- **Settings & state** live in `~/Library/Application Support/com.midhunkumare.canopod/`
   (`settings.json`, `state.json`).
 - See [CONTRIBUTING.md](CONTRIBUTING.md) for dev setup and commit conventions.
 
@@ -206,6 +206,6 @@ five-step wizard). Kept for now; `website/` is the current source of truth.
 
 ## License
 
-Canopy is open source under the [GNU AGPL-3.0](LICENSE). Using the app imposes no obligations on
-you; the copyleft applies if you modify and distribute (or host) Canopy itself. Optional
+Canopod is open source under the [GNU AGPL-3.0](LICENSE). Using the app imposes no obligations on
+you; the copyleft applies if you modify and distribute (or host) Canopod itself. Optional
 commercial team/cloud add-ons may be offered separately in the future.

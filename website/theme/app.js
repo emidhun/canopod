@@ -2,7 +2,7 @@
 // No dependencies, no network.
 (function () {
   var root = document.documentElement;
-  var KEY = "canopydocs.theme";
+  var KEY = "canopoddocs.theme";
 
   /** The theme actually on screen: an explicit choice, else the OS preference. */
   function current() {

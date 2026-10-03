@@ -11,13 +11,13 @@ Linux and Windows packages are experimental because no real-desktop acceptance r
 
 ## Installing from the DMG (what to tell recipients)
 ```sh
-hdiutil attach ~/Downloads/Canopy_0.5.0_aarch64.dmg
-cp -R "/Volumes/Canopy/Canopy.app" /Applications/
-hdiutil detach "/Volumes/Canopy"
-xattr -dr com.apple.quarantine /Applications/Canopy.app      # clears quarantine — the step that matters
-open /Applications/Canopy.app
+hdiutil attach ~/Downloads/Canopod_0.5.0_aarch64.dmg
+cp -R "/Volumes/Canopod/Canopod.app" /Applications/
+hdiutil detach "/Volumes/Canopod"
+xattr -dr com.apple.quarantine /Applications/Canopod.app      # clears quarantine — the step that matters
+open /Applications/Canopod.app
 ```
-Or: double-click the DMG, drag Canopy to Applications, then run only the `xattr -dr com.apple.quarantine` line.
+Or: double-click the DMG, drag Canopod to Applications, then run only the `xattr -dr com.apple.quarantine` line.
 On macOS Sequoia, the GUI alternative is System Settings → Privacy & Security → **Open Anyway**.
 
 Recipient prerequisites: git, plus only the runtimes, package managers and databases required by the
@@ -35,7 +35,7 @@ Best done under an **org account** (e.g. ToolJet's) you're a member of, rather t
 credentials (against Apple's terms; ships under their identity).
 
 ## Why not the Mac App Store
-Canopy can't be sandboxed: it spawns arbitrary shell/process trees (`npm`, `git`, `webpack`, `killpg`),
+Canopod can't be sandboxed: it spawns arbitrary shell/process trees (`npm`, `git`, `webpack`, `killpg`),
 touches arbitrary filesystem paths (worktrees anywhere), and uses private window APIs (`NSPanel`,
 `macOSPrivateApi`). All are disallowed/crippled by the App Store sandbox. Dev tools (VS Code, GitButler,
 TablePlus, etc.) all distribute outside the App Store for the same reasons — Developer ID + notarization

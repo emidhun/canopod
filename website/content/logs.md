@@ -71,8 +71,8 @@ attention queue holds.
 
 ## No log file for services
 
-Service output lives in memory, in the ring buffer above. Canopy's own log (the Rust side: IPC errors,
-spawn failures, sweep decisions) goes to the platform log directory as `canopy.log`, rolling at 2 MB
+Service output lives in memory, in the ring buffer above. Canopod's own log (the Rust side: IPC errors,
+spawn failures, sweep decisions) goes to the platform log directory as `canopod.log`, rolling at 2 MB
 with one rotation kept, at `INFO` by default and controllable with `RUST_LOG`.
 
 :::note Coming soon

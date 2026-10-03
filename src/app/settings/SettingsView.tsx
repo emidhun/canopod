@@ -1,4 +1,4 @@
-// Settings — the redesigned configuration editors (design: Canopy Settings.html).
+// Settings — the redesigned configuration editors (design: Canopod Settings.html).
 //
 // This file is the SHELL only: navigation, the repo scope picker, dirty
 // tracking, ⌘F search, ⌘P preview, import/export and the save step. Each page
@@ -45,7 +45,7 @@ import NotificationsPage from "./pages/NotificationsPage";
 import ShortcutsPage from "./pages/ShortcutsPage";
 import AdvancedPage from "./pages/AdvancedPage";
 import SecurityPage from "./pages/SecurityPage";
-import Modal from "../canopy/Modal";
+import Modal from "../canopod/Modal";
 import { invalidateTermCfg } from "../TerminalPane";
 
 /** a page whose repo has no refused rows gets this rather than a fresh Map */
@@ -408,7 +408,7 @@ export default function SettingsView({ onClose }: { onClose: () => void }) {
     if (isRepoPage && !repo) {
       return (
         <div className="empty">
-          <p>No repository selected. Add a git repository and Canopy will track every worktree in it.</p>
+          <p>No repository selected. Add a git repository and Canopod will track every worktree in it.</p>
           <button className="btn sm" onClick={addRepo}><Plus size={10} />Add repository</button>
         </div>
       );
@@ -559,7 +559,7 @@ export default function SettingsView({ onClose }: { onClose: () => void }) {
       ) : (
         <div className="statusline">
           {/* name the file only where it IS the file being edited */}
-          <span className="mono">{isRepoPage && repo ? ".worktreemanager.json" : "Canopy settings"}</span>
+          <span className="mono">{isRepoPage && repo ? ".worktreemanager.json" : "Canopod settings"}</span>
           <span className="sdiv" />
           <span>All changes saved</span>
           <span style={{ flex: 1 }} />

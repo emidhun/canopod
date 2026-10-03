@@ -4,7 +4,7 @@ import {
   FONT_SCALE_MAX, FONT_SCALE_MIN, FONT_SCALE_STEP, type Appearance,
 } from "./appearance";
 
-const KEY = "canopy.appearance";
+const KEY = "canopod.appearance";
 const DEFAULTS: Appearance = { theme: "dark", density: "comfortable", accent: "teal", fontScale: 1 };
 
 beforeEach(() => {
@@ -71,12 +71,12 @@ describe("setAppearance", () => {
     expect(JSON.parse(localStorage.getItem(KEY)!)).toEqual({ ...DEFAULTS, accent: "green" });
   });
 
-  it("applies live and notifies via the canopy:appearance event", () => {
+  it("applies live and notifies via the canopod:appearance event", () => {
     const seen: Appearance[] = [];
     const onEvt = (e: Event) => seen.push((e as CustomEvent<Appearance>).detail);
-    window.addEventListener("canopy:appearance", onEvt);
+    window.addEventListener("canopod:appearance", onEvt);
     const next = setAppearance({ density: "compact" });
-    window.removeEventListener("canopy:appearance", onEvt);
+    window.removeEventListener("canopod:appearance", onEvt);
     expect(document.documentElement.dataset.density).toBe("compact");
     expect(seen).toEqual([next]);
   });

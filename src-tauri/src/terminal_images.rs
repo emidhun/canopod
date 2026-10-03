@@ -30,7 +30,7 @@ impl Attachments {
         // tempfile uses exclusive creation and mode 0600 on Unix. Windows uses
         // the current user's temp directory and inherited private-user ACL.
         let mut file = tempfile::Builder::new()
-            .prefix("canopy-image-")
+            .prefix("canopod-image-")
             .suffix(extension)
             .tempfile()
             .map_err(|e| e.to_string())?;

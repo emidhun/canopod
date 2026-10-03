@@ -1,4 +1,4 @@
-// Terminal — the shell Canopy opens inside a worktree.
+// Terminal — the shell Canopod opens inside a worktree.
 import { type TermCfg } from "../../../ipc";
 import { TRow } from "../primitives";
 import { DEFAULT_TERM } from "../provision";
@@ -29,7 +29,7 @@ export default function TerminalPage({ settings, patch, markDirty }: PageProps) 
           <input aria-label="Program" className="inp mono" value={t.program} placeholder="your login shell" onChange={(e) => set({ program: e.target.value })} />
           <span className="lb">Arguments</span>
           <input aria-label="Arguments" className="inp mono" value={t.args} placeholder="only used with an explicit program" disabled={!t.program.trim()}
-            title={t.program.trim() ? undefined : "Canopy passes its own -l/-i flags to a login shell it picked; your arguments would collide with them."}
+            title={t.program.trim() ? undefined : "Canopod passes its own -l/-i flags to a login shell it picked; your arguments would collide with them."}
             onChange={(e) => set({ args: e.target.value })} />
           <span className="lb">Font</span>
           <div className="row">

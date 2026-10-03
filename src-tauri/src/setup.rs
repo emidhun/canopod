@@ -10,7 +10,7 @@
 //     "setup": [ "npm --prefix server install", "npm run db:create" ]
 //   }
 //
-// On create/setup Canopy seeds `.env` from the main checkout, applies the `env`
+// On create/setup Canopod seeds `.env` from the main checkout, applies the `env`
 // overrides (interpolating ${VAR}), then runs the `setup` commands. Available
 // vars: WT_SLUG, WT_DB_NAME, WT_INDEX, WT_<SERVICE>_PORT, WT_PATH, REPO_PATH.
 //
@@ -23,7 +23,7 @@ use tokio::process::Command;
 
 const CONFIG_NAMES: [&str; 2] = [".worktreemanager.json", "wtm.json"];
 
-/// One file Canopy seeds + templates into every new worktree. `dotenv`/`json`/
+/// One file Canopod seeds + templates into every new worktree. `dotenv`/`json`/
 /// `yaml` seed the file (copy `from`, or the same path in the main checkout, if
 /// missing) then upsert `keys` — every other line is preserved. `text` copies
 /// the whole file and, when `interpolate` is set, replaces every `${VAR}`.
@@ -287,7 +287,7 @@ pub fn write_repo_config_sections(
     if let Some(obj) = root.as_object_mut() {
         obj.remove("env"); // migrated into `provision`
     }
-    root["$schema"] = serde_json::Value::String("canopy://worktree-manager/v1".into());
+    root["$schema"] = serde_json::Value::String("canopod://worktree-manager/v1".into());
     root["provision"] = provision_to_json(provision);
     for (key, commands) in [("teardown", teardown), ("migrate", migrate)] {
         if let Some(commands) = commands {
@@ -346,12 +346,12 @@ pub fn write_repo_config_sections(
 // ── the setup marker ──────────────────────────────────────────────────
 //
 // Whether a worktree has ever been provisioned is a *durable* fact about the
-// worktree, not about this run of Canopy — so it lives next to the worktree
-// (`.canopy/setup.json`) rather than in app state. That survives a restart, a
-// `get_tree` rescan, and a Canopy reinstall, and it is greppable when
+// worktree, not about this run of Canopod — so it lives next to the worktree
+// (`.canopod/setup.json`) rather than in app state. That survives a restart, a
+// `get_tree` rescan, and a Canopod reinstall, and it is greppable when
 // debugging a repo by hand.
 //
-// `.canopy/` is already the worktree-local Canopy directory (see
+// `.canopod/` is already the worktree-local Canopod directory (see
 // `write_worktree_context`) and self-ignores via its own `.gitignore`, so the
 // marker never shows up in `git status`.
 
@@ -372,7 +372,7 @@ struct SetupMarker {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize)]
 #[serde(rename_all = "lowercase")]
 pub enum SetupSource {
-    /// read from `.canopy/setup.json` — authoritative
+    /// read from `.canopod/setup.json` — authoritative
     Marker,
     /// no marker, but every declared provisioned file is already present.
     /// Worktrees created before the marker existed land here; without this
@@ -381,7 +381,7 @@ pub enum SetupSource {
     Inferred,
 }
 
-/// What Canopy knows about a worktree's provisioning.
+/// What Canopod knows about a worktree's provisioning.
 #[derive(Debug, Clone, PartialEq, serde::Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct SetupState {
@@ -394,7 +394,7 @@ pub struct SetupState {
 }
 
 fn marker_path(wt_path: &str) -> std::path::PathBuf {
-    Path::new(wt_path).join(".canopy").join("setup.json")
+    crate::legacy::worktree_dir(Path::new(wt_path)).join("setup.json")
 }
 
 /// Record that setup finished for a worktree. Best-effort: setup itself
@@ -402,12 +402,12 @@ fn marker_path(wt_path: &str) -> std::path::PathBuf {
 /// couldn't write must never turn a good run into a reported failure — the
 /// worst case is the worktree reads as unprovisioned and offers a re-run.
 pub fn write_setup_marker(wt_path: &str, ok: bool) {
-    let dir = Path::new(wt_path).join(".canopy");
+    let dir = crate::legacy::worktree_dir(Path::new(wt_path));
     if let Err(e) = std::fs::create_dir_all(&dir) {
         log::warn!("setup marker: mkdir {} failed: {e}", dir.display());
         return;
     }
-    // keep `.canopy/` out of git the same way write_worktree_context does,
+    // keep `.canopod/` out of git the same way write_worktree_context does,
     // without ever truncating an existing ignore file
     let ignore = dir.join(".gitignore");
     if !ignore.exists() {
@@ -436,7 +436,7 @@ pub fn write_setup_marker(wt_path: &str, ok: bool) {
 /// — an `exists()` per declared provisioned file. No directory walks.
 ///
 /// Returns `(state, configured)`. `state == None` means "never provisioned as
-/// far as Canopy can tell"; that is only actionable when `configured` is true.
+/// far as Canopod can tell"; that is only actionable when `configured` is true.
 pub fn setup_status(wt_path: &str, repo_path: &str) -> (Option<SetupState>, bool) {
     let cfg = read_config(wt_path, repo_path);
     let configured = !cfg.provision.is_empty() || !cfg.setup.is_empty();
@@ -863,7 +863,7 @@ pub async fn run_setup(
                 provision_file(wt_path, repo_path, pf, vars)?;
             }
         }
-        // Provisioning is the one step whose count Canopy knows exactly rather
+        // Provisioning is the one step whose count Canopod knows exactly rather
         // than having to parse out of someone else's output.
         progress(Progress::StepResult { index: 0, text: format!("{n} file{}", if n == 1 { "" } else { "s" }) });
     }
@@ -1401,7 +1401,7 @@ mod tests {
        every task's output was filed under task 1. */
     #[test]
     fn lifecycle_edits_preserve_unknown_keys_and_fail_closed() {
-        let dir = std::env::temp_dir().join(format!("canopy-lifecycle-edit-{}", std::process::id()));
+        let dir = std::env::temp_dir().join(format!("canopod-lifecycle-edit-{}", std::process::id()));
         std::fs::create_dir_all(&dir).unwrap();
         let file = dir.join(".worktreemanager.json");
         std::fs::write(&file, r#"{"custom":{"keep":true},"teardown":["old"]}"#).unwrap();
@@ -1430,7 +1430,7 @@ mod tests {
 
     #[tokio::test]
     async fn every_setup_task_announces_its_own_number_exactly_once() {
-        let dir = std::env::temp_dir().join("canopy_step_numbering_test");
+        let dir = std::env::temp_dir().join("canopod_step_numbering_test");
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(&dir).unwrap();
         let d = dir.to_str().unwrap();
@@ -1464,7 +1464,7 @@ mod tests {
 
     #[test]
     fn setup_accepts_strings_and_objects_and_round_trips_plainly() {
-        let dir = std::env::temp_dir().join("canopy_setup_tasks_test_xyz");
+        let dir = std::env::temp_dir().join("canopod_setup_tasks_test_xyz");
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(&dir).unwrap();
         let d = dir.to_str().unwrap();
@@ -1515,7 +1515,7 @@ mod tests {
 
     #[test]
     fn setup_marker_round_trips_and_infers_for_legacy_worktrees() {
-        let dir = std::env::temp_dir().join("canopy_setup_marker_test_xyz");
+        let dir = std::env::temp_dir().join("canopod_setup_marker_test_xyz");
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(&dir).unwrap();
         let d = dir.to_str().unwrap();
@@ -1547,7 +1547,7 @@ mod tests {
         assert_eq!(state.source, SetupSource::Marker, "the marker wins over inference");
         assert!(state.ran_at.unwrap() > 0, "marker carries a timestamp");
         assert!(state.ok);
-        assert_eq!(std::fs::read_to_string(dir.join(".canopy/.gitignore")).unwrap(), "*\n", "marker dir self-ignores");
+        assert_eq!(std::fs::read_to_string(dir.join(".canopod/.gitignore")).unwrap(), "*\n", "marker dir self-ignores");
 
         // a failed run is recorded as a failure, not as "never ran" — the UI
         // needs to distinguish half-provisioned from untouched
@@ -1556,7 +1556,7 @@ mod tests {
         assert!(!state.expect("marker present").ok, "failure is recorded");
 
         // a corrupt marker falls back to inference rather than being trusted
-        std::fs::write(dir.join(".canopy/setup.json"), "{ truncated").unwrap();
+        std::fs::write(dir.join(".canopod/setup.json"), "{ truncated").unwrap();
         let (state, _) = setup_status(d, d);
         assert_eq!(state.expect("falls back").source, SetupSource::Inferred);
 
@@ -1565,7 +1565,7 @@ mod tests {
 
     #[test]
     fn setup_status_reports_unconfigured_repos() {
-        let dir = std::env::temp_dir().join("canopy_setup_unconfigured_test_xyz");
+        let dir = std::env::temp_dir().join("canopod_setup_unconfigured_test_xyz");
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(&dir).unwrap();
         let d = dir.to_str().unwrap();
@@ -1707,7 +1707,7 @@ mod tests {
 
     #[test]
     fn write_repo_config_preserves_extras_and_refuses_malformed() {
-        let dir = std::env::temp_dir().join("canopy_cfg_test_xyz");
+        let dir = std::env::temp_dir().join("canopod_cfg_test_xyz");
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(&dir).unwrap();
         let cfg_path = dir.join(".worktreemanager.json");
@@ -1727,7 +1727,7 @@ mod tests {
         assert_eq!(v["teardown"][0], "dropdb", "teardown preserved");
         assert_eq!(v["migrate"][0], "npm run m", "migrate preserved");
         assert_eq!(v["provision"][0]["path"], ".env");
-        assert_eq!(v["$schema"], "canopy://worktree-manager/v1");
+        assert_eq!(v["$schema"], "canopod://worktree-manager/v1");
 
         // malformed existing file → hard error, file untouched
         std::fs::write(&cfg_path, "{ not json").unwrap();
@@ -1739,7 +1739,7 @@ mod tests {
 
     #[test]
     fn read_config_migrates_legacy_env() {
-        let dir = std::env::temp_dir().join("canopy_legacy_test_xyz");
+        let dir = std::env::temp_dir().join("canopod_legacy_test_xyz");
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(&dir).unwrap();
         std::fs::write(
@@ -1758,7 +1758,7 @@ mod tests {
 
     #[test]
     fn provision_rejects_escaping_paths() {
-        let dir = std::env::temp_dir().join("canopy_contain_test_xyz");
+        let dir = std::env::temp_dir().join("canopod_contain_test_xyz");
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(&dir).unwrap();
         let vars = HashMap::new();

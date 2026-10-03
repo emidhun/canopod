@@ -1,10 +1,10 @@
-use canopy_lib::{
+use canopod_lib::{
     app_api, backend,
     credentials::{CredentialKind, CredentialStore},
 };
 use std::path::PathBuf;
 
-const USAGE: &str = "canopy-backend <serve|status|stop|repo|mcp> [--config-dir PATH] [--data-dir PATH] [--log-dir PATH]\ncanopy-backend serve [--port PORT]\ncanopy-backend repo add PATH\n\nServe runs in the foreground; use a supervisor for persistence. Status/stop attach\nto the authenticated loopback backend hosted by Canopy or canopy-backend, without launching a GUI. `repo add` registers an existing Git repository with that backend. MCP defaults to disabled and read-only; worktree creation/setup require --allow-worktree-write. Stop acknowledges asynchronous process cleanup.\ncanopy-backend mcp <status|enable|disable|rotate-token|smoke> [--repo ID]... [--allow-worktree-write | --read-only] [--allow-service-control | --no-service-control] [--allow-configuration | --no-configuration]\nEnable requires explicit registered repository IDs on first use. Re-enable without\n--repo preserves the allowlist. `mcp smoke --repo ID` verifies initialize, prompt/tool discovery, cached status, and the warm latency budget without printing credentials. Credentials remain in private files; commands never print them.\n--port accepts 1024..65535 and persists for subsequent serve/status/stop commands.";
+const USAGE: &str = "canopod-backend <serve|status|stop|repo|mcp> [--config-dir PATH] [--data-dir PATH] [--log-dir PATH]\ncanopod-backend serve [--port PORT]\ncanopod-backend repo add PATH\n\nServe runs in the foreground; use a supervisor for persistence. Status/stop attach\nto the authenticated loopback backend hosted by Canopod or canopod-backend, without launching a GUI. `repo add` registers an existing Git repository with that backend. MCP defaults to disabled and read-only; worktree creation/setup require --allow-worktree-write. Stop acknowledges asynchronous process cleanup.\ncanopod-backend mcp <status|enable|disable|rotate-token|smoke> [--repo ID]... [--allow-worktree-write | --read-only] [--allow-service-control | --no-service-control] [--allow-configuration | --no-configuration]\nEnable requires explicit registered repository IDs on first use. Re-enable without\n--repo preserves the allowlist. `mcp smoke --repo ID` verifies initialize, prompt/tool discovery, cached status, and the warm latency budget without printing credentials. Credentials remain in private files; commands never print them.\n--port accepts 1024..65535 and persists for subsequent serve/status/stop commands.";
 
 struct StderrLogger;
 impl log::Log for StderrLogger {
@@ -28,7 +28,7 @@ fn main() {
             .unwrap_or(log::LevelFilter::Info),
     );
     if let Err(error) = run() {
-        eprintln!("canopy-backend: {error}");
+        eprintln!("canopod-backend: {error}");
         std::process::exit(1);
     }
 }
@@ -41,7 +41,7 @@ fn run() -> Result<(), String> {
             return Ok(());
         }
         Some("--version") => {
-            println!("canopy-backend {}", env!("CARGO_PKG_VERSION"));
+            println!("canopod-backend {}", env!("CARGO_PKG_VERSION"));
             return Ok(());
         }
         Some("serve") => "serve",
@@ -174,11 +174,16 @@ fn run() -> Result<(), String> {
     let defaults = backend::default_paths()?;
     let canonical =
         |path: &std::path::Path| std::fs::canonicalize(path).unwrap_or_else(|_| path.to_owned());
+    // Carry pre-rename directories over only for the real install, never for
+    // an isolated host (tests, smoke runs) pointed at its own directories.
+    if paths.data == defaults.data || paths.config == defaults.config {
+        canopod_lib::legacy::migrate_app_dirs(backend::APP_ID);
+    }
     if action == "serve"
         && (canonical(&paths.data) == canonical(&defaults.data)
             || canonical(&paths.config) == canonical(&defaults.config))
     {
-        canopy_lib::ownership::refuse_legacy_desktop()?;
+        canopod_lib::ownership::refuse_legacy_desktop()?;
     }
     let runtime = tokio::runtime::Runtime::new().map_err(|e| format!("start executor: {e}"))?;
     let result = runtime.block_on(async {
@@ -195,7 +200,7 @@ fn run() -> Result<(), String> {
         let server = app_api::Server::bind(app.clone(), config.port, shutdown).await?;
         config.save(&app.path().config)?;
         eprintln!(
-            "canopy-backend {} running in foreground (pid {}) at http://127.0.0.1:{}",
+            "canopod-backend {} running in foreground (pid {}) at http://127.0.0.1:{}",
             env!("CARGO_PKG_VERSION"),
             std::process::id(),
             config.port
@@ -209,7 +214,7 @@ fn run() -> Result<(), String> {
 }
 
 async fn attach(
-    paths: &canopy_lib::runtime::RuntimePaths,
+    paths: &canopod_lib::runtime::RuntimePaths,
     action: &str,
     repo_ids: Vec<String>,
     allow_worktree_write: Option<bool>,
@@ -219,11 +224,11 @@ async fn attach(
 ) -> Result<(), String> {
     let config = app_api::Config::load(&paths.config)?;
     let store = CredentialStore::open_existing(&paths.data)
-        .map_err(|e| format!("read backend credentials: {e}; launch Canopy or start canopy-backend serve first"))?;
+        .map_err(|e| format!("read backend credentials: {e}; launch Canopod or start canopod-backend serve first"))?;
     let bearer = store
         .load(CredentialKind::Application)
         .map_err(|e| e.to_string())?
-        .ok_or("application credential is absent; launch Canopy or start canopy-backend serve first")?;
+        .ok_or("application credential is absent; launch Canopod or start canopod-backend serve first")?;
     let client = reqwest::Client::builder()
         .no_proxy()
         .redirect(reqwest::redirect::Policy::none())
@@ -257,13 +262,13 @@ async fn attach(
     };
     let mut response = request
         .header("authorization", authorization)
-        .header("x-canopy-api-version", app_api::API_VERSION)
+        .header("x-canopod-api-version", app_api::API_VERSION)
         .send()
         .await
-        .map_err(|e| format!("backend unavailable: {e}; launch Canopy or run canopy-backend serve"))?;
+        .map_err(|e| format!("backend unavailable: {e}; launch Canopod or run canopod-backend serve"))?;
     if response
         .headers()
-        .get("x-canopy-api-version")
+        .get("x-canopod-api-version")
         .and_then(|h| h.to_str().ok())
         != Some(app_api::API_VERSION)
     {
@@ -294,7 +299,7 @@ async fn attach(
 async fn mcp_rpc(
     client: &reqwest::Client,
     port: u16,
-    bearer: &canopy_lib::credentials::Bearer,
+    bearer: &canopod_lib::credentials::Bearer,
     id: u64,
     method: &str,
     params: serde_json::Value,
@@ -333,7 +338,7 @@ async fn mcp_rpc(
 async fn mcp_smoke(
     client: &reqwest::Client,
     port: u16,
-    bearer: &canopy_lib::credentials::Bearer,
+    bearer: &canopod_lib::credentials::Bearer,
     repo_id: &str,
 ) -> Result<(), String> {
     let initialized = mcp_rpc(
@@ -345,21 +350,21 @@ async fn mcp_smoke(
         serde_json::json!({
             "protocolVersion":"2025-03-26",
             "capabilities":{},
-            "clientInfo":{"name":"canopy-release-smoke","version":env!("CARGO_PKG_VERSION")}
+            "clientInfo":{"name":"canopod-release-smoke","version":env!("CARGO_PKG_VERSION")}
         }),
     )
     .await?;
-    if initialized["serverInfo"]["name"] != "canopy-mcp"
+    if initialized["serverInfo"]["name"] != "canopod-mcp"
         || initialized["capabilities"]["tools"].is_null()
         || initialized["capabilities"]["prompts"].is_null()
     {
-        return Err("MCP initialize omitted Canopy tools or prompts".into());
+        return Err("MCP initialize omitted Canopod tools or prompts".into());
     }
 
     let prompts = mcp_rpc(client, port, bearer, 2, "prompts/list", serde_json::json!({})).await?;
     if !prompts["prompts"]
         .as_array()
-        .is_some_and(|items| items.iter().any(|item| item["name"] == "canopy_worktree_delivery"))
+        .is_some_and(|items| items.iter().any(|item| item["name"] == "canopod_worktree_delivery"))
     {
         return Err("MCP workflow prompt is missing".into());
     }
@@ -370,7 +375,7 @@ async fn mcp_smoke(
         3,
         "prompts/get",
         serde_json::json!({
-            "name":"canopy_worktree_delivery",
+            "name":"canopod_worktree_delivery",
             "arguments":{"repoId":repo_id,"task":"Validate the packaged MCP workflow","branch":"smoke/mcp"}
         }),
     )
@@ -386,7 +391,7 @@ async fn mcp_smoke(
     let Some(advertised_tools) = tools["tools"].as_array() else {
         return Err("MCP tool discovery returned an invalid tool list".into());
     };
-    if !advertised_tools.iter().any(|item| item["name"] == "canopy_status") {
+    if !advertised_tools.iter().any(|item| item["name"] == "canopod_status") {
         return Err("MCP cached status tool is missing".into());
     }
     if advertised_tools
@@ -395,7 +400,7 @@ async fn mcp_smoke(
     {
         return Err("MCP tool discovery omitted a stable output schema".into());
     }
-    for required in ["canopy_repositories", "canopy_worktrees", "canopy_worktree"] {
+    for required in ["canopod_repositories", "canopod_worktrees", "canopod_worktree"] {
         if !advertised_tools.iter().any(|item| item["name"] == required) {
             return Err(format!("MCP discovery tool is missing: {required}"));
         }
@@ -407,20 +412,20 @@ async fn mcp_smoke(
         bearer,
         5,
         "tools/call",
-        serde_json::json!({"name":"canopy_repositories","arguments":{}}),
+        serde_json::json!({"name":"canopod_repositories","arguments":{}}),
     )
     .await?;
     if repositories["structuredContent"]["repositories"]
         .as_array()
         .is_none_or(|items| !items.iter().any(|repo| repo["repoId"] == repo_id))
     {
-        return Err("canopy_repositories omitted the allowed repository".into());
+        return Err("canopod_repositories omitted the allowed repository".into());
     }
     if repositories["structuredContent"]["repositories"][0]
         .get("path")
         .is_some()
     {
-        return Err("canopy_repositories exposed a filesystem path".into());
+        return Err("canopod_repositories exposed a filesystem path".into());
     }
     let worktrees = mcp_rpc(
         client,
@@ -428,23 +433,23 @@ async fn mcp_smoke(
         bearer,
         6,
         "tools/call",
-        serde_json::json!({"name":"canopy_worktrees","arguments":{"repoId":repo_id}}),
+        serde_json::json!({"name":"canopod_worktrees","arguments":{"repoId":repo_id}}),
     )
     .await?;
     let worktree_key = worktrees["structuredContent"]["worktrees"][0]["worktreeKey"]
         .as_str()
-        .ok_or("canopy_worktrees omitted the main worktree")?;
+        .ok_or("canopod_worktrees omitted the main worktree")?;
     let worktree = mcp_rpc(
         client,
         port,
         bearer,
         7,
         "tools/call",
-        serde_json::json!({"name":"canopy_worktree","arguments":{"repoId":repo_id,"worktreeKey":worktree_key}}),
+        serde_json::json!({"name":"canopod_worktree","arguments":{"repoId":repo_id,"worktreeKey":worktree_key}}),
     )
     .await?;
     if worktree["structuredContent"]["worktreeKey"] != worktree_key {
-        return Err("canopy_worktree returned the wrong worktree".into());
+        return Err("canopod_worktree returned the wrong worktree".into());
     }
     if worktree["structuredContent"].get("path").is_some()
         || worktree["structuredContent"].get("dbName").is_some()
@@ -452,7 +457,7 @@ async fn mcp_smoke(
             .get("lastCommitMsg")
             .is_some()
     {
-        return Err("canopy_worktree exposed a private field".into());
+        return Err("canopod_worktree exposed a private field".into());
     }
 
     let mut samples = Vec::with_capacity(25);
@@ -464,14 +469,14 @@ async fn mcp_smoke(
             bearer,
             id,
             "tools/call",
-            serde_json::json!({"name":"canopy_status","arguments":{"repoId":repo_id}}),
+            serde_json::json!({"name":"canopod_status","arguments":{"repoId":repo_id}}),
         )
         .await?;
         if result["isError"] == true {
-            return Err(format!("canopy_status failed: {}", result["content"]));
+            return Err(format!("canopod_status failed: {}", result["content"]));
         }
         if result["structuredContent"]["repoId"] != repo_id {
-            return Err("canopy_status omitted typed structuredContent".into());
+            return Err("canopod_status omitted typed structuredContent".into());
         }
         samples.push(started.elapsed().as_secs_f64() * 1000.0);
     }
@@ -487,8 +492,8 @@ async fn mcp_smoke(
         serde_json::to_string_pretty(&serde_json::json!({
             "status":"ok",
             "protocol":"2025-03-26",
-            "server":"canopy-mcp",
-            "workflowPrompt":"canopy_worktree_delivery",
+            "server":"canopod-mcp",
+            "workflowPrompt":"canopod_worktree_delivery",
             "tools":tool_count,
             "outputSchemas":tool_count,
             "samples":samples.len(),

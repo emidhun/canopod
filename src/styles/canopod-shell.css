@@ -1,9 +1,9 @@
-/* Canopy workspace shell — the redesigned main window.
+/* Canopod workspace shell — the redesigned main window.
 
    Layout regions are FLAT: no radius, no shadow, separated by 1px hairlines
    and background tone. Radius and shadow belong to things that float
    (popovers, the palette, toasts) and to interactive controls, which live in
-   canopy-components.css. A bordered box inside a bordered box is a bug.
+   canopod-components.css. A bordered box inside a bordered box is a bug.
 
    Narrow behaviour keys off the PANE, not the viewport — panes resize
    independently of the window, so @media cannot see them. Hence

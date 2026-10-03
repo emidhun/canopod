@@ -1,7 +1,7 @@
 /* Launching agent + shell sessions, shared by the work surface and ⌘K.
 
    The logic is the agent lane's, lifted so both entry points behave
-   identically: the handoff is written to .canopy/context.md first, then the
+   identically: the handoff is written to .canopod/context.md first, then the
    agent runs as its OWN PTY with the prompt as its first argument. Running it
    as the session's command means the session ends — and the tab flips to
    "ended" — exactly when the agent exits.
@@ -134,7 +134,7 @@ export function useLaneLaunch(defaultRepo: RepoNode, defaultWt: WorktreeNode): L
         await ipc.writeWorktreeContext(wt.path, composeContextMd(ctx, runtime, parts, failing));
         const prompt = composeAgentPrompt(ctx, runtime);
         // A profile can opt out for CLIs that do not accept an initial
-        // positional prompt; those still get CANOPY_CONTEXT_FILE.
+        // positional prompt; those still get CANOPOD_CONTEXT_FILE.
         const command = profile.promptOnLaunch ? `${profile.command} ${shellQuote(prompt)}` : profile.command;
         openSession({ id, wtKey: wt.wtKey, kind: "agent", title, agentId: profile.id, command });
         showToast(`${title} started — ${wt.branch}`);

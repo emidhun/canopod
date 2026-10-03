@@ -4,6 +4,7 @@ pub mod backend;
 pub mod app_api;
 pub mod mcp;
 pub mod jobs;
+pub mod legacy;
 pub mod credentials;
 #[cfg(test)]
 mod csp;
@@ -48,7 +49,7 @@ use tauri::Manager;
 #[cfg(feature = "desktop")]
 use terminal::TermTable;
 
-/// Is any Canopy window (main / popover / detached terminal) on screen?
+/// Is any Canopod window (main / popover / detached terminal) on screen?
 /// Queries the OS — used only by the 1s poll below; hot paths read the cache.
 #[cfg(feature = "desktop")]
 pub(crate) fn any_window_visible(app: &tauri::AppHandle) -> bool {
@@ -80,6 +81,8 @@ pub(crate) fn note_window_shown() {
 #[cfg(feature = "desktop")]
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    // Before any plugin or webview creates its directory under the new name.
+    legacy::migrate_app_dirs(backend::APP_ID);
     // GUI apps on macOS get a bare PATH; fix it so git/node/nvm resolve.
     let _ = fix_path_env::fix();
 
@@ -103,7 +106,7 @@ pub fn run() {
             tauri_plugin_log::Builder::new()
                 .targets([
                     tauri_plugin_log::Target::new(tauri_plugin_log::TargetKind::LogDir {
-                        file_name: Some("canopy".into()),
+                        file_name: Some("canopod".into()),
                     }),
                     tauri_plugin_log::Target::new(tauri_plugin_log::TargetKind::Stderr),
                 ])
@@ -138,7 +141,7 @@ pub fn run() {
                     handle
                         .dialog()
                         .message(error)
-                        .title("Canopy could not start")
+                        .title("Canopod could not start")
                         .kind(MessageDialogKind::Error)
                         .show(move |_| exit.exit(1));
                     return Ok(());

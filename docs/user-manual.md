@@ -1,6 +1,6 @@
-# Canopy — Complete User Manual
+# Canopod — Complete User Manual
 
-Canopy is a macOS **menu-bar app** for managing multiple **git worktrees** of your repositories,
+Canopod is a macOS **menu-bar app** for managing multiple **git worktrees** of your repositories,
 each running its own dev services in an isolated environment. It gives every branch its own database,
 its own ports, and its own set of running services — so you can work on many branches at once without
 them colliding, and switch between them instantly instead of stashing and restarting.
@@ -35,31 +35,31 @@ variables you can reference.
 
 ## 1. Core concepts
 
-| Concept | What it means in Canopy |
+| Concept | What it means in Canopod |
 |---|---|
-| **Repository** | A git repo you register with Canopy (its main checkout on disk). |
+| **Repository** | A git repo you register with Canopod (its main checkout on disk). |
 | **Worktree** | A `git worktree` of that repo — a branch checked out into its own folder. Each is managed independently. |
-| **Service** | A long-running process for a worktree (e.g. a frontend dev server, an API server, a background worker). You define the command; Canopy starts/stops/monitors it. |
+| **Service** | A long-running process for a worktree (e.g. a frontend dev server, an API server, a background worker). You define the command; Canopod starts/stops/monitors it. |
 | **Isolation** | Every worktree gets its **own database** and its **own set of ports**, so multiple branches run side-by-side without conflict. |
 | **Provisioning** | The steps that prepare a worktree after it's created (install deps, create DB, set env). Declared in the repo so they travel with the branch. |
 
-**The mental model:** Canopy is the *source of truth* for what's running. You register repos and define
-their services once; then for each branch you create a worktree, and Canopy provisions it, assigns its
+**The mental model:** Canopod is the *source of truth* for what's running. You register repos and define
+their services once; then for each branch you create a worktree, and Canopod provisions it, assigns its
 ports and database, and lets you start everything with one click.
 
 ---
 
 ## 2. Installing & launching
 
-Canopy is a **macOS (Apple Silicon)** app distributed as a `.dmg`.
+Canopod is a **macOS (Apple Silicon)** app distributed as a `.dmg`.
 
-1. Open the DMG and drag **Canopy** to Applications.
+1. Open the DMG and drag **Canopod** to Applications.
 2. Because the current build isn't notarized, clear the quarantine flag once (in Terminal):
    ```sh
-   xattr -dr com.apple.quarantine /Applications/Canopy.app
+   xattr -dr com.apple.quarantine /Applications/Canopod.app
    ```
    (Or: System Settings → Privacy & Security → **Open Anyway**.)
-3. Launch Canopy. It runs in the **menu bar** — there is no Dock icon. Look for the Canopy mark (a small
+3. Launch Canopod. It runs in the **menu bar** — there is no Dock icon. Look for the Canopod mark (a small
    fork/branch glyph) in the menu bar.
 
 Click the menu-bar icon to open the **popover**; from there, **Open Manager** opens the main window.
@@ -73,7 +73,7 @@ opening the full window.
 
 **Top actions**
 - **Open Manager** — opens the main window.
-- **Quit** — stops every service Canopy started and exits the app.
+- **Quit** — stops every service Canopod started and exits the app.
 
 **Per repository → per worktree**
 Repos are grouped; under each, one row per worktree showing:
@@ -92,7 +92,7 @@ worktrees than fit on screen. It closes automatically when it loses focus.
 
 ## 4. The main window
 
-A slim **title bar** at top (with the Canopy mark, a **＋ Add repository** button, a **Rescan** button,
+A slim **title bar** at top (with the Canopod mark, a **＋ Add repository** button, a **Rescan** button,
 and **Settings**), then two panes: a **sidebar** on the left and the **worktree view** on the right.
 
 ### 4.1 Sidebar
@@ -131,20 +131,20 @@ Fills the remaining height — see §14.
 
 ## 5. Adding a repository (onboarding)
 
-The first time you launch Canopy (no repos yet), or whenever you click **＋ Add repository**, a 5-step
+The first time you launch Canopod (no repos yet), or whenever you click **＋ Add repository**, a 5-step
 wizard opens:
 
-1. **Repository** — choose the repo folder (Browse or type a path). Canopy verifies it's a git repo and
+1. **Repository** — choose the repo folder (Browse or type a path). Canopod verifies it's a git repo and
    reads its branch and origin.
-2. **Stack** — Canopy guesses the framework (Node, Next.js, NestJS, Rails, Django, Go, Rust…). Confirm or
+2. **Stack** — Canopod guesses the framework (Node, Next.js, NestJS, Rails, Django, Go, Rust…). Confirm or
    change it.
-3. **Services** — Canopy reads the repo's `package.json` scripts and suggests services (e.g. `start`,
-   `start:dev`). Toggle which ones Canopy should run per worktree.
+3. **Services** — Canopod reads the repo's `package.json` scripts and suggests services (e.g. `start`,
+   `start:dev`). Toggle which ones Canopod should run per worktree.
 4. **Commands** — pre-filled database commands (reset / migrate), per-worktree env overrides, and setup
    steps. Edit or toggle any of them.
-5. **Review** — a summary of everything Canopy will save. Confirm to add the repo.
+5. **Review** — a summary of everything Canopod will save. Confirm to add the repo.
 
-On finish, Canopy saves your service/command configuration and writes the repo's provisioning file
+On finish, Canopod saves your service/command configuration and writes the repo's provisioning file
 (`.worktreemanager.json`). You can change anything later in **Settings**.
 
 > **Note:** auto-detection reads `package.json`. For non-Node stacks it detects the stack but you
@@ -176,14 +176,14 @@ Each service shows:
 - **Restart** and **Start/Stop** controls (appear on hover / when stopped).
 
 ### Editing a port
-Hover the port chip and click **✎**, type a new port, press Enter. Canopy validates it, re-derives any
+Hover the port chip and click **✎**, type a new port, press Enter. Canopod validates it, re-derives any
 dependent env keys, and auto-restarts the service if it was running. The override persists.
 
 ---
 
 ## 7. Ports — how they're assigned & named
 
-Canopy assigns **deterministic, non-colliding ports** to each worktree so multiple branches can run at
+Canopod assigns **deterministic, non-colliding ports** to each worktree so multiple branches can run at
 once.
 
 ### The formula
@@ -200,7 +200,7 @@ effective port = explicit override (if set)
 - An explicit **per-service override** (set via the port ✎ editor) takes precedence over the formula.
 
 ### Port variables (what to use in commands / .env)
-For a service with **id** `frontend`, Canopy exposes its effective port under these names:
+For a service with **id** `frontend`, Canopod exposes its effective port under these names:
 
 | Variable | Where it works | Notes |
 |---|---|---|
@@ -213,7 +213,7 @@ For a service with **id** `frontend`, Canopy exposes its effective port under th
   that needs the server's URL: `--api http://localhost:$WT_SERVER_PORT`.
 
 ### Where ports live
-Overrides and each worktree's index are stored in Canopy's runtime state (not hand-edited).
+Overrides and each worktree's index are stored in Canopod's runtime state (not hand-edited).
 
 ---
 
@@ -257,7 +257,7 @@ Connection settings are read from the worktree's `.env` using standard keys:
   - **Reset database** — destructive; runs the repo's reset command.
 
 > **Requirement:** the DB features use Postgres client binaries **matching your server's major version**
-> (Canopy picks a matching `pg_dump`/`pg_restore` from Postgres.app or Homebrew, falling back to `$PATH`).
+> (Canopod picks a matching `pg_dump`/`pg_restore` from Postgres.app or Homebrew, falling back to `$PATH`).
 > These features assume **Postgres**.
 
 ---
@@ -297,7 +297,7 @@ In **Settings**, per repository, add **Custom commands** as `{ label, command }`
 2. Choose **New branch** (name + a base branch/tag to fork from) or **Existing branch / tag** (searchable
    picker of local branches, remote branches, and tags).
 3. **Fetch all** refreshes remote branches/tags first if needed.
-4. On create, Canopy: runs `git worktree add` → initializes submodules → applies your `env` overrides →
+4. On create, Canopod: runs `git worktree add` → initializes submodules → applies your `env` overrides →
    runs the `setup` commands. Progress streams live.
 
 ### Setup
@@ -314,7 +314,7 @@ The ⋯ menu → **Remove worktree** opens a confirm dialog:
 - **Also delete branch** (off by default),
 - **Drop database** (on by default) — runs the repo's `teardown` before deletion.
 
-Canopy stops services → runs teardown → removes the worktree → optionally deletes the branch → prunes.
+Canopod stops services → runs teardown → removes the worktree → optionally deletes the branch → prunes.
 
 ---
 
@@ -348,7 +348,7 @@ Lives at the repo root (or `wtm.json`). Looked up in the **worktree first**, the
   variables exposed as `$VAR`.
 
 ### 11.3 Runtime state (per machine — don't hand-edit)
-Canopy stores each worktree's stable **port index**, any **port overrides**, and process bookkeeping in
+Canopod stores each worktree's stable **port index**, any **port overrides**, and process bookkeeping in
 its state file. This is what keeps ports stable across restarts.
 
 ---
@@ -373,11 +373,11 @@ Available to `env` values (as `${VAR}`) and to setup/migrate/teardown/custom com
 
 ## 13. Shell & toolchain
 
-- **Shell:** Canopy runs every command through your shell (from `$SHELL`, e.g. zsh/bash/fish), as a
+- **Shell:** Canopod runs every command through your shell (from `$SHELL`, e.g. zsh/bash/fish), as a
   **login shell**, so your PATH and version managers (nvm/asdf/volta/rbenv/pyenv…) initialize exactly as
   in your terminal.
 - **Node version:** if a worktree pins a Node version (`.nvmrc`, `.node-version`, or `.tool-versions`),
-  Canopy locates that version (asdf/nvm/fnm installs) and puts it first on PATH for that worktree's
+  Canopod locates that version (asdf/nvm/fnm installs) and puts it first on PATH for that worktree's
   commands — so engine-strict installs use the right Node. If it can't find the pinned version, it falls
   back to whatever Node your login shell resolves.
 - **Other languages** (Ruby/Python/Go…) resolve automatically through the login shell + your shim manager
@@ -416,12 +416,12 @@ Open with the **Settings** gear. Contains:
 
 | Symptom | Cause / fix |
 |---|---|
-| App won't open ("damaged" / "unverified") | Quarantine — run `xattr -dr com.apple.quarantine /Applications/Canopy.app`. |
+| App won't open ("damaged" / "unverified") | Quarantine — run `xattr -dr com.apple.quarantine /Applications/Canopod.app`. |
 | Setup fails with wrong Node / `notsup` | The repo needs a Node version that isn't installed, or your manager isn't found. Install the pinned version. |
 | Frontend hits the wrong API port | Set the server URL from a port variable (`http://localhost:${WT_SERVER_PORT}`) in your `env`, and start the frontend with `--port $PORT`. |
 | DB action fails on version | Install the Postgres version matching your server's major version. |
 | A service shows stopped but its port is busy | Another worktree or a stale process holds the port. Stop the other worktree, or change this service's port. |
-| A command can't find my tools | Canopy uses `$SHELL` as a login shell — make sure your PATH/manager setup is in that shell's profile. |
+| A command can't find my tools | Canopod uses `$SHELL` as a login shell — make sure your PATH/manager setup is in that shell's profile. |
 
 ---
 

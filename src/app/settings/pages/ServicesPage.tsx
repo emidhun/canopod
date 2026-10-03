@@ -1,4 +1,4 @@
-// Services — the long-running processes Canopy starts per worktree.
+// Services — the long-running processes Canopod starts per worktree.
 import { useState } from "react";
 import { type ServiceCfg } from "../../../ipc";
 import { ChevRight, Copy, Plus, Trash } from "../../../icons";

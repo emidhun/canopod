@@ -1,7 +1,7 @@
 // OS notifications and the app-icon badge.
 //
 // Every event routed through here already appears in the in-app attention
-// queue. A notification exists for the case the queue cannot cover: Canopy is
+// queue. A notification exists for the case the queue cannot cover: Canopod is
 // in the tray and you are looking at something else.
 //
 // That framing sets the defaults. Notify when a human is BLOCKING something —
@@ -10,7 +10,7 @@
 // off by default for exactly that reason.
 //
 // Two guards keep this from becoming noise:
-//   - nothing fires while a Canopy window is on screen; the pip, the queue and
+//   - nothing fires while a Canopod window is on screen; the pip, the queue and
 //     the toast have already told you
 //   - the same subject can't re-notify inside a cooldown, so a service that
 //     crash-loops produces one notification, not forty
@@ -28,7 +28,7 @@ pub struct NotifyState {
     last: Mutex<HashMap<String, Instant>>,
 }
 
-/// The kinds of thing Canopy notifies about, matching the preference fields.
+/// The kinds of thing Canopod notifies about, matching the preference fields.
 #[derive(Clone, Copy)]
 pub enum Kind {
     ServiceCrash,
@@ -59,7 +59,7 @@ pub fn notify(app: &RuntimeContext, kind: Kind, subject: &str, title: &str, body
     if !on {
         return;
     }
-    // Someone looking at Canopy has already been told, twice.
+    // Someone looking at Canopod has already been told, twice.
     if app.host().user_present() {
         return;
     }

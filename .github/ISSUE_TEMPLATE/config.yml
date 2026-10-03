@@ -1,5 +1,5 @@
 blank_issues_enabled: true
 contact_links:
   - name: Question / discussion
-    url: https://github.com/emidhun/canopy/discussions
-    about: Ask questions or share how you use Canopy — keeps Issues focused on bugs and features.
+    url: https://github.com/emidhun/canopod/discussions
+    about: Ask questions or share how you use Canopod — keeps Issues focused on bugs and features.

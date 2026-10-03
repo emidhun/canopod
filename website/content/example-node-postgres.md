@@ -19,7 +19,7 @@ my-app/
 ```
 
 ```json
-// package.json (root) — scripts Canopy will read
+// package.json (root) — scripts Canopod will read
 {
   "scripts": {
     "dev:web": "npm --prefix frontend run dev",
@@ -76,7 +76,7 @@ editor doesn't write `teardown` yet: edit the file and press Sync, or export and
 
 ```json
 {
-  "$schema": "canopy://worktree-manager/v1",
+  "$schema": "canopod://worktree-manager/v1",
   "provision": [
     {
       "path": ".env",
@@ -139,7 +139,7 @@ data.
 | A migration landed on main and you need it here | Status bar → **Pull**, then the database dialog → **Run migration**. |
 | You want a clean database | Database dialog → **Reset database**. |
 | You want to keep this state before a risky migration | Database dialog → **Save snapshot…**, accept the default name. |
-| Something else grabbed port 3010 | Click the service chip, change the port, **Save & restart**. Canopy warns you if another worktree holds it. |
+| Something else grabbed port 3010 | Click the service chip, change the port, **Save & restart**. Canopod warns you if another worktree holds it. |
 | A review request lands and you don't want a whole new worktree | `⌘\` **Switch branch** in an idle worktree; dependencies are reused. |
 | The frontend crashed | The logs fix bar: **Jump to error**, then **Restart**. |
 | You want an agent on the checkout work | ⋯ → **Context…**, write the task, **Start agent** (`⌘⏎`). |

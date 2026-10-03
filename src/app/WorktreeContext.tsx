@@ -1,6 +1,6 @@
 // Per-worktree context: a title + markdown body + links that seed the agent and
 // later become the PR body. Persisted per worktree in localStorage (keyed by
-// wtKey). Whether this should instead live as a committed `.canopy/context.md`
+// wtKey). Whether this should instead live as a committed `.canopod/context.md`
 // that travels with the branch is an open product question — see the handoff.
 import { Fragment, useEffect, useState, type ReactNode } from "react";
 import { Chevron, Copy, Doc, File, Info, Link as LinkIcon, Plus, Sparkle } from "../icons";
@@ -76,12 +76,12 @@ function load(key: string): WtContext {
     hook snapshot: `useWtContext` is per-caller state, so an edit in the
     context editor would not be visible to a launcher holding its own copy. */
 export function readWtContext(wtKey: string): WtContext {
-  return load(`canopy.ctx.${wtKey}`);
+  return load(`canopod.ctx.${wtKey}`);
 }
 
 /** Load/save a worktree's context, reloading when the selected worktree changes. */
 export function useWtContext(wtKey: string): [WtContext, (c: WtContext) => void] {
-  const key = `canopy.ctx.${wtKey}`;
+  const key = `canopod.ctx.${wtKey}`;
   const [ctx, setCtx] = useState<WtContext>(() => load(key));
   useEffect(() => setCtx(load(key)), [key]);
   const update = (c: WtContext) => {
@@ -99,7 +99,7 @@ export function useWtContext(wtKey: string): [WtContext, (c: WtContext) => void]
 export function seedWtContext(wtKey: string, partial: Partial<WtContext>) {
   const next = { ...EMPTY, ...partial };
   try {
-    localStorage.setItem(`canopy.ctx.${wtKey}`, JSON.stringify(next));
+    localStorage.setItem(`canopod.ctx.${wtKey}`, JSON.stringify(next));
   } catch {
     /* local storage is an enhancement, not a creation dependency */
   }
@@ -108,7 +108,7 @@ export function seedWtContext(wtKey: string, partial: Partial<WtContext>) {
 export const isBlank = (c: WtContext) =>
   !c.title.trim() && !c.body.trim() && !c.pr.trim() && !c.prDescription.trim() && !c.issue.trim() && !c.issueDescription.trim() && c.links.length === 0 && c.files.length === 0;
 
-/** Render the context as the markdown seed written to `.canopy/context.md`. */
+/** Render the context as the markdown seed written to `.canopod/context.md`. */
 /** Which sections of the handoff to include (Settings → Agents). Defaults
     reproduce what the handoff contained before this was configurable. */
 export interface ContextParts {
@@ -151,7 +151,7 @@ export function composeContextMd(
  * on disk so agents that support rich prompts can read it without truncation. */
 export function composeAgentPrompt(c: WtContext, runtime: WorktreeRuntime): string {
   const focus = c.title.trim() || c.issueDescription.trim() || c.prDescription.trim() || c.body.trim() || "the assigned worktree task";
-  return `Work on ${focus}. Read the complete Canopy handoff at ${runtime.path}/.canopy/context.md before making changes. Worktree: ${runtime.repo}/${runtime.branch}; database: ${runtime.dbName || "not configured"}; ports: ${runtime.ports.map((p) => `${p.name}:${p.port}`).join(", ") || "none"}.`;
+  return `Work on ${focus}. Read the complete Canopod handoff at ${runtime.path}/.canopod/context.md before making changes. Worktree: ${runtime.repo}/${runtime.branch}; database: ${runtime.dbName || "not configured"}; ports: ${runtime.ports.map((p) => `${p.name}:${p.port}`).join(", ") || "none"}.`;
 }
 
 /** Plain-text one-liner of the markdown body, for the lane summary preview. */

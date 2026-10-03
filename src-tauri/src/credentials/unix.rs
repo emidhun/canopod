@@ -117,7 +117,7 @@ pub(super) fn remove(directory: &Directory, path: &Path) -> io::Result<()> {
     let same = current.st_dev as u64 == identity.dev() && current.st_ino as u64 == identity.ino();
     if !same { return Err(denied("credential cleanup path changed after validation")) }
     // The pinned private directory and runtime writer guard exclude other
-    // principals and concurrent Canopy mutations; same-user edits are trusted.
+    // principals and concurrent Canopod mutations; same-user edits are trusted.
     if unsafe { libc::unlinkat(directory.as_raw_fd(), name.as_ptr(), 0) } < 0 { return Err(io::Error::last_os_error()) }
     Ok(())
 }

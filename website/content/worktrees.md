@@ -5,7 +5,7 @@ description: Creating, switching, pulling, committing, removing and pruning, wit
 
 # Worktrees
 
-Everything Canopy does to a worktree, and the git operation behind it.
+Everything Canopod does to a worktree, and the git operation behind it.
 
 ## Create
 
@@ -43,9 +43,9 @@ This action is available in 0.5.0.
 :::
 
 Use the **Sync external worktrees** button in the top bar, or run the same action from `⌘K`, after
-another agent or terminal creates a worktree outside Canopy.
+another agent or terminal creates a worktree outside Canopod.
 
-Sync asks Git for the registered worktrees of every repository already configured in Canopy, refreshes
+Sync asks Git for the registered worktrees of every repository already configured in Canopod, refreshes
 the sidebar, and reports how many new worktrees it found. The new worktree is immediately available to
 select, configure and run; you do not need to add the repository again.
 
@@ -55,7 +55,7 @@ The directory must have been created with `git worktree add` (or otherwise appea
 register a new repository.
 :::
 
-The same action also detects registrations whose folders were deleted outside Canopy and opens the
+The same action also detects registrations whose folders were deleted outside Canopod and opens the
 prune reconciliation described below.
 
 ## Re-running setup
@@ -78,7 +78,7 @@ On success the footer offers **Start services** (`⏎`).
 
 It reuses everything already installed here, so it costs roughly no setup time where a new worktree
 costs a full provision. Type a name that doesn't exist and you get **Create branch `<name>` off
-`<current>`**. Pick a remote row and Canopy resolves to the local short name, reusing the local branch
+`<current>`**. Pick a remote row and Canopod resolves to the local short name, reusing the local branch
 if it's there and creating it from the remote if not, since `git checkout origin/foo` would detach
 HEAD. Branches checked out in another worktree of the same repo are disabled and tagged **in use**.
 
@@ -130,7 +130,7 @@ will touch, and the exact command is printed above it.
 | Mode | Runs | Options |
 |---|---|---|
 | **Commit** | `git commit -a -m "<subject>"` | *Also add N untracked files* (off, since `-a` only picks up tracked files) prepends `git add -A`. Subject length is counted against 72. |
-| **Stash** | `git stash push [-u] [-m "<name>"]` | *Include N untracked files* adds `-u`. Naming it is optional, though Canopy has no stash list yet, so name it if you'll keep more than one. |
+| **Stash** | `git stash push [-u] [-m "<name>"]` | *Include N untracked files* adds `-u`. Naming it is optional, though Canopod has no stash list yet, so name it if you'll keep more than one. |
 | **Discard** | `git restore --source=HEAD --staged --worktree -- .` | *Also delete N untracked files from disk* adds `git clean -fd` and makes you type `discard` before the button arms. |
 
 The guards are specific:
@@ -171,7 +171,7 @@ entry, and per item you can also delete the branch and drop the leftover databas
 since it's orphaned now).
 
 The folder is already gone, so there's nothing left to warn you about losing. The database name comes
-from the snapshot Canopy took before refreshing, because the worktree's `.env` doesn't exist any more.
+from the snapshot Canopod took before refreshing, because the worktree's `.env` doesn't exist any more.
 
 ## Pinning
 

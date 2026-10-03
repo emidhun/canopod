@@ -1,27 +1,27 @@
 <p align="center">
   <picture>
     <source media="(prefers-color-scheme: dark)" srcset="assets/brandmark-dark.svg" />
-    <img src="assets/brandmark-light.svg" width="84" alt="Canopy brandmark" />
+    <img src="assets/brandmark-light.svg" width="84" alt="Canopod brandmark" />
   </picture>
 </p>
 
-# Canopy — Documentation
+# Canopod — Documentation
 
 > **These pages predate the redesign.** They describe the older UI — service cards, a log tab per
 > service, the five-step add-repository wizard — none of which the current build has. The maintained
 > documentation is the site in [`../website/`](../website/); build it with
 > `node website/scripts/build.mjs` and open `website/site/index.html`.
 
-Canopy is a lightweight **menu-bar git-worktree + dev-service manager**. It discovers
+Canopod is a lightweight **menu-bar git-worktree + dev-service manager**. It discovers
 every worktree of your registered repos, provisions each one (deps, isolated database, ports),
 and lets you start/stop services, watch logs, manage databases, and change ports — from a tray
 popover and a main window. Built for fast multi-repo / submodule workflows like ToolJet.
 There's a 12-second demo in the [main README](../README.md).
 
-- **Repo:** `github.com/emidhun/canopy`
+- **Repo:** `github.com/emidhun/canopod`
 - **Stack:** Tauri 2 (Rust backend) + React 19 + zustand
 - **Platform:** macOS **arm64** (Linux port in progress — compiles in CI, not yet validated)
-- **Bundle id:** `com.midhunkumare.canopy` · **settings:** `~/Library/Application Support/com.midhunkumare.canopy/`
+- **Bundle id:** `com.midhunkumare.canopod` · **settings:** `~/Library/Application Support/com.midhunkumare.canopod/`
 
 ## For users
 - [user-guide.md](user-guide.md) — task-oriented walkthrough: install → add repo → provision → run →

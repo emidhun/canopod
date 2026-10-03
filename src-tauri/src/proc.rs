@@ -1,11 +1,11 @@
 // Cross-platform process-group control.
 //
-// Canopy spawns each dev service (and each PTY shell) as a *tree* of processes
+// Canopod spawns each dev service (and each PTY shell) as a *tree* of processes
 // and must be able to tear the whole tree down — a dev server forks watchers,
 // bundler workers, nodemon supervisors, etc. On POSIX this is a process group
 // (`process_group(0)` + `killpg`). Windows has no process groups, so the tree is
 // wrapped in a Job Object with `KILL_ON_JOB_CLOSE`; `TerminateJobObject` kills
-// it, and the OS auto-reaps the job when Canopy exits/crashes (which is why the
+// it, and the OS auto-reaps the job when Canopod exits/crashes (which is why the
 // persisted-pgid crash sweep in services.rs/terminal.rs is Unix-only).
 //
 // Everything OS-specific lives behind this module's small API so services.rs and
@@ -246,7 +246,7 @@ mod imp {
 
     /// Part of the cross-platform API surface, but unused on Windows: its only
     /// callers are the Unix crash-orphan persist and the Unix-gated selftest.
-    /// Windows needs neither — KILL_ON_JOB_CLOSE reaps the tree when Canopy
+    /// Windows needs neither — KILL_ON_JOB_CLOSE reaps the tree when Canopod
     /// dies, so there are no orphans to record or sweep.
     #[allow(dead_code)]
     pub fn group_key(g: &ProcGroup) -> i64 {

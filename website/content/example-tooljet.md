@@ -5,7 +5,7 @@ description: A monorepo with submodules, a plugins build and a strict Node pin. 
 
 # Example: the ToolJet monorepo
 
-ToolJet is the repository Canopy was developed against, and it exercises the harder parts: a monorepo
+ToolJet is the repository Canopod was developed against, and it exercises the harder parts: a monorepo
 with a separate frontend and server, git submodules with their own tracked branches, a plugins package
 that has to be built per worktree, and an `engine-strict` Node pin.
 
@@ -22,7 +22,7 @@ The frontend takes its own port from `$PORT`. The server reads `PORT` from the w
 
 ```json
 {
-  "$schema": "canopy://worktree-manager/v1",
+  "$schema": "canopod://worktree-manager/v1",
   "provision": [
     {
       "path": ".env",
@@ -70,7 +70,7 @@ installs.
 ToolJet's server is `engine-strict` on Node 22.15.1. If your version manager's global default is older,
 `npm install` fails with `notsup`.
 
-Canopy handles this without configuration. It reads the worktree's `.nvmrc`, `.node-version` or
+Canopod handles this without configuration. It reads the worktree's `.nvmrc`, `.node-version` or
 `.tool-versions`, finds that version's bin directory in asdf, nvm or fnm, and prepends it to `PATH` for
 every command it runs in that worktree: setup, services, migrate, reset, teardown, custom commands. Make
 sure the pinned version is installed:
@@ -115,7 +115,7 @@ With repository id `tooljet`, a worktree folder `feat_history_state` gives `tool
 Every worktree points at the same Postgres server and differs only in database name.
 
 :::warn Match your `pg_dump` to the server
-Snapshot and export need Postgres client binaries of the same major version as the server. Canopy asks
+Snapshot and export need Postgres client binaries of the same major version as the server. Canopod asks
 the server and prefers `Postgres.app/Versions/<major>/bin`, but that version has to be installed. A 14
 client can't dump a 16 server, and a 17 client emits a dump a 16 server rejects.
 :::

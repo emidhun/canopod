@@ -14,7 +14,7 @@ One list, so nothing else in this documentation has to be read twice to work out
 | macOS arm64 is the only validated platform | Linux and Windows builds compile in CI and are published, but haven't been validated on a desktop. |
 | No Intel or universal macOS build | It would need `x86_64-apple-darwin` and `--target universal-apple-darwin`. |
 | Not notarized | Ad-hoc signed only, so installing from the DMG needs one `xattr -dr com.apple.quarantine`. |
-| No Mac App Store build | Canopy can't be sandboxed: arbitrary process trees, arbitrary paths, private window APIs. |
+| No Mac App Store build | Canopod can't be sandboxed: arbitrary process trees, arbitrary paths, private window APIs. |
 | Linux tray has no click events | Linux and Windows get a tray menu instead of the macOS click-to-toggle panel. |
 
 ## Assumptions
@@ -22,7 +22,7 @@ One list, so nothing else in this documentation has to be read twice to work out
 | Assumption | Consequence |
 |---|---|
 | **Postgres** for the database tooling | Switch, snapshot, export, restore and reset are Postgres-only. Other databases work as services; those actions don't apply. |
-| Postgres client binaries matching the server's major version | A mismatch fails the dump and restore actions. Canopy picks the best available; it can't install one. |
+| Postgres client binaries matching the server's major version | A mismatch fails the dump and restore actions. Canopod picks the best available; it can't install one. |
 | **Node** for auto-detection | Service and command detection reads `package.json`. Other stacks are detected but configured by hand. |
 | A login shell that sets up your `PATH` | Commands inherit your `$SHELL` as a login shell, so setup that only lives in an interactive rc file won't be there. |
 
@@ -54,7 +54,7 @@ should become a committed file that travels with the branch is still an open que
 bundles. If the current package cannot replace itself, use the release download or your package
 manager instead.
 
-**No telemetry.** Canopy sends no analytics. Daily release checks, the manual **Check now** action,
+**No telemetry.** Canopod sends no analytics. Daily release checks, the manual **Check now** action,
 and signed update downloads contact GitHub. The star reminder itself makes no network request.
 
 ## Reading "coming soon"

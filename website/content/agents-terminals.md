@@ -1,6 +1,6 @@
 ---
 title: Terminals and agents
-description: Real shells per worktree, coding agents that start knowing where they are, and the handoff Canopy writes for them.
+description: Real shells per worktree, coding agents that start knowing where they are, and the handoff Canopod writes for them.
 ---
 
 # Terminals and agents
@@ -23,7 +23,7 @@ Agent sessions are exempt.
 ## Agents
 
 An agent here is a coding-agent CLI (Claude Code, Codex, Aider, whatever you use) launched as its own
-PTY with Canopy's structured handoff as its first prompt.
+PTY with Canopod's structured handoff as its first prompt.
 
 You configure the launchers per repository in [Settings → Agents](settings-repository.html): a name,
 the command, and whether to prompt on launch. The first profile is the default. Configure more than
@@ -37,21 +37,21 @@ Start one with `⌘2` then **Start agent**, the next-action button when it reads
 ### What launching actually does
 
 1. Reads the worktree's persisted context, so an edit you made a moment ago is included.
-2. Writes the full handoff to `<worktree>/.canopy/context.md`, creating the directory and a
+2. Writes the full handoff to `<worktree>/.canopod/context.md`, creating the directory and a
    self-ignoring `.gitignore` beside it, and never overwriting one that's already there.
 3. Composes a compact prompt and runs `<your command> '<prompt>'` as the session's command, unless the
    profile has **Prompt on launch** off. That's for CLIs that take no positional prompt, and they still
    get the file.
 
 The agent is the session's command, so the tab flips to "ended" exactly when the agent exits. If an
-agent dies within 2.5 seconds of starting, Canopy tells you: *"Claude exited immediately — check the
+agent dies within 2.5 seconds of starting, Canopod tells you: *"Claude exited immediately — check the
 agent command"*, because that nearly always means the command is wrong.
 
 The composed prompt looks like this:
 
 ```text
-Work on <task title>. Read the complete Canopy handoff at
-<worktree>/.canopy/context.md before making changes. Worktree: <repo>/<branch>;
+Work on <task title>. Read the complete Canopod handoff at
+<worktree>/.canopod/context.md before making changes. Worktree: <repo>/<branch>;
 database: <db name>; ports: Frontend:3010, Server:4010.
 ```
 
@@ -77,11 +77,11 @@ a handoff with the runtime facts in it.
 
 ### The handoff file
 
-`.canopy/context.md` is assembled in this order: the title as an `H1`, the body, a **Pull request**
+`.canopod/context.md` is assembled in this order: the title as an `H1`, the body, a **Pull request**
 section, an **Issue** section, a **Worktree** section (repository, branch, path, database, ports), then
 **Files** and **Links** lists when they aren't empty.
 
-Context is stored per worktree in the webview's `localStorage` under `canopy.ctx.<worktree path>`, so
+Context is stored per worktree in the webview's `localStorage` under `canopod.ctx.<worktree path>`, so
 it's per machine. Whether it should instead be a committed file that travels with the branch is still
 an open question in the project.
 

@@ -1,8 +1,8 @@
-# Canopy redesign proposal
+# Canopod redesign proposal
 
 Date: 2026-10-03. Design recommendations reviewed with Astra using a compact audit brief and a response capped at 650 words. The implementation specification and interactive concept below synthesize that review. This proposal now has an initial source implementation; see the status below.
 
-Companions: [audit](ui-ux-audit.md), [complete content inventory](ui-ux-surface-inventory.md), [interactive concept](design/canopy-redesign-preview.html).
+Companions: [audit](ui-ux-audit.md), [complete content inventory](ui-ux-surface-inventory.md), [interactive concept](design/canopod-redesign-preview.html).
 
 ## Settings becomes a dedicated configuration workspace
 
@@ -38,11 +38,11 @@ Direct layout picker: Logs, Logs + Agent, Agent, Terminal + Logs, Terminal. Pers
 | Restore | Dump file → Create new database by default → full destination → optional activate. Replace existing is a separate explicit choice with acknowledgment. Retain progress and failure details. |
 | Context/service/notice | Keep their existing capabilities; show save status or operation target, clear read failure/retry and independent actions. |
 
-The preview uses sample data and has no backend connection. Backup is represented as export, which current Canopy supports; do not promise a snapshot workflow unless database-target correctness and availability are validated.
+The preview uses sample data and has no backend connection. Backup is represented as export, which current Canopod supports; do not promise a snapshot workflow unless database-target correctness and availability are validated.
 
 ## Shared visual and interaction system
 
-Keep Canopy's layered desktop identity. Comfortable: proposed 14px body, 12px metadata, 32px standard controls; Compact stays opt-in. Use readable semantic text tiers, consistent borders/radii and restrained accent. Dark/light/system, all accents and densities must meet contrast checks. Status includes words/icons as well as color; essential actions never depend on hover.
+Keep Canopod's layered desktop identity. Comfortable: proposed 14px body, 12px metadata, 32px standard controls; Compact stays opt-in. Use readable semantic text tiers, consistent borders/radii and restrained accent. Dark/light/system, all accents and densities must meet contrast checks. Status includes words/icons as well as color; essential actions never depend on hover.
 
 Search derives from real field metadata, includes scope breadcrumbs and moves focus to the matching field. Menus/overlays use shared focus/keyboard behavior and viewport collision handling. Async views distinguish loading, empty, unavailable, failure and success. Short success feedback is announced; actionable failures and background outcomes remain in Activity with target, timestamp, details and recovery action.
 
@@ -67,7 +67,7 @@ Verification: production build passed; 19 test files / 181 tests passed, includi
 
 ## Agent, Terminal and Logs flow proposal — 2026-10-03
 
-The interactive proposal is `docs/design/canopy-workflow-preview.html`, also linked from the live review gallery. This is a prototype using sample sessions; it does not launch a CLI, execute terminal commands, or send an agent prompt. The running-session implementation is unchanged pending design review.
+The interactive proposal is `docs/design/canopod-workflow-preview.html`, also linked from the live review gallery. This is a prototype using sample sessions; it does not launch a CLI, execute terminal commands, or send an agent prompt. The running-session implementation is unchanged pending design review.
 
 Proposed hierarchy: stable Logs/Terminal/Agent navigation; separate session strip; agent task context; working output. A top-level “Logs alongside” control preserves Agent and Terminal split preferences independently. Per-lane active session choices remain stable when switching views. Compact empty states offer profile selection and one launch action without requiring a task edit. Session status distinguishes waiting, running and ended; detach leaves a return action; ended output remains available with Restart/Close. Logs preserve reading position while paused, report new output, and provide Return to latest. Error investigation can open Agent alongside without automatically launching a CLI or sending log content.
 
@@ -75,7 +75,7 @@ Astra reviewed the proposal with a short response. It recommended keeping this h
 
 ### Unified Terminal preview consistency audit
 
-Preview: `docs/design/canopy-unified-terminal-preview.html`. Agent and shell sessions share a scrollable strip and one add menu. A single Claude profile starts directly. Controls use compact 24px heights, shared theme surfaces, matching gutters and menu typography. Logs keep source, level and search filters across views and combine filters. The working pane stays on the left with a keyboard-resizable divider. Menus support arrow keys and Escape with focus return. The work area fills the viewport; narrow layouts stack logs below the terminal. Verified direct agent launch, keyboard shell creation, session selection and combined filter persistence in the browser. This remains a dummy-session design preview; production session behavior is unchanged.
+Preview: `docs/design/canopod-unified-terminal-preview.html`. Agent and shell sessions share a scrollable strip and one add menu. A single Claude profile starts directly. Controls use compact 24px heights, shared theme surfaces, matching gutters and menu typography. Logs keep source, level and search filters across views and combine filters. The working pane stays on the left with a keyboard-resizable divider. Menus support arrow keys and Escape with focus return. The work area fills the viewport; narrow layouts stack logs below the terminal. Verified direct agent launch, keyboard shell creation, session selection and combined filter persistence in the browser. This remains a dummy-session design preview; production session behavior is unchanged.
 
 ### Unified Terminal implemented in the main app
 

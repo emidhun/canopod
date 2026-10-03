@@ -5,7 +5,7 @@ description: Everything you can put in a template or a setup command, and what e
 
 # Template variables
 
-Canopy computes a set of variables per worktree and exposes them two ways: as `${VAR}` templates inside
+Canopod computes a set of variables per worktree and exposes them two ways: as `${VAR}` templates inside
 provisioned file values, and as `$VAR` environment variables for setup, migrate, teardown, custom
 commands and services.
 

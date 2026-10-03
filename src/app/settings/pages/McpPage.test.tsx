@@ -80,19 +80,19 @@ describe("MCP settings and onboarding controls", () => {
     await user.selectOptions(screen.getByLabelText("Agent"), "codex");
     await user.click(screen.getByRole("button", { name: "Copy agent configuration" }));
     const clipboard = await navigator.clipboard.readText();
-    expect(clipboard).toContain('[mcp_servers.canopy]');
-    expect(clipboard).toContain('bearer_token_env_var = "CANOPY_MCP_TOKEN"');
+    expect(clipboard).toContain('[mcp_servers.canopod]');
+    expect(clipboard).toContain('bearer_token_env_var = "CANOPOD_MCP_TOKEN"');
     expect(clipboard).not.toContain("private-token");
     expect(screen.queryByText(/private-token/)).not.toBeInTheDocument();
     await user.selectOptions(screen.getByLabelText("Agent"), "claude");
     await user.click(screen.getByRole("button", { name: "Copy agent configuration" }));
-    expect(JSON.parse(await navigator.clipboard.readText()).mcpServers.canopy.headers.Authorization).toBe("Bearer private-token");
+    expect(JSON.parse(await navigator.clipboard.readText()).mcpServers.canopod.headers.Authorization).toBe("Bearer private-token");
   });
   it("copies a read-only first task for an allowed repository", async () => {
     const user = userEvent.setup(); vi.mocked(ipc.mcpStatus).mockResolvedValue(enabled);
     render(<McpPage />); await screen.findByText("Enabled");
     await user.click(screen.getByRole("button", { name: "Copy first task" }));
-    expect(await navigator.clipboard.readText()).toBe('Call canopy_status for repository "repo". Then list its worktrees and services, report anything stopped or failing, and do not make changes.');
+    expect(await navigator.clipboard.readText()).toBe('Call canopod_status for repository "repo". Then list its worktrees and services, report anything stopped or failing, and do not make changes.');
     expect(ipc.mcpConnection).not.toHaveBeenCalled();
   });
   it("confirms rotation and reports clipboard failures", async () => {

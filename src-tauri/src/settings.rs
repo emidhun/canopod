@@ -97,7 +97,7 @@ pub struct TermCfg {
     /// shell to run; empty = the user's login shell
     pub program: String,
     /// extra arguments, whitespace-separated. Applied only with an explicit
-    /// `program`: they would collide with the `-l`/`-i`/`-c` flags Canopy
+    /// `program`: they would collide with the `-l`/`-i`/`-c` flags Canopod
     /// passes to a login shell it chose itself.
     pub args: String,
     /// CSS font stack; empty = the app's mono stack
@@ -140,7 +140,7 @@ impl Default for TermCfg {
 /// Which backend events raise an OS notification.
 ///
 /// Every one of these already appears in the in-app attention queue. A
-/// notification is for when Canopy is in the tray and you are looking at
+/// notification is for when Canopod is in the tray and you are looking at
 /// something else — so the defaults follow one rule: notify only when a human
 /// is BLOCKING something, never for progress.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -181,7 +181,7 @@ impl Default for NotifyCfg {
 pub struct UpdatesCfg {
     /// check for a newer release in the background
     pub auto_check: bool,
-    /// install a signed update automatically and restart Canopy
+    /// install a signed update automatically and restart Canopod
     pub auto_install: bool,
     /// show at most one native reminder per day to star the project
     pub star_reminder: bool,
@@ -203,7 +203,7 @@ impl Default for UpdatesCfg {
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 #[serde(rename_all = "camelCase", default)]
 pub struct CrashCfg {
-    /// record a stack trace to the log directory when Canopy panics.
+    /// record a stack trace to the log directory when Canopod panics.
     /// Opt-in: off until the user turns it on.
     pub enabled: bool,
 
@@ -284,7 +284,7 @@ pub struct RepoCfg {
     /// on one machine compete for CPU and for the same dev database.
     #[serde(default)]
     pub max_parallel_agents: u32,
-    /// Minutes an agent session may sit with no output or input before Canopy
+    /// Minutes an agent session may sit with no output or input before Canopod
     /// closes it. 0 = never, which is the default: a quiet agent may simply be
     /// waiting for the user, and killing it loses work.
     #[serde(default)]
@@ -313,7 +313,7 @@ impl Default for WorktreeDefaults {
     }
 }
 
-/// What Canopy puts in the handoff every agent receives.
+/// What Canopod puts in the handoff every agent receives.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", default)]
 pub struct AgentContextCfg {
@@ -341,7 +341,7 @@ pub struct AgentCfg {
     pub id: String,
     pub name: String,
     pub command: String,
-    /// Append Canopy's initial handoff as the first CLI prompt argument.
+    /// Append Canopod's initial handoff as the first CLI prompt argument.
     pub prompt_on_launch: bool,
     /// Extra literal snippets (one per line) that mean "this agent is blocked
     /// on a human". Matched case-insensitively against the terminal tail after
@@ -535,7 +535,7 @@ mod tests {
 
     #[test]
     fn save_is_atomic_and_load_quarantines_corrupt_files() {
-        let dir = std::env::temp_dir().join("canopy_settings_test_xyz");
+        let dir = std::env::temp_dir().join("canopod_settings_test_xyz");
         let _ = fs::remove_dir_all(&dir);
         fs::create_dir_all(&dir).unwrap();
         let path = dir.join("settings.json");

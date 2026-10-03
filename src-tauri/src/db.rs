@@ -55,7 +55,7 @@ impl PgConn {
 const PG_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(900);
 
 /// Run a shell command line in the worktree dir with PGPASSWORD set.
-/// Uses the fast non-login shell: these lines are composed by Canopy (pure
+/// Uses the fast non-login shell: these lines are composed by Canopod (pure
 /// POSIX, need only PATH), and a login shell's profile init cost 300ms–1s
 /// PER invocation — a snapshot chains five of them before any data moves.
 async fn run(wt_path: &str, c: &PgConn, cmdline: &str) -> Result<String, String> {

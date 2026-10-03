@@ -45,7 +45,7 @@ export function TopBar({
           <span className="fk">
             <Fork size={13} />
           </span>
-          Canopy
+          Canopod
         </div>
         <span className="cxs-tdiv" />
         {repo && wt && (

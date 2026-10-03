@@ -16,7 +16,7 @@ below is historical and requires reconciliation with current code and releases.
 - Settings: repo-nav + tabbed detail layout (General / Services / Commands / Files / Setup) with a
   live config preview and import/export.
 - In-place branch switch (submodule-aware) and per-submodule pull/branch-switch from the header.
-- Branding: Canopy brandmark (app icon, tray, in-app mark).
+- Branding: Canopod brandmark (app icon, tray, in-app mark).
 - DB tools: switch database, save snapshot, export to file, run migration, drop-on-delete — in an
   inline database bar in the worktree header.
 - Per-service port override (editable port chip; validates, re-derives env, auto-restarts).

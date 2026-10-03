@@ -15,7 +15,7 @@ the manager, without leaving whatever you were doing.
 | Platform | How |
 |---|---|
 | macOS | Click the tray icon. The popover is a non-activating `NSPanel`: it doesn't steal focus, it floats over full-screen apps, and it hides when it loses key status. |
-| Linux / Windows | Click the tray icon, which here is a regular borderless always-on-top window. The icon also carries a menu with **Open Canopy** and **Quit Canopy**, since Linux tray backends don't deliver click events. |
+| Linux / Windows | Click the tray icon, which here is a regular borderless always-on-top window. The icon also carries a menu with **Open Canopod** and **Quit Canopod**, since Linux tray backends don't deliver click events. |
 
 On macOS the panel is positioned by hand from the tray icon's rectangle: centred under it, hanging
 below the menu bar with a small gap.
@@ -73,14 +73,14 @@ other.
 ## Footer
 
 **New worktree** opens the dialog in the main window. **Open Manager** shows the main window on the
-overview. **Quit** stops every service Canopy started, then exits.
+overview. **Quit** stops every service Canopod started, then exits.
 
 Below that sits a health line reporting real state:
 
 | Condition | Line |
 |---|---|
 | Any service exited unexpectedly | `N services stopped unexpectedly` (amber) |
-| Something is running | `Canopy is running smoothly` (green) |
+| Something is running | `Canopod is running smoothly` (green) |
 | Nothing is running | `No services running` |
 
 The app version sits at the right of that line.

@@ -1,6 +1,6 @@
-# Canopy documentation
+# Canopod documentation
 
-The documentation website for [Canopy](https://github.com/emidhun/canopy) — a menu-bar
+The documentation website for [Canopod](https://github.com/emidhun/canopod) — a menu-bar
 git-worktree and dev-service manager. Written from the app's own source at version **0.5.0**, so
 anything not yet wired up is documented as such rather than described as if it worked.
 
@@ -40,7 +40,7 @@ fork.
 
 ```sh
 node scripts/build.mjs                  # studio, the default
-SKIN=native node scripts/build.mjs      # Canopy's own tokens and fonts
+SKIN=native node scripts/build.mjs      # Canopod's own tokens and fonts
 SKIN=editorial node scripts/build.mjs   # serif headings, warm paper
 SKIN=terminal node scripts/build.mjs    # mono throughout, sharp corners
 SKIN=docs node scripts/build.mjs        # the bare base, no skin
@@ -69,7 +69,7 @@ reported by the build, so a missing screenshot cannot ship silently.
 
 ## Screenshots
 
-Every screenshot comes from the **real UI**, not a mockup. In a plain browser Canopy's
+Every screenshot comes from the **real UI**, not a mockup. In a plain browser Canopod's
 `hasBackend()` is false, so it runs on `src/mock.ts` with three repositories and five worktrees —
 enough to show every surface.
 
@@ -85,12 +85,12 @@ node scripts/build.mjs
 ```
 
 Both runs use the same viewport and the same mock data and seed the theme into `localStorage`
-before first paint, so the two sets differ only in palette. Environment: `CANOPY_REPO` (default: the repository root, one level up), `CANOPY_URL` (default `http://localhost:1420`), `THEME`, `ONLY`.
+before first paint, so the two sets differ only in palette. Environment: `CANOPOD_REPO` (default: the repository root, one level up), `CANOPOD_URL` (default `http://localhost:1420`), `THEME`, `ONLY`.
 
 ## Deploying
 
 `node scripts/build.mjs` produces a directory of relative-linked static HTML — every link and
-asset path is relative, so it works from any host and from any sub-path (`user.github.io/canopy/`
+asset path is relative, so it works from any host and from any sub-path (`user.github.io/canopod/`
 needs no base-path config).
 
 **GitHub Pages, free.** The workflow in [`.github/workflows/docs.yml`](../.github/workflows/docs.yml)
@@ -100,7 +100,7 @@ that touches `website/`, and can be triggered by hand from the Actions tab. On p
 builds and asserts the output but does not deploy.
 
 One-time setup on the repository: **Settings → Pages → Build and deployment → Source: GitHub
-Actions**. After the first run the site is live at `https://emidhun.github.io/canopy/`. Pages is
+Actions**. After the first run the site is live at `https://emidhun.github.io/canopod/`. Pages is
 free for public repositories (and included on every plan for private ones).
 
 The workflow ends with a `touch site/.nojekyll` step — without it Pages runs the output through

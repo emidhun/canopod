@@ -1,6 +1,6 @@
-# Contributing to Canopy
+# Contributing to Canopod
 
-Thanks for your interest! Canopy is a Tauri 2 (Rust) + React app.
+Thanks for your interest! Canopod is a Tauri 2 (Rust) + React app.
 
 ## Dev setup
 
@@ -39,11 +39,11 @@ CI runs the same on ubuntu + macos — the ubuntu job exists to keep the
 ## Filing issues
 
 Include your OS + version, what you did, what you expected, and the relevant log output
-(the Console pane in-app, or `~/Library/Application Support/com.midhunkumare.canopy/`).
+(the Console pane in-app, or `~/Library/Application Support/com.midhunkumare.canopod/`).
 
 ## Licensing of contributions
 
-Canopy is licensed under [AGPL-3.0-only](LICENSE). By submitting a contribution you certify the
+Canopod is licensed under [AGPL-3.0-only](LICENSE). By submitting a contribution you certify the
 [DCO](https://developercertificate.org/) (add `Signed-off-by:` via `git commit -s`) **and** you
 grant the maintainer a perpetual, irrevocable right to relicense your contribution — this keeps
 dual-licensing possible (e.g. commercial add-ons) while the open core stays AGPL.

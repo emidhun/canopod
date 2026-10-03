@@ -78,12 +78,12 @@ export function agentState(s: LaneSession): AgentState {
 /** Does this worktree need provisioning before it is usable?
 
     True in exactly two cases, both of which a human must act on:
-      - the repo declares provisioning and Canopy has no record of it running
+      - the repo declares provisioning and Canopod has no record of it running
       - the last recorded run failed, so the worktree is half-provisioned
 
     Deliberately false when the repo declares nothing to provision (there is
     no action to offer) and for the main checkout (it is the source the
-    worktrees are seeded *from*, not a thing Canopy provisions). */
+    worktrees are seeded *from*, not a thing Canopod provisions). */
 export function needsSetup(wt: WorktreeNode): boolean {
   if (wt.isMain || !wt.setupConfigured) return false;
   return wt.setup === null || !wt.setup.ok;

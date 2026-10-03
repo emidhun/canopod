@@ -10,12 +10,12 @@ notes. Ask permission before screen or audio recording.
 - Duration: 30–40 minutes, plus a voluntary 7–14 day follow-up.
 - Ask the participant to bring a small repository they may safely use, or use the
   maintained [simple web recipe](../website/content/example-simple-web.md).
-- Record Canopy version, OS, install source and project runtime only.
+- Record Canopod version, OS, install source and project runtime only.
 - Start timing when the participant begins installation or repository selection.
 
 ## Moderator script
 
-1. Say: “Please install or open Canopy, add the repository, create an isolated
+1. Say: “Please install or open Canopod, add the repository, create an isolated
    branch workspace, and get its app running. Think aloud. I will not guide you
    unless you become blocked or choose to stop.”
 2. Observe installation, first launch, repository selection and detected defaults.
@@ -26,7 +26,7 @@ notes. Ask permission before screen or audio recording.
 6. Seed one safe failure: missing setup marker or occupied test port. Ask them to
    explain the error and recover without losing configuration.
 7. Optionally ask them to connect an installed agent and use the read-only first
-   task. Record unavailable authentication separately from Canopy connectivity.
+   task. Record unavailable authentication separately from Canopod connectivity.
 8. End by asking what they expected, what felt risky and whether this would replace
    any part of their current branch workflow.
 
@@ -38,7 +38,7 @@ valuable data. Record the intervention before helping.
 ```text
 Participant ID:
 Date / facilitator:
-Canopy version / install source:
+Canopod version / install source:
 OS / project runtime:
 Own repository or reference recipe:
 
@@ -75,7 +75,7 @@ Follow-up permission and channel:
 
 ## Follow-up
 
-After 7–14 days, ask: “Did you use Canopy again? If yes, what did you use it for?
+After 7–14 days, ask: “Did you use Canopod again? If yes, what did you use it for?
 If no, what stopped you?” Record the answer, numerator and denominator. Do not
 describe a small invited cohort as representative of the broader market.
 

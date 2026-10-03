@@ -43,8 +43,8 @@ pub struct WorktreeNode {
     pub git: Option<GitMeta>,
     /// database name from the worktree's .env (PG_DB), if present
     pub db_name: Option<String>,
-    /// what Canopy knows about this worktree's provisioning; `None` = never
-    /// provisioned as far as it can tell. Read from `.canopy/setup.json`, or
+    /// what Canopod knows about this worktree's provisioning; `None` = never
+    /// provisioned as far as it can tell. Read from `.canopod/setup.json`, or
     /// inferred from the presence of every declared provisioned file.
     pub setup: Option<crate::setup::SetupState>,
     /// does the owning repo declare anything to provision or run at all? A
@@ -160,11 +160,11 @@ pub fn release_worktree_runtime(app: &RuntimeContext, repo_id: &str, wt_key: &st
 
 /// Take the operation lease for `wt_key`, or fail with a conflict naming the
 /// operation already running.
-pub fn try_lease(app: &RuntimeContext, wt_key: &str, op: &'static str) -> Result<OpLease, crate::error::CanopyError> {
+pub fn try_lease(app: &RuntimeContext, wt_key: &str, op: &'static str) -> Result<OpLease, crate::error::CanopodError> {
     let state = app.state::<AppState>();
     let mut ops = state.ops.lock();
     if let Some(existing) = ops.get(wt_key) {
-        return Err(crate::error::CanopyError::conflict(format!(
+        return Err(crate::error::CanopodError::conflict(format!(
             "'{existing}' is already running on this worktree — wait for it to finish"
         )));
     }
@@ -477,7 +477,7 @@ pub async fn refresh_tree(app: &RuntimeContext) -> Result<Vec<RepoNode>, String>
 
         let mut worktrees = Vec::new();
         for wt in wts {
-            // a worktree whose folder was deleted outside Canopy is `prunable` —
+            // a worktree whose folder was deleted outside Canopod is `prunable` —
             // don't render it as a live row; the Sync-prune flow reconciles it
             if wt.prunable {
                 continue;
@@ -664,7 +664,7 @@ mod tests {
             fn notify(&self, _: &str, _: &str, _: bool) -> Result<(), String> { Ok(()) }
             fn badge(&self, _: &str, _: i64) {}
         }
-        let root = std::env::temp_dir().join(format!("canopy-refresh-{}", std::process::id()));
+        let root = std::env::temp_dir().join(format!("canopod-refresh-{}", std::process::id()));
         let make = |name: &str| RuntimeContext::new(
             AppState::new(Settings::default(), RuntimeState::default()),
             crate::runtime::RuntimePaths { config: root.join(name), data: root.join(name), logs: root.join(name) },

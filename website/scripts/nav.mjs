@@ -9,7 +9,7 @@ export const NAV = [
     group: "Getting started",
     items: [
       ["index", "Home"],
-      ["overview", "What Canopy is"],
+      ["overview", "What Canopod is"],
       ["install-macos", "Install on macOS"],
       ["install-windows", "Install on Windows"],
       ["install-linux", "Install on Linux"],
@@ -18,7 +18,7 @@ export const NAV = [
     ],
   },
   {
-    group: "Using Canopy",
+    group: "Using Canopod",
     items: [
       ["main-window", "The main window"],
       ["next-action", "The next action"],

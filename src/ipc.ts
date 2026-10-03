@@ -33,7 +33,7 @@ export interface CustomCmd {
 }
 
 /** A coding-agent launcher available for one repository. The command is run
- * inside the selected worktree; when enabled, Canopy appends its structured
+ * inside the selected worktree; when enabled, Canopod appends its structured
  * handoff as the command's first prompt argument. */
 export interface AgentCfg {
   id: string;
@@ -64,7 +64,7 @@ export interface RepoCfg {
   agentContext: AgentContextCfg;
   /** most agent sessions at once in this repo; 0 = no limit */
   maxParallelAgents: number;
-  /** minutes an agent may sit idle before Canopy closes it; 0 = never */
+  /** minutes an agent may sit idle before Canopod closes it; 0 = never */
   agentIdleTimeoutMin: number;
 }
 
@@ -77,7 +77,7 @@ export interface WorktreeDefaults {
   isolatedDatabase: boolean;
 }
 
-/** What Canopy puts in the handoff every agent receives. */
+/** What Canopod puts in the handoff every agent receives. */
 export interface AgentContextCfg {
   worktreeContext: boolean;
   runtimeFacts: boolean;
@@ -160,7 +160,7 @@ export interface ClearedCaches {
 }
 
 /** Which backend events raise an OS notification. Every one of these also
-    appears in the in-app attention queue; a notification is for when Canopy is
+    appears in the in-app attention queue; a notification is for when Canopod is
     in the tray and you're looking at something else. */
 export interface NotifyCfg {
   serviceCrash: boolean;
@@ -224,7 +224,7 @@ export interface SetupPolicy {
 
 /** One resolved environment variable of a service.
 
-    `spawn` is what Canopy puts in the child's environment; `dotenv` is what
+    `spawn` is what Canopod puts in the child's environment; `dotenv` is what
     setup provisioned into a .env the process loads itself. Spawn wins on a
     collision, because a dotenv loader does not overwrite an already-set
     process variable. */
@@ -262,7 +262,7 @@ export interface Branches {
   tags: string[];
 }
 
-/** A worktree whose folder was deleted outside Canopy (git-prunable). */
+/** A worktree whose folder was deleted outside Canopod (git-prunable). */
 export interface PrunableWorktree {
   repoId: string;
   repoName: string;
@@ -362,7 +362,7 @@ export const ipc = {
   terminalResize: (id: string, cols: number, rows: number) => invoke<void>("terminal_resize", { id, cols, rows }),
   terminalGetBuffer: (id: string) => invoke<TerminalSnapshot | null>("terminal_get_buffer", { id }),
   terminalClose: (id: string) => invoke<void>("terminal_close", { id }),
-  /** write .canopy/context.md (creates the dir + a self-ignoring .gitignore, never clobbering it) */
+  /** write .canopod/context.md (creates the dir + a self-ignoring .gitignore, never clobbering it) */
   writeWorktreeContext: (wtPath: string, contents: string) =>
     invoke<void>("write_worktree_context", { wtPath, contents }),
   resolveAgentCommand: (wtKey: string) => invoke<string>("resolve_agent_command", { wtKey }),

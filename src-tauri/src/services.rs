@@ -310,7 +310,7 @@ fn persist_log_lines(app: &RuntimeContext, key: &str, lines: &[LogLine]) {
 
 /// Persist live service pgids so a crash can be swept on next launch. Unix-only:
 /// on Windows the Job Object's KILL_ON_JOB_CLOSE makes the OS reap the tree when
-/// Canopy dies, so there is nothing to persist or sweep.
+/// Canopod dies, so there is nothing to persist or sweep.
 #[cfg(unix)]
 pub(crate) fn persist_orphans(app: &RuntimeContext) {
     use crate::settings::OrphanProc;
@@ -390,7 +390,7 @@ fn resolve_service(app: &RuntimeContext, key: &str) -> Result<(ServiceCfg, Strin
 // process actually runs with. Two things contribute, and telling them apart is
 // most of the answer:
 //
-//   spawn  — what Canopy puts in the child's environment (`resolve_service`)
+//   spawn  — what Canopod puts in the child's environment (`resolve_service`)
 //   dotenv — what setup provisioned into the worktree's .env files, which the
 //            process loads itself
 //
@@ -926,7 +926,7 @@ pub async fn reset_db(app: &RuntimeContext, wt_key: &str) -> Result<(), String> 
 /// Startup sweep: kill process groups left over from a crash. Only kills when
 /// the group leader still exists and its start time matches what we recorded
 /// (avoids killing a recycled PID). Unix-only — on Windows KILL_ON_JOB_CLOSE
-/// makes the OS reap the tree when Canopy dies, so there are no orphans to sweep.
+/// makes the OS reap the tree when Canopod dies, so there are no orphans to sweep.
 #[cfg(unix)]
 pub fn sweep_orphans(app: &RuntimeContext) {
     let orphans = {
@@ -1007,7 +1007,7 @@ fn process_start_seconds(pid: u32) -> Option<u64> {
 // and then spends thirty seconds compiling; marking it "running" the moment
 // the shell forks is why the dot goes green before anything answers the port.
 //
-// When a service declares a health path, Canopy holds it in `Starting` until
+// When a service declares a health path, Canopod holds it in `Starting` until
 // that path answers, and only then calls it Running.
 //
 // The probe is a hand-rolled HTTP/1.1 GET over TcpStream rather than an HTTP
@@ -1032,7 +1032,7 @@ async fn probe_once(port: u32, path: &str) -> Result<bool, String> {
     let mut stream = tokio::net::TcpStream::connect(("127.0.0.1", port as u16))
         .await
         .map_err(|e| e.to_string())?;
-    let req = format!("GET {path} HTTP/1.1\r\nHost: 127.0.0.1:{port}\r\nUser-Agent: Canopy\r\nConnection: close\r\n\r\n");
+    let req = format!("GET {path} HTTP/1.1\r\nHost: 127.0.0.1:{port}\r\nUser-Agent: Canopod\r\nConnection: close\r\n\r\n");
     stream.write_all(req.as_bytes()).await.map_err(|e| e.to_string())?;
 
     // Only the status line is needed, and reading it alone means a health
@@ -1297,7 +1297,7 @@ mod bounded_log_tests {
             fn badge(&self, _: &str, _: i64) {}
         }
         let host = std::sync::Arc::new(Host::default());
-        let dir = std::env::temp_dir().join(format!("canopy-pump-{}", std::process::id()));
+        let dir = std::env::temp_dir().join(format!("canopod-pump-{}", std::process::id()));
         let app = RuntimeContext::new(AppState::new(Default::default(), Default::default()), crate::runtime::RuntimePaths { config: dir.clone(), data: dir.clone(), logs: dir.clone() }, tokio::runtime::Handle::current(), host.clone());
         let (mut writer, reader) = tokio::io::duplex(128 * 1024);
         let pump = tokio::spawn(async move { pump_logs(&app, "web", reader, false).await });
@@ -1345,7 +1345,7 @@ mod bounded_log_tests {
             fn notify(&self, _: &str, _: &str, _: bool) -> Result<(), String> { Ok(()) }
             fn badge(&self, _: &str, _: i64) {}
         }
-        let dir = std::env::temp_dir().join(format!("canopy-log-burst-{}", std::process::id()));
+        let dir = std::env::temp_dir().join(format!("canopod-log-burst-{}", std::process::id()));
         let app = RuntimeContext::new(AppState::new(Default::default(), Default::default()), crate::runtime::RuntimePaths { config: dir.clone(), data: dir.clone(), logs: dir.clone() }, tokio::runtime::Handle::current(), std::sync::Arc::new(Host));
         let mut client = app.events().subscribe(crate::events::SubscriptionKind::Application).unwrap();
         let expected: Vec<_> = (0..1000).map(|i| format!("{i:04}:{}", "x".repeat(200))).collect();

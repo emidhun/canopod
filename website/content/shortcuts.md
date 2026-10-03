@@ -1,11 +1,11 @@
 ---
 title: Keyboard shortcuts
-description: Every key Canopy listens for, grouped by where it works, plus why some of them stand down.
+description: Every key Canopod listens for, grouped by where it works, plus why some of them stand down.
 ---
 
 # Keyboard shortcuts
 
-Every command in Canopy can be reached from the keyboard. Below is the complete list of bindings that
+Every command in Canopod can be reached from the keyboard. Below is the complete list of bindings that
 have a listener behind them. The app ships the same table in **Settings → Shortcuts**, where you can
 filter it.
 

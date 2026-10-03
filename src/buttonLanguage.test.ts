@@ -11,7 +11,7 @@
    buttons did the same inside a dark modal. Neither tsc nor a render test can
    see it, because the markup is valid and the class simply matches no rule.
 
-   The rest of the app speaks `cx-btn` (canopy-components.css) or `btn-sm`
+   The rest of the app speaks `cx-btn` (canopod-components.css) or `btn-sm`
    (terminal.css), both of which stand on their own. */
 import { describe, expect, it } from "vitest";
 
@@ -50,6 +50,6 @@ describe("the button language", () => {
         .filter((t) => t.token === "btn")
         .map((t) => `${f.replace("./", "src/")}:${t.line}`),
     );
-    expect(stray, "use cx-btn (canopy-components.css) outside the settings and onboarding roots").toEqual([]);
+    expect(stray, "use cx-btn (canopod-components.css) outside the settings and onboarding roots").toEqual([]);
   });
 });

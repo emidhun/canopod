@@ -11,8 +11,8 @@
 
 ## Main window
 The window has a slim **top drag-bar** (clears the macOS traffic lights; drag to move the window) with the
-Canopy mark on the left and **Sync external worktrees** + **Settings** icons on the right, then a
-sidebar + main pane. Sync discovers worktrees registered by Git outside Canopy and offers to reconcile
+Canopod mark on the left and **Sync external worktrees** + **Settings** icons on the right, then a
+sidebar + main pane. Sync discovers worktrees registered by Git outside Canopod and offers to reconcile
 registrations whose directories were deleted.
 
 **Sidebar** — a flat list of every worktree (`Worktrees · N`), each row showing the branch (mono) and

@@ -24,25 +24,25 @@ useful thing you can send.
 | Windows 10/11 x64 | The release job builds the default `x86_64-pc-windows-msvc` target. |
 | WebView2 runtime | Ships with current Windows; the installer pulls it in if it's missing. |
 | `git` on `PATH` | Every worktree operation shells out to git. |
-| **Git Bash** (or another POSIX shell) | Canopy writes POSIX command lines. On Windows it looks for Git Bash to run them. |
+| **Git Bash** (or another POSIX shell) | Canopod writes POSIX command lines. On Windows it looks for Git Bash to run them. |
 | Node via nvm-windows or fnm | Pinned-version discovery checks `%APPDATA%\nvm\v<version>` and fnm's data dir. |
 | **Postgres** (optional) | Only for the database features. |
 
 ## Install
 
-1. Download `Canopy_0.5.0_x64-setup.exe` from the
-   [releases page](https://github.com/emidhun/canopy/releases).
+1. Download `Canopod_0.5.0_x64-setup.exe` from the
+   [releases page](https://github.com/emidhun/canopod/releases).
 2. Run it. SmartScreen will warn you about an unsigned installer, because the build isn't
    code-signed. If you're happy with that, choose **More info → Run anyway**.
-3. Launch Canopy. It puts an icon in the notification area.
+3. Launch Canopod. It puts an icon in the notification area.
 
 ## The tray on Windows
 
 macOS gets a non-activating `NSPanel` hanging under the menu bar. Windows and Linux get a regular
 borderless always-on-top window, plus a small menu on the tray icon:
 
-- **Open Canopy** shows the main window.
-- **Quit Canopy** stops every service and exits.
+- **Open Canopod** shows the main window.
+- **Quit Canopod** stops every service and exits.
 
 Left-clicking the icon toggles the popover, positioned under the icon.
 
@@ -54,8 +54,8 @@ Left-clicking the icon toggles the popover, positioned under the icon.
 | Process control | Services go into a **Job Object**, so stopping one takes the whole tree down (what `killpg` does on Unix). |
 | Terminal sessions | Real PTYs through `portable_pty` (ConPTY). Idle shell sessions are swept after an hour; agent sessions aren't. |
 | "Reveal in Finder" | Opens Explorer at the worktree path. |
-| Settings path | `%APPDATA%\com.midhunkumare.canopy\settings.json`. |
-| Log file | The platform log dir, `canopy.log`, same rolling 2 MB policy. |
+| Settings path | `%APPDATA%\com.midhunkumare.canopod\settings.json`. |
+| Log file | The platform log dir, `canopod.log`, same rolling 2 MB policy. |
 
 ## Database prerequisites
 
@@ -65,7 +65,7 @@ the server you're connecting to.
 
 ## If the app does not start
 
-1. Read the log file in the platform log dir (`canopy.log`). The backend logs at INFO; `RUST_LOG=debug`
+1. Read the log file in the platform log dir (`canopod.log`). The backend logs at INFO; `RUST_LOG=debug`
    raises it.
 2. Check that WebView2 is installed.
 3. Check that `git --version` works from a normal command prompt.

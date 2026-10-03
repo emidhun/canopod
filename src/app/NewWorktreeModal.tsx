@@ -4,14 +4,14 @@
    "You'll get" panel is the reassurance — it answers "where will this land?"
    while the name is still editable. The agent handoff is optional and
    collapsed, because most worktrees don't need one, but when it's filled in
-   it seeds .canopy/context.md and later becomes the PR body. */
+   it seeds .canopod/context.md and later becomes the PR body. */
 import { useEffect, useMemo, useRef, useState } from "react";
 import { listen } from "@tauri-apps/api/event";
 import { errText, hasBackend, ipc, type Branches, type OpEvent, type WorktreePreview } from "../ipc";
 import { backgroundOp, useStore } from "../store";
 import { Alert, ChevRight, Fork, Info, Plus, Refresh, Spinner } from "../icons";
-import Modal, { Hint, Spacer, usePrimaryAction } from "./canopy/Modal";
-import RefPick from "./canopy/RefPick";
+import Modal, { Hint, Spacer, usePrimaryAction } from "./canopod/Modal";
+import RefPick from "./canopod/RefPick";
 import { seedWtContext } from "./WorktreeContext";
 
 /** Slug preview for the NO-BACKEND dev build only. With a backend, every value

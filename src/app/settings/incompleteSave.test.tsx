@@ -20,7 +20,7 @@ beforeEach(() => {
 
 const save = (user: ReturnType<typeof userEvent.setup>) => user.keyboard("{Meta>}s{/Meta}");
 
-// "Canopy" is also the platform nav group heading, so the repo has to be
+// "Canopod" is also the platform nav group heading, so the repo has to be
 // picked from inside the menu rather than by page-wide text.
 async function pickRepo(user: ReturnType<typeof userEvent.setup>, name: string) {
   await user.click(await screen.findByTitle("Switch repository"));
@@ -90,13 +90,13 @@ describe("scoping the marks to their repo", () => {
     const user = userEvent.setup();
     const { container } = render(<SettingsView onClose={() => {}} />);
 
-    // switch to Canopy, which has no services, and add an empty one
-    await pickRepo(user, "Canopy");
+    // switch to Canopod, which has no services, and add an empty one
+    await pickRepo(user, "Canopod");
     await user.click((await screen.findAllByText("Services"))[0]);
     await user.click(await screen.findByText(/Add service/i));
     await save(user);
 
-    // the save refused and jumped to Canopy's brand new service:0
+    // the save refused and jumped to Canopod's brand new service:0
     expect(container.querySelector(".obj.incomplete")).not.toBeNull();
 
     // ToolJet's service:0 is "Frontend", which is complete — it must be clean
@@ -108,11 +108,11 @@ describe("scoping the marks to their repo", () => {
   it("names the repository in the message once more than one is configured", async () => {
     const user = userEvent.setup();
     render(<SettingsView onClose={() => {}} />);
-    await pickRepo(user, "Canopy");
+    await pickRepo(user, "Canopod");
     await user.click((await screen.findAllByText("Services"))[0]);
     await user.click(await screen.findByText(/Add service/i));
     await save(user);
 
-    expect(toasts[toasts.length - 1]).toContain("in Canopy");
+    expect(toasts[toasts.length - 1]).toContain("in Canopod");
   });
 });
