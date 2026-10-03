@@ -120,8 +120,8 @@
   --fs-micro: calc(12px * var(--font-scale));
   --fs-small: calc(12px * var(--font-scale));
   --fs-body: calc(14px * var(--font-scale));
-  --fs-md: calc(13.5px * var(--font-scale));
-  --fs-lg: calc(15px * var(--font-scale));
+  --fs-md: calc(15px * var(--font-scale));
+  --fs-lg: calc(16px * var(--font-scale));
   --fs-xl: calc(19px * var(--font-scale));
 
   --lh-tight: 1.35;

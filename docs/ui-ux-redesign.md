@@ -83,4 +83,4 @@ The approved shared Terminal workspace is now in `WorkSurface.tsx`. Agent and sh
 
 ## Regression test expansion — 2026-10-03
 
-Added 82 frontend regression tests; 35 files / 269 tests and production build pass. Coverage and native-runtime boundaries are recorded in [UI regression coverage](ui-regression-coverage.md). Tests exposed and fixed UX-01 bulk-removal false-clean/pending/error gating and remaining wrapped-field accessible-name gaps. No real Git, database or agent commands were executed.
+Added 85 frontend regression tests; 35 files / 272 tests and production build pass. Coverage and native-runtime boundaries are recorded in [UI regression coverage](ui-regression-coverage.md). Tests exposed and fixed UX-01 bulk-removal false-clean/pending/error gating and remaining wrapped-field accessible-name gaps. No real Git, database or agent commands were executed.

@@ -58,6 +58,10 @@ export default function AnchoredMenu({
   }, [anchor, align, width, !!pos]);
 
   useEffect(() => {
+    if (pos && role === "dialog") ref.current?.querySelector<HTMLElement>("button:not([disabled]), input:not([disabled]), select:not([disabled]), [tabindex='0']")?.focus();
+  }, [!!pos, role]);
+
+  useEffect(() => {
     // the trigger is outside this element, so a click on it would otherwise
     // close-then-reopen; ignore anything inside the anchor too
     const down = (e: MouseEvent) => {
@@ -66,6 +70,14 @@ export default function AnchoredMenu({
       onClose();
     };
     const key = (e: KeyboardEvent) => {
+      if (role === "dialog" && e.key === "Tab") {
+        const items = Array.from(ref.current?.querySelectorAll<HTMLElement>("button:not([disabled]), input:not([disabled]), select:not([disabled]), [tabindex='0']") ?? []);
+        const current = items.indexOf(document.activeElement as HTMLElement);
+        if (items.length && (current < 0 || (e.shiftKey ? current === 0 : current === items.length - 1))) {
+          e.preventDefault();
+          items[e.shiftKey ? items.length - 1 : 0].focus();
+        }
+      }
       if (role === "menu" && ["ArrowDown", "ArrowUp", "Home", "End"].includes(e.key)) {
         const items = Array.from(ref.current?.querySelectorAll<HTMLButtonElement>("button:not([disabled])") ?? []);
         if (!items.length) return;

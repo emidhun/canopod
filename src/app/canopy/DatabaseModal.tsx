@@ -164,7 +164,7 @@ export default function DatabaseModal({ wt, onClose }: { wt: WorktreeNode; onClo
 
   if (confirmReset) return <Modal danger icon={Database} title="Reset this database?" sub={wt.branch} busy={busy}
     onClose={() => setConfirmReset(false)} foot={<>
-      <button className="cx-btn cx-btn--ghost" onClick={() => setConfirmReset(false)} disabled={busy || loadingDatabases || !!databaseError}>Cancel</button>
+      <button className="cx-btn cx-btn--ghost" onClick={() => busy ? onClose() : setConfirmReset(false)}>{busy ? "Run in background" : "Cancel"}</button>
       <Spacer />
       <button className="cx-btn cx-btn--danger" disabled={!resetAcknowledged || !current || busy} onClick={performReset}>{busy ? "Resetting…" : "Reset database"}</button>
     </>}>

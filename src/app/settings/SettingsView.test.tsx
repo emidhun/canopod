@@ -112,3 +112,13 @@ it('keeps application drafts when switching pages and saves through the guarded 
   await user.click(within(screen.getByRole('dialog')).getByRole('button', { name: 'Save and leave' }));
   expect(close).toHaveBeenCalledTimes(1);
 });
+it('names the repository dialog and returns keyboard focus to its trigger', async () => {
+  const user = userEvent.setup(); render(<SettingsView onClose={() => {}} />);
+  const trigger = await screen.findByTitle('Switch repository');
+  await user.click(trigger);
+  const dialog = screen.getByRole('dialog', {name:'Choose repository'});
+  expect(dialog).toContainElement(document.activeElement as HTMLElement);
+  await user.keyboard('{Escape}');
+  expect(screen.queryByRole('dialog', {name:'Choose repository'})).not.toBeInTheDocument();
+  expect(trigger).toHaveFocus();
+});

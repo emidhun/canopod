@@ -34,3 +34,15 @@ it("updates placement when the viewport resizes", async () => {
   expect(Number.parseFloat(menu.style.top)).toBeGreaterThanOrEqual(4);
   expect(Number.parseFloat(menu.style.right)).toBeGreaterThanOrEqual(4);
 });
+it("focuses dialog controls and wraps Tab before returning focus on Escape", async () => {
+  function Dialog() {
+    const anchor = useRef<HTMLButtonElement>(null), [open, setOpen] = useState(false);
+    return <><button ref={anchor} onClick={() => setOpen(true)}>Open dialog</button>{open && <AnchoredMenu anchor={anchor} role="dialog" label="Services" onClose={() => setOpen(false)}><button>Details</button><button>Database</button></AnchoredMenu>}</>;
+  }
+  const user = userEvent.setup(); render(<Dialog />);
+  await user.click(screen.getByText("Open dialog"));
+  expect(screen.getByText("Details")).toHaveFocus();
+  await user.tab({shift:true}); expect(screen.getByText("Database")).toHaveFocus();
+  await user.tab(); expect(screen.getByText("Details")).toHaveFocus();
+  await user.keyboard('{Escape}'); expect(screen.getByText("Open dialog")).toHaveFocus();
+});

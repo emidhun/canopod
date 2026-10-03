@@ -36,3 +36,22 @@ it('does not expose current-database operations without a configured database',(
  const wt={wtKey:'/no-db',branch:'checkout',dbName:null,services:[]} as unknown as import('../../types').WorktreeNode;render(<DatabaseModal wt={wt} onClose={vi.fn()}/>);
  expect(screen.getByRole('button',{name:/Run migration/})).toBeDisabled();expect(screen.getByRole('button',{name:/Save snapshot/})).toBeDisabled();expect(screen.getByRole('button',{name:/Reset database/})).toBeDisabled();expect(screen.getByRole('button',{name:/Restore from/})).toBeEnabled();
 });
+it('allows a running reset to continue in the background', async () => {
+  const bridge = await import('../../ipc');
+  vi.spyOn(bridge, 'hasBackend').mockReturnValue(true);
+  vi.spyOn(bridge.ipc, 'listDatabases').mockResolvedValue(['checkout_db']);
+  vi.spyOn(bridge.ipc, 'currentDatabase').mockResolvedValue('checkout_db');
+  let finish!: () => void;
+  const reset = vi.spyOn(bridge.ipc, 'resetDb').mockReturnValue(new Promise<void>(resolve => { finish = resolve; }));
+  const wt = {wtKey:'/test',branch:'checkout',dbName:'checkout_db',services:[]} as unknown as import('../../types').WorktreeNode;
+  const close = vi.fn(), user = userEvent.setup();
+  const view = render(<DatabaseModal wt={wt} onClose={close}/>);
+  await waitFor(() => expect(screen.getByRole('button',{name:/Reset database/})).toBeEnabled());
+  await user.click(screen.getByRole('button',{name:/Reset database/}));
+  await user.click(screen.getByRole('checkbox'));
+  await user.click(screen.getByRole('button',{name:'Reset database'}));
+  expect(reset).toHaveBeenCalledWith('/test');
+  await user.click(screen.getByRole('button',{name:'Run in background'}));
+  expect(close).toHaveBeenCalledTimes(1);
+  view.unmount(); finish();
+});

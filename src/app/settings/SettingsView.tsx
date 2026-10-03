@@ -173,8 +173,18 @@ export default function SettingsView({ onClose }: { onClose: () => void }) {
 
   useEffect(() => {
     if (!repoMenu) return;
+    repoMenuRef.current?.querySelector<HTMLElement>("[role='dialog'] button")?.focus();
     const d = (e: MouseEvent) => { if (repoMenuRef.current && !repoMenuRef.current.contains(e.target as Node)) setRepoMenu(false); };
-    const k = (e: KeyboardEvent) => { if (e.key === "Escape") { setRepoMenu(false); repoMenuRef.current?.querySelector<HTMLButtonElement>("button")?.focus(); } };
+    const k = (e: KeyboardEvent) => {
+      if (e.key === "Escape") { setRepoMenu(false); repoMenuRef.current?.querySelector<HTMLButtonElement>("button")?.focus(); }
+      if (e.key === "Tab") {
+        const items = Array.from(repoMenuRef.current?.querySelectorAll<HTMLButtonElement>("[role='dialog'] button") ?? []);
+        const current = items.indexOf(document.activeElement as HTMLButtonElement);
+        if (items.length && (current < 0 || (e.shiftKey ? current === 0 : current === items.length - 1))) {
+          e.preventDefault(); items[e.shiftKey ? items.length - 1 : 0].focus();
+        }
+      }
+    };
     document.addEventListener("mousedown", d);
     document.addEventListener("keydown", k);
     return () => { document.removeEventListener("mousedown", d); document.removeEventListener("keydown", k); };
@@ -478,7 +488,7 @@ export default function SettingsView({ onClose }: { onClose: () => void }) {
                 </button>
               )}
               {repoMenu && (
-                <div className="varmenu" style={{ left: 6, right: "auto", top: 30, width: 204 }}>
+                <div className="varmenu" role="dialog" aria-label="Choose repository" style={{ left: 6, right: "auto", top: 30, width: 204 }}>
                   <div className="vh">Repository</div>
                   {settings.repos.map((r) => (
                     <button className="vitem" key={r.id} onClick={() => { setRepoId(r.id); setRepoMenu(false); }} style={{ color: r.id === repoId ? "var(--action-primary)" : "var(--text-primary)" }}>

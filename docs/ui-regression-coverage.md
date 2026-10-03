@@ -1,6 +1,6 @@
 # UI regression coverage
 
-Updated 2026-10-03. Frontend suite: **35 files, 269 passing tests**. This expansion added **82 tests** to the 187-test baseline. Production build and `git diff --check` pass.
+Updated 2026-10-03. Frontend suite: **35 files, 272 passing tests**. This expansion added **85 tests** to the 187-test baseline. Production build and `git diff --check` pass.
 
 Run `npm test` for the suite and `npm run build` for TypeScript and production bundling. The existing Linux CI job runs both on pull requests and pushes to main; new test files are discovered automatically. Tests mock IPC or use browser-mode store state, so they do not execute real Git, database, filesystem, shell or agent operations.
 
