@@ -10,6 +10,10 @@ on:
     branches: [main]
   pull_request:
 
+# Jobs start read-only; the dependency-audit job explicitly grants checks: write.
+permissions:
+  contents: read
+
 jobs:
   security:
     runs-on: ubuntu-latest
