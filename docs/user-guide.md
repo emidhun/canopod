@@ -8,7 +8,7 @@ A task-oriented walkthrough of using Canopy day to day. For a reference of every
 ## 1. Install and launch
 
 **Quickest:** `brew install --cask emidhun/canopy/canopy` — or grab the
-[macOS DMG](https://github.com/emidhun/canopy/releases/download/v0.4.7/Canopy_0.4.7_aarch64.dmg)
+[macOS DMG](https://github.com/emidhun/canopy/releases/download/v0.5.0/Canopy_0.5.0_aarch64.dmg)
 / [Linux packages](https://github.com/emidhun/canopy/releases) directly.
 Full steps in the [README](../README.md#install) (or
 [distribution.md](distribution.md) for the details). Once installed, launch **Canopy** — it runs as a
@@ -187,3 +187,13 @@ prunes.
 
 For anything deeper, see [features.md](features.md) (what each control does) and
 [configuration.md](configuration.md) (where each setting lives).
+
+## Terminal, logs and notifications in 0.5.0
+
+Use **⌘1** for Logs, **⌘2** for Terminal, or **⌘3** for Terminal + logs. Terminal holds shell and agent sessions together. Its single **+** menu offers **Start agent** and **Open terminal**. With one agent profile, Start agent launches directly; multiple profiles open a chooser. The empty state offers the same two actions. **Logs alongside** keeps service output next to the selected session, and the divider supports mouse and keyboard resizing. Sessions and filters survive switching views.
+
+Click **Needs you** to see saved notifications and setup reminders. Each can be dismissed individually or with **Clear notifications**. Setup dismissal lasts for the current app session and does not run setup or mark it successful. A changed outcome can reappear. Live crashes and waiting agents remain until their underlying condition is resolved.
+
+In Settings → Files, select a file from the list to edit its path, format, source, values and lifecycle commands. JSON preview wraps long lines and uses a wider panel. Save all and Discard all apply to the displayed drafts; leaving with edits asks how to handle them.
+
+Service status uses theme-colored dots. Extra services and database tools are under **⋯**. Database restore starts by choosing a dump, then a fresh destination or an existing database to replace. Replacement requires acknowledgement; restore failures appear in the attention queue. Reset offers **Run in background** while busy.

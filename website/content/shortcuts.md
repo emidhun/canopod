@@ -34,11 +34,9 @@ On Windows and Linux, read `⌘` as `Ctrl`. The handlers accept either modifier.
 | Run the next action | `⏎` |
 | Switch branch | `⌘\` |
 | Sync submodules | `⇧⌘S` |
-| Runtime layout | `⌘1` |
-| Split logs + agent | `⌘2` |
-| Agent layout | `⌘3` |
-| Terminal + logs layout | `⌘4` |
-| Terminal layout | `⌘5` |
+| Logs layout | `⌘1` |
+| Terminal + logs layout | `⌘3` |
+| Terminal layout | `⌘2` |
 
 ## Pull menu
 

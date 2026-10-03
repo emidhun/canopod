@@ -36,12 +36,12 @@ repository. Picking one selects it.
 | Start all services | Starts every worktree of every repository. |
 | Stop all services | Stops every worktree. |
 | New worktree | Opens the create dialog. |
-| Sync external worktrees *(0.5.0 preview)* | Discovers Git-registered worktrees created by another agent or terminal, and offers to reconcile deleted ones. |
+| Sync external worktrees | Discovers Git-registered worktrees created by another agent or terminal, and offers to reconcile deleted ones. |
 | Add repository (`⇧⌘N`) | Opens the add-repository screen. |
 | Pull all worktrees | Pulls each worktree in turn. |
-| Start agent here | Launches an agent in the selected worktree and switches to the Agent layout. |
+| Start agent here | Launches an agent in the selected worktree and switches to Terminal. |
 | Open terminal here | Opens a shell in the selected worktree and switches to a terminal layout. |
-| Layout: Runtime / Split logs + agent / Agent / Terminal + logs / Terminal | `⌘1`–`⌘5`. |
+| Layout: Logs / Terminal / Terminal + logs | `⌘1`–`⌘3`. |
 | All worktrees (`⌘O`) | The overview. |
 | Settings | Opens Settings. |
 

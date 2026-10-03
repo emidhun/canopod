@@ -30,14 +30,14 @@ All three packages are on the [releases page](https://github.com/emidhun/canopy/
 
 ```sh
 # Debian / Ubuntu
-sudo dpkg -i Canopy_0.4.7_amd64.deb || sudo apt-get -f install
+sudo dpkg -i Canopy_0.5.0_amd64.deb || sudo apt-get -f install
 
 # Fedora / RHEL
-sudo rpm -i Canopy-0.4.7-1.x86_64.rpm
+sudo rpm -i Canopy-0.5.0-1.x86_64.rpm
 
 # Anywhere, no install, no root
-chmod +x Canopy_0.4.7_amd64.AppImage
-./Canopy_0.4.7_amd64.AppImage
+chmod +x Canopy_0.5.0_amd64.AppImage
+./Canopy_0.5.0_amd64.AppImage
 ```
 
 ## The tray on Linux

@@ -38,9 +38,8 @@ replaced by `_`, case preserved.
 
 ## Sync worktrees created elsewhere
 
-:::note Available in the 0.5.0 preview
-This action is present on the `release/0.5.0` source branch and is not part of the currently published
-0.4.7 downloads.
+:::note Available in the 0.5.0
+This action is available in 0.5.0.
 :::
 
 Use the **Sync external worktrees** button in the top bar, or run the same action from `⌘K`, after

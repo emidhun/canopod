@@ -22,14 +22,14 @@ Every branch checked out, provisioned, and running — side by side.</p>
 </p>
 
 <p align="center">
-  <a href="https://github.com/emidhun/canopy/releases/download/v0.4.7/Canopy_0.4.7_aarch64.dmg"><img src="https://img.shields.io/badge/macOS-Download_.dmg_(Apple_Silicon)-58c2c8?style=for-the-badge&logo=apple&logoColor=white&labelColor=1e1f22" alt="Download DMG for macOS (Apple Silicon)" /></a>
+  <a href="https://github.com/emidhun/canopy/releases/download/v0.5.0/Canopy_0.5.0_aarch64.dmg"><img src="https://img.shields.io/badge/macOS-Download_.dmg_(Apple_Silicon)-58c2c8?style=for-the-badge&logo=apple&logoColor=white&labelColor=1e1f22" alt="Download DMG for macOS (Apple Silicon)" /></a>
   <a href="#install"><img src="https://img.shields.io/badge/Homebrew-brew_install_canopy-58c2c8?style=for-the-badge&logo=homebrew&logoColor=white&labelColor=1e1f22" alt="Install with Homebrew" /></a>
 </p>
 
 <p align="center">
-  <a href="https://github.com/emidhun/canopy/releases/download/v0.4.7/Canopy_0.4.7_amd64.deb"><img src="https://img.shields.io/badge/Linux-.deb-9a9ba0?style=flat-square&logo=debian&logoColor=white&labelColor=1e1f22" alt="Download .deb" /></a>
-  <a href="https://github.com/emidhun/canopy/releases/download/v0.4.7/Canopy-0.4.7-1.x86_64.rpm"><img src="https://img.shields.io/badge/Linux-.rpm-9a9ba0?style=flat-square&logo=fedora&logoColor=white&labelColor=1e1f22" alt="Download .rpm" /></a>
-  <a href="https://github.com/emidhun/canopy/releases/download/v0.4.7/Canopy_0.4.7_amd64.AppImage"><img src="https://img.shields.io/badge/Linux-.AppImage-9a9ba0?style=flat-square&logo=linux&logoColor=white&labelColor=1e1f22" alt="Download AppImage" /></a>
+  <a href="https://github.com/emidhun/canopy/releases/download/v0.5.0/Canopy_0.5.0_amd64.deb"><img src="https://img.shields.io/badge/Linux-.deb-9a9ba0?style=flat-square&logo=debian&logoColor=white&labelColor=1e1f22" alt="Download .deb" /></a>
+  <a href="https://github.com/emidhun/canopy/releases/download/v0.5.0/Canopy-0.5.0-1.x86_64.rpm"><img src="https://img.shields.io/badge/Linux-.rpm-9a9ba0?style=flat-square&logo=fedora&logoColor=white&labelColor=1e1f22" alt="Download .rpm" /></a>
+  <a href="https://github.com/emidhun/canopy/releases/download/v0.5.0/Canopy_0.5.0_amd64.AppImage"><img src="https://img.shields.io/badge/Linux-.AppImage-9a9ba0?style=flat-square&logo=linux&logoColor=white&labelColor=1e1f22" alt="Download AppImage" /></a>
   <a href="https://github.com/emidhun/canopy/releases/latest"><img src="https://img.shields.io/badge/Windows-.exe-9a9ba0?style=flat-square&logo=windows&logoColor=white&labelColor=1e1f22" alt="Download Windows installer" /></a>
   <a href="https://github.com/emidhun/canopy/releases"><img src="https://img.shields.io/github/v/release/emidhun/canopy?style=flat-square&label=all%20releases&color=58c2c8&labelColor=1e1f22" alt="All releases" /></a>
   <br/>
@@ -43,8 +43,7 @@ submodule workflows like ToolJet.
 
 - **Platform:** macOS **arm64** (Apple Silicon). Linux & Windows ports are experimental — they compile and pass CI, but aren't yet validated on a desktop.
 - **Stack:** Tauri 2 (Rust) + React + zustand
-- **Latest published version:** 0.4.7. The `release/0.5.0` branch is unreleased; its source and
-  release notes may describe behavior that is not in the downloads above yet.
+- **Latest version:** 0.5.0. See the [release notes](docs/release-0.5.0.md) for changes and platform limits.
 
 ---
 

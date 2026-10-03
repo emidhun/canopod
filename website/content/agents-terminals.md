@@ -13,8 +13,7 @@ Sessions keep running when you switch worktree, and they survive a webview reloa
 
 !shot layout-terminal | The Terminal pane with no session open.
 
-Open one with `⌘5` (Terminal), `⌘4` (Terminal + Logs), the sidebar row's terminal button, the overview
-row's terminal button, or `⌘K → Open terminal here`.
+Open Terminal with `⌘2`, or Terminal + logs with `⌘3`. The shared **+** menu offers **Open terminal** and **Start agent**. The empty state offers both actions too. Shell and agent sessions share one strip; switching between Logs and Terminal preserves them. **Logs alongside** adds service output beside the selected session.
 
 Each tab is a login shell in the worktree root. **+** adds another, and tabs are named `Shell`,
 `Shell 2`, and so on. Closing a tab kills its PTY. Idle shell sessions are swept after an hour of
@@ -30,9 +29,9 @@ You configure the launchers per repository in [Settings → Agents](settings-rep
 the command, and whether to prompt on launch. The first profile is the default. Configure more than
 one and starting an agent asks which; with one, it stays a single click.
 
-!shot layout-agent | The Agent pane: the context bar above, and the empty state below.
+!shot layout-agent | The selected agent session: the context bar above, and the empty state below.
 
-Start one with `⌘3` then **Start agent**, the next-action button when it reads *Start agent*,
+Start one with `⌘2` then **Start agent**, the next-action button when it reads *Start agent*,
 `⌘K → Start agent here`, or **Start agent** from the context editor (`⌘⏎`).
 
 ### What launching actually does
@@ -58,7 +57,7 @@ database: <db name>; ports: Frontend:3010, Server:4010.
 
 ## The context editor
 
-⋯ → **Context…**, or the context bar at the top of the Agent pane.
+⋯ → **Context…**, or the context bar at the top of the selected agent session.
 
 !shot modal-context | Context: a task, references, the runtime the agent inherits, and links.
 
@@ -72,7 +71,7 @@ database: <db name>; ports: Frontend:3010, Server:4010.
 Two ways out: **Copy as PR body** puts the whole composed markdown on the clipboard, the same document
 the agent read, and **Start agent** (`⌘⏎`) launches with this context.
 
-The context bar in the Agent pane shows the current title, or *"No task set — the agent still inherits
+The context bar in the selected agent session shows the current title, or *"No task set — the agent still inherits
 branch, ports and database"* when there isn't one. That's literally true: a blank brief still produces
 a handoff with the runtime facts in it.
 
@@ -105,22 +104,8 @@ An ended session keeps its output readable, with a bar offering **Restart** and 
 
 | Layout | Keys | Why |
 |---|---|---|
-| Agent | `⌘3` | The agent takes the window. |
-| Split | `⌘2` | Logs beside the agent, so you watch the app react to what it changes. |
-| Terminal + logs | `⌘4` | Your own commands beside the service output. |
-| Terminal | `⌘5` | Just the shell. |
+| Logs | `⌘1` | Service output. |
+| Terminal | `⌘2` | Shell and agent sessions. |
+| Terminal + logs | `⌘3` | Selected session beside service output. |
 
-The Agent tab shows a pip when an agent session is live, so you can see it from a layout that isn't
-currently showing that pane.
-
-## What isn't there yet
-
-:::warn Coming soon
-- **Waiting detection.** Canopy can't yet tell an agent that's working from one blocked on a prompt;
-  `LaneSession` only knows whether the process is running. Every "waiting" render path exists
-  ([issue #54](https://github.com/emidhun/canopy/issues/54)).
-- **Per-agent context toggles and a concurrency limit** appear in Settings → Agents as coming soon.
-  Today Canopy seeds the worktree context by default.
-- **Embedded-shell settings** (program, font, scrollback) aren't configurable. The shell is your login
-  shell.
-:::
+The divider resizes between 35% and 75%, with mouse or keyboard. Narrow windows stack the panes. Ended sessions retain readable output and offer Restart and Close. Waiting detection contributes to Needs you according to notification preferences. Configure shell appearance, agent context and concurrency in Settings.

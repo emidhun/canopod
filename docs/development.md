@@ -40,7 +40,7 @@ framework line includes the fix.
 
 ## Building a release DMG (important workarounds)
 0. **Official releases come from CI** — pushing a `v*` tag builds draft macOS, Linux and Windows
-   packages via `.github/workflows/release.yml`, then runs `.github/workflows/release-smoke.yml`.
+   packages via `.github/workflows/release.yml`, then runs packaged smoke checks in that same workflow.
    The packaged smoke starts the GUI-free backend, registers a temporary repository,
    enables read-only MCP, verifies protocol/prompt/tool discovery and typed cached
    status, enforces the 50 ms warm p95 budget, then launches the desktop app

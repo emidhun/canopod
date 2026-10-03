@@ -66,3 +66,7 @@ Add/remove repos (folder picker), per repo: name, worktree dir, reset-DB command
 commit): pulled if it's checked out on a branch, updated to its pinned branch tip if `.gitmodules`
 tracks one (e.g. ToolJet's `branch = lts-3.16`), or synced to the recorded commit otherwise. Returns
 a summary surfaced in the toast (e.g. `pulled, 2 submodule(s) pulled`).
+
+## 0.5.0 workspace refinements
+
+Shell and agent sessions share Terminal and one add menu, with optional logs alongside. Layout shortcuts are ⌘1 Logs, ⌘2 Terminal, ⌘3 Terminal + logs. Settings uses a focused file editor, wider JSON preview, consistent controls and guarded saving. Database restore validates destinations and makes replacement explicit; reset can run in the background. Needs you supports dismissal of saved notifications and setup reminders, including Clear notifications. Reminder dismissal is session-only and never changes provisioning state.

@@ -1,7 +1,7 @@
 # Distribution
 
 ## Current state
-The latest published release is **v0.4.7** (2026-08-13). It includes an Apple Silicon DMG/app archive,
+The latest published release is **v0.5.0** (2026-10-03). It includes an Apple Silicon DMG/app archive,
 Linux deb/rpm/AppImage packages and Windows NSIS/MSI installers. Artifact presence proves packaging,
 not successful installation or desktop behavior.
 
@@ -11,7 +11,7 @@ Linux and Windows packages are experimental because no real-desktop acceptance r
 
 ## Installing from the DMG (what to tell recipients)
 ```sh
-hdiutil attach ~/Downloads/Canopy_0.4.7_aarch64.dmg
+hdiutil attach ~/Downloads/Canopy_0.5.0_aarch64.dmg
 cp -R "/Volumes/Canopy/Canopy.app" /Applications/
 hdiutil detach "/Volumes/Canopy"
 xattr -dr com.apple.quarantine /Applications/Canopy.app      # clears quarantine — the step that matters

@@ -104,21 +104,15 @@ Everything the old service cards used to say, in one 34px row.
 
 ## Work surface
 
-The middle of the window is one or two panes, and each can show **Logs**, **Terminal** or **Agent**.
-Layout presets are a keystroke each:
+The work surface has **Logs** and **Terminal** views. Terminal combines shell and agent sessions, with one **+** menu and optional **Logs alongside**.
 
-| Preset | Keys | Panes |
+| Layout | Keys | Content |
 |---|---|---|
-| Runtime | `⌘1` | Logs |
-| Split | `⌘2` | Logs + Agent |
-| Agent | `⌘3` | Agent |
-| Shell | `⌘4` | Terminal + Logs |
-| Terminal | `⌘5` | Terminal |
+| Logs | `⌘1` | Service output |
+| Terminal | `⌘2` | Shell and agent sessions |
+| Terminal + logs | `⌘3` | Selected session and service output |
 
-!shot layout-split | The split layout (⌘2): logs on the left, the agent pane on the right, with a draggable divider.
-
-Swapping a pane's tab always works. If what you end up with isn't one of the five presets, the status
-bar calls it **Custom**. The divider drags between 22% and 78%.
+The divider supports mouse and keyboard resizing between 35% and 75%. Narrow windows stack the panes. Switching views preserves sessions and filters.
 
 ## Status bar
 
@@ -127,12 +121,11 @@ bar calls it **Custom**. The divider drags between 22% and 78%.
 | Element | What it does |
 |---|---|
 | Branch | Opens **Switch branch** when that action is enabled, otherwise it's plain text. |
-| `↑a ↓b` | Ahead and behind origin. |
-| **uncommitted** | Opens the [commit / stash / discard](worktrees.html) dialog. |
+| Header `↑a ↓b` | Ahead and behind origin. |
+| Header change dot | Opens the [commit / stash / discard](worktrees.html) dialog. |
 | Last commit | Relative time and subject. |
 | **Pull** + caret | Pull everything, or open the per-submodule popover. |
-| Agent chip | `agent working` or `agent waiting`. |
-| Layout | The current preset's name. Click to cycle (`⌘1`–`⌘5`). |
+| Layout | The current preset's name. Click to select (`⌘1`–`⌘3`). |
 | Bell | The attention queue count. |
 
 In the overview the bar shrinks to `All worktrees · N worktrees · M repositories` plus the bell.
@@ -153,3 +146,5 @@ Every region has one, and each ends on a next step instead of an apology:
 applies live in every Canopy window and it persists.
 
 !shot zoom | The main window at 130% text zoom.
+
+**Clear notifications** dismisses saved notices and setup reminders. Setup dismissal lasts for the app session and never marks setup complete. Individual dismiss buttons are also available. Live service crashes and waiting-agent requests remain until resolved.

@@ -38,7 +38,7 @@ Canopy is ad-hoc signed but not notarized, so macOS quarantines the download. Cl
 the step that matters:
 
 ```sh
-hdiutil attach ~/Downloads/Canopy_0.4.7_aarch64.dmg
+hdiutil attach ~/Downloads/Canopy_0.5.0_aarch64.dmg
 cp -R "/Volumes/Canopy/Canopy.app" /Applications/
 hdiutil detach "/Volumes/Canopy"
 xattr -dr com.apple.quarantine /Applications/Canopy.app     # clears quarantine

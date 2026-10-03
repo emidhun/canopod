@@ -30,7 +30,7 @@ useful thing you can send.
 
 ## Install
 
-1. Download `Canopy_0.4.7_x64-setup.exe` from the
+1. Download `Canopy_0.5.0_x64-setup.exe` from the
    [releases page](https://github.com/emidhun/canopy/releases).
 2. Run it. SmartScreen will warn you about an unsigned installer, because the build isn't
    code-signed. If you're happy with that, choose **More info → Run anyway**.

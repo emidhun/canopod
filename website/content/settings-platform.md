@@ -43,7 +43,7 @@ Setup and Migrate pages, except for a repository you're mid-edit on, which is ne
 | **Install updates automatically** | Opt-in. Downloads a Tauri-signed update, verifies it, installs it and restarts Canopy. Managed services are stopped during the restart. |
 | **Daily GitHub star reminder** | Sends at most one native reminder per day. Disable it after starring Canopy or whenever you prefer. |
 | **Check now** | Runs the release check immediately. An available update can be installed and restarted in-app or opened on GitHub for its release notes. |
-| **Record crash reports** *(0.5.0 preview)* | Writes a local stack trace to Canopy's crash-report directory after a panic. Nothing is uploaded. |
+| **Record crash reports** | Writes a local stack trace to Canopy's crash-report directory after a panic. Nothing is uploaded. |
 
 Text zoom (`⌘+`, `⌘-`, `⌘0`) belongs to appearance too, but it lives on the keyboard rather than on
 this page: 80% to 160% in 10% steps, applied to the whole type ramp.
@@ -56,20 +56,11 @@ fallback for package formats the running platform cannot replace in place.
 
 ## Terminal
 
-!shot settings-terminal | Settings → Terminal: the external terminal is configurable; the embedded shell is not yet.
-
-| Setting | Status |
-|---|---|
-| **Terminal application → Program** | Real. The app behind "Open in terminal" (`Terminal`, `iTerm`, `WezTerm`). |
-| Embedded shell: program, font and size, scrollback | **Coming soon.** The embedded terminal inherits your login shell, and its scrollback cap is fixed at 256 KB per session. |
+Configure the external terminal and embedded shell appearance, font size and scrollback. Shell and agent sessions share the Terminal workspace.
 
 ## Notifications
 
-!shot settings-notifications | Notification preferences are not stored yet — the attention queue works regardless.
-
-Every toggle here is coming soon: a service crashing, an agent needing a decision, setup finishing.
-What does work today, with no configuration, is the in-app attention queue. Crashes, failed background
-jobs and blocked agents all show up in **Needs you**.
+Preferences control native alerts for service crashes, waiting agents and setup outcomes. The in-app Needs you queue also shows saved job notices and setup reminders. Clear notifications or dismiss a row to hide notices and reminders; active crashes and waiting agents remain actionable.
 
 ## Shortcuts
 

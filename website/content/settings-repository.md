@@ -95,27 +95,12 @@ labelled button.
 
 ## Files
 
-!shot settings-files | Files: the list, then a four-step editor for the selected file. (The key values here are placeholder names from the preview build — use the `WT_*` variables.)
+Files uses a compact list and focused editor. Use the `WT_*` variables when values depend on the worktree.
 
 This page writes the `provision` array of `.worktreemanager.json`. Each entry is one file seeded and
 templated into every new worktree.
 
-The editor walks four steps:
-
-1. **File**: the destination path, relative to each worktree's root, plus its **format** (`dotenv`,
-   `json`, `yaml`, `text`). Browsing inside the repository stores the path relative to it, and picking
-   `config.json` switches the format for you.
-2. **Source**: where to copy from. Empty means the same path in the repo root.
-3. **Strategy**: derived from the format today. Keyed formats upsert named keys and leave every other
-   line alone; `text` copies the whole file and optionally interpolates it. An independent strategy
-   isn't stored yet.
-4. **Values**: for keyed formats, the ordered key/value pairs, with **Insert variable** offering the
-   template variables. For `text`, a single *Interpolate template variables* toggle.
-
-:::note Coming soon
-On-conflict policy, apply-on trigger, and file mode aren't stored yet. Keys are upserted on create and
-reset.
-:::
+Select a file in the compact list, then edit its path, format, source and values in the focused editor. Formats include dotenv, JSON, YAML and text. Keyed formats upsert values; text supports interpolation. The page also edits teardown and migration commands. Unsupported policy controls remain disabled rather than silently changing configuration.
 
 ## Setup
 
@@ -125,19 +110,11 @@ The `setup` array of `.worktreemanager.json`: commands that run in order the fir
 created, and again whenever you use *Run setup…*. Rows move up and down, and the numbering is the run
 order.
 
-:::note Coming soon
-The per-task enable toggle, a per-task working directory, and the on-failure and timeout policy aren't
-stored yet. Every task runs, in order, from the worktree root. **Dry run** isn't wired either.
-:::
+Setup tasks support enabled state and per-task working directories, with failure and timeout policy in the repository configuration. Review these values before running setup.
 
 ## Security
 
-!shot settings-security | Security: masking and credential handling are not wired yet.
-
-Everything here is coming soon: masking values that look like secrets, keeping secrets out of exports,
-and naming an SSH key. Today, provisioned key values are written to the worktree exactly as configured,
-so treat `.worktreemanager.json` as a file that may contain secrets and decide for yourself whether to
-commit those particular keys.
+Security is application-wide. Secret masking controls the JSON preview; export masking is a separate option. Masking never changes the real values saved to `.worktreemanager.json`. SSH key and credential-helper overrides apply to Canopy's Git invocations without editing repository or global Git configuration.
 
 ## The JSON preview
 

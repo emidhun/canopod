@@ -19,7 +19,7 @@ const THEME = join(ROOT, "theme");
 const SHOTS = join(ROOT, "assets", "screens");
 const quiet = process.argv.includes("--quiet");
 
-const VERSION = "0.4.7";
+const VERSION = "0.5.0";
 
 /* The canonical Canopy brandmark, copied from the brand sheet (24u grid, 2u
    stroke): two parents bracketed into one child. The ink strokes take

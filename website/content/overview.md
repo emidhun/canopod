@@ -43,7 +43,7 @@ what is running, and which ports are assigned. Both windows read from it and the
 ## Two windows and a tray icon
 
 **The main window** is where you work. Top bar, worktree sidebar, a worktree bar with the next action,
-the service rail, a work surface holding Logs, Terminal and Agent panes, and a status bar along the
+the service rail, a work surface holding Logs and unified Terminal views, and a status bar along the
 bottom.
 
 **The menu-bar popover** is the quick list. Start something, stop something, open it in a browser, and
@@ -57,7 +57,7 @@ because their tray backends don't report clicks.
 
 ## What this documentation covers
 
-Everything in Canopy **0.4.7**, written from the app's source. Some screens exist but have no backend
+Everything in Canopy **0.5.0**, written from the app's source. Some screens exist but have no backend
 behind them yet; those are marked *coming soon* here, the same way the app marks them, so nothing on
 these pages describes behaviour the build doesn't have.
 [Limitations](limitations.html) lists all of them in one place.

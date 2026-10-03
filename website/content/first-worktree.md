@@ -100,9 +100,9 @@ service, shows errors only, and scrolls to the end) and **Restart**.
 ## 9. Work in the worktree
 
 - **Open in editor** from the icon in the worktree bar, using the editor command from settings.
-- **Terminal**: `⌘4` or `⌘5` for the terminal layouts, or the sidebar row's terminal button. It's a real
+- **Terminal**: `⌘2` or `⌘3` for the terminal layouts, or the sidebar row's terminal button. It's a real
   login shell in the worktree, on its pinned toolchain.
-- **Agent**: `⌘3`, then **Start agent**. Canopy writes `.canopy/context.md` first, then runs your agent
+- **Agent**: `⌘2`, then **Start agent**. Canopy writes `.canopy/context.md` first, then runs your agent
   CLI with a composed prompt. See [Terminals and agents](agents-terminals.html).
 - **Pull** from the status bar. The caret opens per-submodule control.
 - **Uncommitted changes**: the status bar's dirty chip opens commit, stash or discard.

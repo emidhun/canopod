@@ -85,16 +85,6 @@ since it's the place that already promises to hold everything needing a human.
 The notice carries the full error text and the tail of the operation's log, untruncated, and the
 notice modal offers it for copying.
 
-## Two known gaps
+## Setup and waiting states
 
-Both are wired end to end in the UI and waiting on the backend. They're called out here because the
-table above lists states you won't see yet.
-
-:::warn Not reachable in 0.4.7
-- **Agent waiting** (row 2, severity 1). `LaneSession` only knows whether the process is running, so
-  `agentState` never returns `waiting`. Every render path for it exists and is styled; wiring it up is
-  a change to one function ([issue #54](https://github.com/emidhun/canopy/issues/54)).
-- **Setup never run** (row 3, severity 2). `WorktreeNode` carries no provisioning record, so the check
-  always returns false and the engine falls through to the next applicable state
-  ([issue #53](https://github.com/emidhun/canopy/issues/53)).
-:::
+Setup markers track the last run, and agent prompt detection supplies waiting transitions. These states participate in Needs you. Dismissing a setup reminder hides it for the current app session without changing the setup marker.

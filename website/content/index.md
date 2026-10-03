@@ -66,7 +66,6 @@ you can reference in it. There are worked configs for a
 
 ## Scope of this documentation
 
-This documentation describes the latest published release, **v0.4.7**. The unreleased `0.5.0`
-branch contains newer settings and MCP work that is not in the downloads yet. Some v0.4.7 screens
+This documentation describes **v0.5.0**, including its settings, MCP and unified Terminal improvements. Some screens
 exist with no backend behind them; those are marked *coming soon*, and
 [Limitations](limitations.html) lists them with their issue numbers.

@@ -1,6 +1,6 @@
 # UI regression coverage
 
-Updated 2026-10-03. Frontend suite: **35 files, 272 passing tests**. This expansion added **85 tests** to the 187-test baseline. Production build and `git diff --check` pass.
+Updated 2026-10-03. Frontend suite: **35 files, 276 passing tests**. This expansion added **89 tests** to the 187-test baseline. Production build and `git diff --check` pass.
 
 Run `npm test` for the suite and `npm run build` for TypeScript and production bundling. The existing Linux CI job runs both on pull requests and pushes to main; new test files are discovered automatically. Tests mock IPC or use browser-mode store state, so they do not execute real Git, database, filesystem, shell or agent operations.
 
@@ -43,3 +43,5 @@ Run `npm test` for the suite and `npm run build` for TypeScript and production b
 These tests do not promise an unbreakable app. jsdom cannot validate CSS geometry, contrast, screen-reader announcements or native window behavior. Prior browser reviews cover representative sizes/themes, but automated screenshot comparison has not been added. The existing CSP check is a separate smoke check for the three production entry points.
 
 Real PTY input/output, agent approval, native detach/reattach, tray behavior, notification delivery, actual Git/submodule and database execution, high-volume/midnight log ordering, and packaged macOS/Windows/Linux workflows still need integration fixtures. Onboarding and MCP retain their existing helper/component coverage; full native connection and installation flows are not exercised by this suite. Planned redesign features remain outside these acceptance claims.
+
+Release follow-up adds attention clearing coverage: saved notifications and setup reminders support individual/bulk dismissal, live conditions remain actionable, and changed setup outcomes resurface. Setup reminder dismissal is session-only.

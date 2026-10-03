@@ -77,7 +77,16 @@ mcp_pid=
 Xvfb :99 -screen 0 1280x800x24 >"$work/xvfb.log" 2>&1 &
 display_pid=$!
 sleep 2
-DISPLAY=:99 "$app" >"$work/canopy.log" 2>&1 &
+if [[ $EUID -eq 0 ]]; then
+  # Fedora package smoke runs in a root-owned container; launch WebKit as an
+  # unprivileged user rather than disabling its sandbox.
+  mkdir -p "$work/gui-home"
+  chmod 755 "$work"
+  chmod 777 "$work/gui-home"
+  runuser -u nobody -- env HOME="$work/gui-home" DISPLAY=:99 "$app" >"$work/canopy.log" 2>&1 &
+else
+  DISPLAY=:99 "$app" >"$work/canopy.log" 2>&1 &
+fi
 pid=$!
 sleep 8
 if ! kill -0 "$pid" 2>/dev/null; then

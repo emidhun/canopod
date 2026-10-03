@@ -56,3 +56,31 @@ jobs:
           uploadUpdaterJson: true
           retryAttempts: 2
           args: ${{ matrix.args }}
+      - name: Collect packages for smoke checks
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          import shutil
+          destination = Path('release-packages')
+          destination.mkdir(exist_ok=True)
+          for source in Path('src-tauri/target').glob('**/bundle/**/*'):
+              if source.is_file() and source.name.endswith(('.dmg', '.app.tar.gz', '.deb', '.rpm', '.AppImage', '.exe', '.msi')):
+                  shutil.copy2(source, destination / source.name)
+          PY
+      - name: Smoke macOS packages
+        if: matrix.platform == 'macos-latest'
+        run: bash scripts/release-smoke/macos.sh release-packages "${GITHUB_REF_NAME#v}"
+      - name: Smoke Linux packages
+        if: matrix.platform == 'ubuntu-latest'
+        run: |
+          bash scripts/release-smoke/linux.sh deb release-packages "${GITHUB_REF_NAME#v}"
+          bash scripts/release-smoke/linux.sh appimage release-packages "${GITHUB_REF_NAME#v}"
+          docker run --rm -v "$PWD:/workspace" -w /workspace fedora:43 bash scripts/release-smoke/linux.sh rpm release-packages "${GITHUB_REF_NAME#v}"
+      - name: Smoke Windows packages
+        if: matrix.platform == 'windows-latest'
+        shell: pwsh
+        run: |
+          $version = '${{ github.ref_name }}'.Substring(1)
+          ./scripts/release-smoke/windows.ps1 -Kind nsis -Packages release-packages -ExpectedVersion $version
+          ./scripts/release-smoke/windows.ps1 -Kind msi -Packages release-packages -ExpectedVersion $version

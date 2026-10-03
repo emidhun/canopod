@@ -76,9 +76,9 @@ codesign --verify --deep --strict src-tauri/target/release/bundle/macos/Canopy.a
 
 # 3. make the DMG with hdiutil
 APP=src-tauri/target/release/bundle/macos/Canopy.app
-STAGE=/tmp/canopy-dmg; rm -rf "$STAGE" ~/Desktop/Canopy-0.4.7-arm64.dmg; mkdir -p "$STAGE"
+STAGE=/tmp/canopy-dmg; rm -rf "$STAGE" ~/Desktop/Canopy-0.5.0-arm64.dmg; mkdir -p "$STAGE"
 cp -R "$APP" "$STAGE/"; ln -s /Applications "$STAGE/Applications"
-hdiutil create -volname Canopy -srcfolder "$STAGE" -ov -format UDZO ~/Desktop/Canopy-0.4.7-arm64.dmg
+hdiutil create -volname Canopy -srcfolder "$STAGE" -ov -format UDZO ~/Desktop/Canopy-0.5.0-arm64.dmg
 rm -rf "$STAGE"
 ```
 
