@@ -790,7 +790,12 @@ mod tests {
         assert_eq!(response.status(), StatusCode::CREATED);
         let registered: serde_json::Value = response.json().await.unwrap();
         assert_eq!(registered["id"], "fixture-repo");
-        assert_eq!(registered["path"], canonical_repo_path(&repository));
+        // Git may return forward slashes on Windows; compare filesystem paths
+        // rather than requiring the platform's native separator spelling.
+        assert_eq!(
+            std::fs::canonicalize(registered["path"].as_str().unwrap()).unwrap(),
+            std::fs::canonicalize(&repository).unwrap()
+        );
         assert_eq!(running.app.state::<AppState>().settings.read().repos.len(), 1);
 
         let duplicate = running
