@@ -127,8 +127,11 @@ disabled at any time. It does not contact GitHub; only opening the project page 
 
 ### Changing a port
 
-In a service row, hover the port and click **✎**. Enter a new port — Canopod validates it, re-derives
-any dependent env keys, and auto-restarts the service. Overrides persist per service.
+Open the service details from its chip in the service rail. Enter a new port and choose
+**Save & restart** — Canopod validates it, re-derives dependent env keys, and restarts the
+worktree’s running services. Overrides persist per service. **Reset to default** removes the
+saved override, reapplies the derived `basePort + index × 10` port, and restarts running services;
+future base-port changes then apply automatically. A conflicting default is rejected.
 
 ---
 

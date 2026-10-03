@@ -4,7 +4,7 @@
    sparkline, the port override (Esc reverts), and Restart / Stop. When the
    process died, the failure leads — red marks the problem, and the button
    that fixes it stays teal, because restarting is constructive. */
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Alert, Info, Restart, Server, Stop } from "../../icons";
 import { errText, hasBackend, ipc, type EnvEntry } from "../../ipc";
 import { useStore } from "../../store";
@@ -38,6 +38,9 @@ export default function ServiceDetailModal({
 
   const opened = String(svc?.port ?? "");
   const [port, setPort] = useState(opened);
+  const [busy, setBusy] = useState(false);
+  const pending = useRef(false);
+  const [error, setError] = useState<string | null>(null);
   const changed = port !== opened;
   /* The derived port — base + index*10 — is what Esc reverts to and what
      labels the field. Reverting to "the value the modal happened to open
@@ -81,18 +84,25 @@ export default function ServiceDetailModal({
 
   const max = Math.max(12, ...(history ?? [0]));
 
-  const save = async () => {
-    if (changed) {
+  const save = async (reset = false) => {
+    if (pending.current) return;
+    if (changed || reset) {
       if (!hasBackend()) {
         showToast("Port changes need the desktop app");
         return;
       }
+      pending.current = true;
+      setBusy(true);
+      setError(null);
       try {
-        await ipc.setServicePort(svcKey, Number(port));
-        showToast(`${svc?.name} port → ${port}`);
+        await ipc.setServicePort(svcKey, reset ? null : Number(port));
+        showToast(reset ? `${svc?.name} port reset to ${derived}` : `${svc?.name} port → ${port}`);
       } catch (e) {
-        showToast(errText(e));
+        setError(errText(e));
         return;
+      } finally {
+        pending.current = false;
+        setBusy(false);
       }
     } else {
       restartService(svcKey);
@@ -102,7 +112,7 @@ export default function ServiceDetailModal({
 
   // the ⏎ the Restart / Save-&-restart button advertises. The only field here
   // is the port, where committing on ⏎ is what you would expect anyway.
-  usePrimaryAction("enter", valid, save);
+  usePrimaryAction("enter", valid && !busy, () => save());
 
   return (
     <Modal
@@ -110,14 +120,15 @@ export default function ServiceDetailModal({
       title={svc?.name ?? "Service"}
       sub={crashed ? `${wt.branch} · exited${exitCode != null ? ` with code ${exitCode}` : ""}` : `${wt.branch} · ${svc?.status ?? "gone"}`}
       onClose={onClose}
+      busy={busy}
       foot={
         <>
           <Hint icon={Info}>{changed ? "Saves the port, then restarts" : "Port is derived from the worktree index"}</Hint>
           <Spacer />
-          <button className="cx-btn cx-btn--ghost" onClick={onClose}>
+          <button className="cx-btn cx-btn--ghost" onClick={onClose} disabled={busy}>
             Close
           </button>
-          <button className="cx-btn cx-btn--primary" onClick={save} disabled={!valid}>
+          <button className="cx-btn cx-btn--primary" onClick={() => save()} disabled={!valid || busy}>
             <Restart size={12} />
             {changed ? "Save & restart" : "Restart"}
             <span className="cx-k">⏎</span>
@@ -163,6 +174,7 @@ export default function ServiceDetailModal({
           {svc?.status === "running" && (
             <button
               className="cx-btn cx-btn--sm"
+              disabled={busy}
               onClick={() => {
                 stopService(svcKey);
                 onClose();
@@ -183,6 +195,7 @@ export default function ServiceDetailModal({
         <input
           className="cx-input cx-input--mono"
           value={port}
+          disabled={busy}
           spellCheck={false}
           onChange={(e) => setPort(e.target.value)}
           onKeyDown={(e) => {
@@ -197,12 +210,18 @@ export default function ServiceDetailModal({
         ) : changed && !portOk ? (
           <div className="cxm-fhint cxm-fhint--bad">Port must be between 1024 and 65535.</div>
         ) : overridden ? (
-          <div className="cxm-fhint cxm-fhint--warn">Overrides the derived port. Esc reverts to {derived}.</div>
+          <div className="cxm-fhint cxm-fhint--warn">Overrides the derived port. Reset removes the saved override.</div>
         ) : (
           <div className="cxm-fhint">
             Derived: base port + index × 10{derived ? ` = ${derived}` : ""}. Change it only if something else holds the port.
           </div>
         )}
+        {derived !== null && (
+          <button className="cx-btn cx-btn--sm" disabled={busy} onClick={() => save(true)}>
+            Reset to default ({derived})
+          </button>
+        )}
+        {error && <div className="cxm-fhint cxm-fhint--bad" role="alert">{error}</div>}
       </div>
 
       {env !== null && env.length > 0 && (

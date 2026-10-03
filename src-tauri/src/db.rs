@@ -105,32 +105,59 @@ async fn server_major(wt_path: &str, c: &PgConn) -> Option<u32> {
 /// (e.g. PG17's `SET transaction_timeout` into a PG16 server) and produces a
 /// newer archive an older pg_restore can't read. Only when no exact match is
 /// installed fall back to the newest available (newer can dump older).
-fn pg_path_prefix_for(server_major: Option<u32>) -> String {
-    let mut candidates: Vec<String> = Vec::new();
-    if let Some(maj) = server_major {
-        candidates.push(format!("/Applications/Postgres.app/Contents/Versions/{maj}/bin"));
-        candidates.push(format!("/opt/homebrew/opt/postgresql@{maj}/bin"));
-        candidates.push(format!("/usr/local/opt/postgresql@{maj}/bin"));
-        #[cfg(target_os = "windows")]
-        candidates.push(format!("C:\\Program Files\\PostgreSQL\\{maj}\\bin"));
+#[derive(Clone, Copy)]
+#[cfg_attr(not(test), allow(dead_code))]
+enum PgPlatform {
+    MacOs,
+    Linux,
+    Windows,
+}
+
+fn pg_version_bins(platform: PgPlatform, major: u32) -> Vec<String> {
+    match platform {
+        PgPlatform::MacOs => vec![
+            format!("/Applications/Postgres.app/Contents/Versions/{major}/bin"),
+            format!("/opt/homebrew/opt/postgresql@{major}/bin"),
+            format!("/usr/local/opt/postgresql@{major}/bin"),
+        ],
+        PgPlatform::Linux => vec![
+            format!("/usr/lib/postgresql/{major}/bin"),
+            format!("/usr/pgsql-{major}/bin"),
+        ],
+        PgPlatform::Windows => vec![format!(r"C:\Program Files\PostgreSQL\{major}\bin")],
     }
-    candidates.push("/Applications/Postgres.app/Contents/Versions/latest/bin".into());
-    for major in (12..=18).rev() {
-        candidates.push(format!("/Applications/Postgres.app/Contents/Versions/{major}/bin"));
-        candidates.push(format!("/opt/homebrew/opt/postgresql@{major}/bin"));
-        candidates.push(format!("/usr/local/opt/postgresql@{major}/bin"));
-        #[cfg(target_os = "windows")]
-        candidates.push(format!("C:\\Program Files\\PostgreSQL\\{major}\\bin"));
+}
+
+fn pg_bin_candidates(platform: PgPlatform, server_major: Option<u32>) -> Vec<String> {
+    let mut candidates: Vec<String> = server_major.into_iter()
+        .flat_map(|major| pg_version_bins(platform, major)).collect();
+    if matches!(platform, PgPlatform::MacOs) {
+        candidates.push("/Applications/Postgres.app/Contents/Versions/latest/bin".into());
     }
+    for major in (12..=18).rev().filter(|major| Some(*major) != server_major) {
+        candidates.extend(pg_version_bins(platform, major));
+    }
+    candidates
+}
+
+fn pg_prefix_from(candidates: Vec<String>, exists: impl Fn(&Path) -> bool) -> String {
     for dir in candidates {
         let p = Path::new(&dir);
-        // pg_dump on Windows is pg_dump.exe; the command runs under Git Bash so
-        // the emitted PATH entry is converted to MSYS form (see toolchain::bash_path)
-        if p.join("pg_dump").exists() || p.join("pg_dump.exe").exists() {
+        if exists(&p.join("pg_dump")) || exists(&p.join("pg_dump.exe")) {
             return format!("export PATH={}:\"$PATH\"; ", q(&crate::toolchain::bash_path(&dir)));
         }
     }
     String::new()
+}
+
+fn pg_path_prefix_for(server_major: Option<u32>) -> String {
+    #[cfg(target_os = "macos")]
+    let platform = PgPlatform::MacOs;
+    #[cfg(target_os = "windows")]
+    let platform = PgPlatform::Windows;
+    #[cfg(not(any(target_os = "macos", target_os = "windows")))]
+    let platform = PgPlatform::Linux;
+    pg_prefix_from(pg_bin_candidates(platform, server_major), Path::exists)
 }
 
 pub fn current_db(wt_path: &str) -> Option<String> {
@@ -409,6 +436,28 @@ pub async fn restore_database(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn pg_discovery_prefers_linux_server_version_then_newest_and_path() {
+        let candidates = pg_bin_candidates(PgPlatform::Linux, Some(16));
+        let prefix = pg_prefix_from(candidates.clone(), |path| {
+            path == Path::new("/usr/pgsql-16/bin/pg_dump")
+                || path == Path::new("/usr/lib/postgresql/18/bin/pg_dump")
+        });
+        assert!(prefix.contains("/usr/pgsql-16/bin"));
+        assert!(pg_prefix_from(candidates.clone(), |path| path == Path::new("/usr/lib/postgresql/18/bin/pg_dump")).contains("/usr/lib/postgresql/18/bin"));
+        assert_eq!(pg_prefix_from(candidates.clone(), |_| false), "");
+        assert!(candidates.iter().all(|p| !p.contains("Postgres.app") && !p.contains("homebrew")));
+        assert_eq!(pg_bin_candidates(PgPlatform::Linux, Some(23))[0], "/usr/lib/postgresql/23/bin");
+    }
+
+    #[test]
+    fn pg_discovery_preserves_mac_and_windows_layouts() {
+        let mac = pg_bin_candidates(PgPlatform::MacOs, Some(16));
+        assert!(mac[0].ends_with("Versions/16/bin"));
+        let windows = pg_bin_candidates(PgPlatform::Windows, Some(16));
+        assert!(pg_prefix_from(windows, |p| p == Path::new(r"C:\Program Files\PostgreSQL\16\bin").join("pg_dump.exe")).contains("PostgreSQL"));
+    }
 
     #[test]
     fn quotes_args_safely() {

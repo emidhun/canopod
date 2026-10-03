@@ -1,4 +1,5 @@
-import {render,screen,waitFor} from '@testing-library/react';
+import {act,render,screen,waitFor} from '@testing-library/react';
+import {listen} from '@tauri-apps/api/event';
 import userEvent from '@testing-library/user-event';
 import {beforeEach,expect,it,vi} from 'vitest';
 import NewWorktreeModal from './NewWorktreeModal';
@@ -15,4 +16,20 @@ it('requires a valid branch name and creates in the selected repository',async()
 });
 it('retains the branch name and failure detail when creation fails',async()=>{
  useStore.setState({createWorktree:vi.fn(async()=>{throw new Error('checkout creation failed');})});const user=userEvent.setup(),close=vi.fn();render(<NewWorktreeModal repoId="tooljet" onClose={close} onSetupStarted={vi.fn()}/>);const name=screen.getByPlaceholderText('feat/my-branch');await waitFor(()=>expect(screen.getByRole('combobox')).toHaveFocus());await user.type(name,'checkout');await user.click(screen.getByRole('button',{name:/Create worktree/}));await screen.findByText('checkout creation failed');expect(name).toHaveValue('checkout');expect(close).not.toHaveBeenCalled();expect(screen.getByRole('button',{name:/Create worktree/})).toBeEnabled();
+});
+
+it('keeps long creation output inside the scrollable modal body and bounds retained lines',async()=>{
+ useStore.setState({createWorktree:vi.fn(()=>new Promise<string>(()=>{}))});
+ const user=userEvent.setup();render(<NewWorktreeModal repoId="tooljet" onClose={vi.fn()} onSetupStarted={vi.fn()}/>);
+ await waitFor(()=>expect(screen.getByRole('combobox')).toHaveFocus());
+ await user.type(screen.getByPlaceholderText('feat/my-branch'),'checkout');
+ await user.click(screen.getByRole('button',{name:/Create worktree/}));
+ const callback=vi.mocked(listen).mock.calls.find(([name])=>name==='worktree:op')![1];
+ const path='/very-long/'+ 'directory'.repeat(100)+'/package.tgz';
+ act(()=>{for(let i=0;i<10;i++) callback({payload:{op:'create',wtKey:'/repo/.worktrees/checkout',detail:`copy-${i} ${path}`}} as never);});
+ const line=screen.getByText(`copy-9 ${path}`);
+ expect(line.closest('.cx-modal__body')).not.toBeNull();
+ expect(line.parentElement?.children).toHaveLength(4);
+ expect(screen.queryByText(`copy-0 ${path}`)).not.toBeInTheDocument();
+ expect(screen.getByRole('button',{name:'Close'})).toBeDisabled();
 });
