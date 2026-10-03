@@ -46,7 +46,7 @@ export default function ShortcutsPage({ settings, patch, markDirty, flash }: Pag
     <div className="sec">
       <div className="row" style={{ marginBottom: 10 }}>
         <div className="navsearch" style={{ margin: 0, flex: 1, maxWidth: 260 }}>
-          <Search size={12} /><input placeholder="Filter shortcuts…" value={q} onChange={(e) => setQ(e.target.value)} />
+          <Search size={12} /><input aria-label="Filter shortcuts" placeholder="Filter shortcuts…" value={q} onChange={(e) => setQ(e.target.value)} />
         </div>
         <span style={{ flex: 1 }} />
         <button className="btn" onClick={() => { patch({ keybindings: {} }); markDirty("shortcuts"); flash("Shortcuts restored to defaults"); }}>
@@ -73,7 +73,7 @@ export default function ShortcutsPage({ settings, patch, markDirty, flash }: Pag
               </td>
               <td style={{ color: "var(--text-tertiary)" }}>{a.scope}</td>
               <td style={{ textAlign: "right" }}>
-                {overridden && <span className="ico" title="Restore the default" onClick={() => reset(a.id)}><Refresh size={11} /></span>}
+                {overridden && <button type="button" className="ico" title="Restore the default" onClick={() => reset(a.id)}><Refresh size={11} /></button>}
               </td>
             </tr>
           );

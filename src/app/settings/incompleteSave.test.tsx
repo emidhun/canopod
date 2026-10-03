@@ -77,7 +77,7 @@ describe("clearing the marks", () => {
     await save(user);
     expect(container.querySelector(".obj.incomplete")).not.toBeNull();
 
-    await user.click(await screen.findByText("Discard"));
+    await user.click(await screen.findByText("Discard all changes"));
     expect(container.querySelector(".obj.incomplete")).toBeNull();
   });
 });

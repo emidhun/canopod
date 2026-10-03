@@ -18,7 +18,7 @@ export default function TerminalPage({ settings, patch, markDirty }: PageProps) 
         <div className="slab">Terminal application</div>
         <div className="fgrid">
           <span className="lb">Program</span>
-          <div className="row"><input className="inp mono gr" value={settings.terminal} placeholder="Terminal" onChange={(e) => { patch({ terminal: e.target.value }); markDirty("terminal"); }} />
+          <div className="row"><input aria-label="External terminal program" className="inp mono gr" value={settings.terminal} placeholder="Terminal" onChange={(e) => { patch({ terminal: e.target.value }); markDirty("terminal"); }} />
             <span className="hint" style={{ marginTop: 0 }}>Opened by “Open in terminal”.</span></div>
         </div>
       </div>
@@ -26,20 +26,20 @@ export default function TerminalPage({ settings, patch, markDirty }: PageProps) 
         <div className="slab">Embedded shell<span className="n">applies to shells opened from now on</span></div>
         <div className="fgrid">
           <span className="lb">Program</span>
-          <input className="inp mono" value={t.program} placeholder="your login shell" onChange={(e) => set({ program: e.target.value })} />
+          <input aria-label="Program" className="inp mono" value={t.program} placeholder="your login shell" onChange={(e) => set({ program: e.target.value })} />
           <span className="lb">Arguments</span>
-          <input className="inp mono" value={t.args} placeholder="only used with an explicit program" disabled={!t.program.trim()}
+          <input aria-label="Arguments" className="inp mono" value={t.args} placeholder="only used with an explicit program" disabled={!t.program.trim()}
             title={t.program.trim() ? undefined : "Canopy passes its own -l/-i flags to a login shell it picked; your arguments would collide with them."}
             onChange={(e) => set({ args: e.target.value })} />
           <span className="lb">Font</span>
           <div className="row">
-            <input className="inp mono gr" value={t.fontFamily} placeholder="the app's mono stack" onChange={(e) => set({ fontFamily: e.target.value })} />
-            <input className="inp mono" value={t.fontSize || ""} placeholder="12.5" style={{ width: 70 }} onChange={(e) => set({ fontSize: num(e.target.value) })} />
+            <input aria-label="Terminal font family" className="inp mono gr" value={t.fontFamily} placeholder="the app's mono stack" onChange={(e) => set({ fontFamily: e.target.value })} />
+            <input aria-label="Terminal font size" className="inp mono" value={t.fontSize || ""} placeholder="12.5" style={{ width: 70 }} onChange={(e) => set({ fontSize: num(e.target.value) })} />
           </div>
           <span className="lb">Scrollback</span>
-          <input className="inp mono" value={t.scrollback || ""} placeholder="2500" style={{ width: 90 }} onChange={(e) => set({ scrollback: num(e.target.value) })} />
+          <input aria-label="Scrollback" className="inp mono" value={t.scrollback || ""} placeholder="2500" style={{ width: 90 }} onChange={(e) => set({ scrollback: num(e.target.value) })} />
           <span className="lb">Cursor</span>
-          <select className="inp" value={t.cursor || "block"} onChange={(e) => set({ cursor: e.target.value })}>
+          <select aria-label="Cursor" className="inp" value={t.cursor || "block"} onChange={(e) => set({ cursor: e.target.value })}>
             <option value="block">Block</option>
             <option value="underline">Underline</option>
             <option value="bar">Bar</option>

@@ -5,8 +5,8 @@
    happened here", in order, across processes. Recovery is offered inline, right
    where the failure is visible, so you never leave the thing you're reading to
    act on it. */
-import { useEffect, useMemo, useRef, useState } from "react";
-import { Alert, Check, Restart, Search, Sliders, X } from "../../icons";
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { Alert, Check, Chevron, Restart, Search, Sliders, X } from "../../icons";
 import { useStore } from "../../store";
 import type { LogLevel, LogLine, ServiceNode, WorktreeNode } from "../../types";
 import type { NextAction } from "../nextAction";
@@ -35,22 +35,24 @@ function LevelFilter({ lv, setLv }: { lv: Record<string, boolean>; setLv: (v: Re
     const d = (e: MouseEvent) => {
       if (box.current && !box.current.contains(e.target as Node)) setOpen(false);
     };
+    const key = (e: KeyboardEvent) => { if (e.key === "Escape") { setOpen(false); box.current?.querySelector<HTMLButtonElement>("button")?.focus(); } };
     document.addEventListener("mousedown", d);
-    return () => document.removeEventListener("mousedown", d);
+    document.addEventListener("keydown", key);
+    return () => { document.removeEventListener("mousedown", d); document.removeEventListener("keydown", key); };
   }, [open]);
 
   const off = LEVELS.filter(([k]) => !lv[k]).length;
   return (
     <div className="cxs-fltwrap" ref={box}>
-      <button className={"cxs-fchip" + (off ? " is-on" : "")} onClick={() => setOpen((o) => !o)} title="Filter levels">
+      <button className={"cxs-fchip" + (off ? " is-on" : "")} onClick={() => setOpen((o) => !o)} title="Filter levels" aria-haspopup="dialog" aria-expanded={open}>
         <Sliders size={11} />
         Levels
         {off > 0 && <span className="badge">{LEVELS.length - off}</span>}
       </button>
       {open && (
-        <div className="cxs-fltpop">
+        <div className="cxs-fltpop" role="dialog" aria-label="Log levels">
           {LEVELS.map(([k, label, colour]) => (
-            <button key={k} className={"cxs-fltrow" + (lv[k] ? " is-on" : "")} onClick={() => setLv({ ...lv, [k]: !lv[k] })}>
+            <button key={k} className={"cxs-fltrow" + (lv[k] ? " is-on" : "")} aria-pressed={lv[k]} onClick={() => setLv({ ...lv, [k]: !lv[k] })}>
               <span className="bx">{lv[k] && <Check size={10} />}</span>
               <span className="d" style={{ background: colour }} />
               {label}
@@ -62,6 +64,34 @@ function LevelFilter({ lv, setLv }: { lv: Record<string, boolean>; setLv: (v: Re
   );
 }
 
+function ServiceFilter({ services, filter, onFilter }: { services: ServiceNode[]; filter: string; onFilter: (value: string) => void }) {
+  const [open, setOpen] = useState(false);
+  const box = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!open) return;
+    const down = (e: MouseEvent) => { if (!box.current?.contains(e.target as Node)) setOpen(false); };
+    const key = (e: KeyboardEvent) => {
+      if (e.key === "Escape") { setOpen(false); box.current?.querySelector<HTMLButtonElement>("button")?.focus(); }
+    };
+    document.addEventListener("mousedown", down);
+    document.addEventListener("keydown", key);
+    return () => { document.removeEventListener("mousedown", down); document.removeEventListener("keydown", key); };
+  }, [open]);
+  const options = [{ key: "all", label: "All services", color: "var(--state-idle)" }, ...services.map(s => ({ key: s.svcKey, label: s.name, color: s.status === "running" ? "var(--state-running)" : s.status === "error" ? "var(--state-error)" : "var(--state-idle)" }))];
+  return <div className="cxs-fltwrap" ref={box}>
+    <button className="cxs-fchip cxs-service-filter" aria-label="Log source" title="Filter services" aria-haspopup="dialog" aria-expanded={open} onClick={() => setOpen(v => !v)}>
+      <span>{options.find(o => o.key === filter)?.label ?? "All services"}</span><Chevron size={9} />
+    </button>
+    {open && <div className="cxs-fltpop" role="dialog" aria-label="Log services">
+      {options.map(o => <button key={o.key} className={"cxs-fltrow" + (filter === o.key ? " is-on" : "")} aria-pressed={filter === o.key} title={o.label} onClick={() => { onFilter(o.key); setOpen(false); box.current?.querySelector<HTMLButtonElement>("button")?.focus(); }}>
+        <span className="bx">{filter === o.key && <Check size={10} />}</span>
+        <span className="d" style={{ background: o.color }} />
+        <span className="cxs-fltlabel">{o.label}</span>
+      </button>)}
+    </div>}
+  </div>;
+}
+
 export default function LogsPane({
   wt,
   filter,
@@ -69,7 +99,11 @@ export default function LogsPane({
   na,
   onNext,
   onRestart,
+  navigation,
+  visible = true,
 }: {
+  navigation?: ReactNode;
+  visible?: boolean;
   wt: WorktreeNode;
   filter: string;
   onFilter: (svcKey: string) => void;
@@ -82,10 +116,26 @@ export default function LogsPane({
   const [lv, setLv] = useState<Record<string, boolean>>({ err: true, warn: true, info: true });
   const [q, setQ] = useState("");
   const [follow, setFollow] = useState(true);
+  const [newLines, setNewLines] = useState(0);
+  const previous = useRef<Record<string, LogLine[]>>(logs);
   const body = useRef<HTMLDivElement>(null);
   const crashed = wt.services.find((s) => s.status === "error");
 
-  useEffect(() => setQ(""), [wt.wtKey]);
+  useEffect(() => { setQ(""); setFollow(true); setNewLines(0); previous.current = logs; }, [wt.wtKey]);
+  useEffect(() => {
+    let added = 0;
+    for (const service of wt.services) {
+      const current = logs[service.svcKey] ?? [];
+      const prior = previous.current[service.svcKey] ?? [];
+      if (current === prior || !current.length) continue;
+      const last = prior[prior.length - 1];
+      const index = last ? current.indexOf(last) : -1;
+      added += index >= 0 ? current.length - index - 1 : current.length;
+    }
+    previous.current = logs;
+    if (follow) setNewLines(0);
+    else if (added) setNewLines(n => n + added);
+  }, [logs, wt.services, follow]);
 
   /* Merge every service's ring buffer into one stream. The buffers are
      independently capped, so sort by timestamp to interleave them; `t` is
@@ -104,8 +154,8 @@ export default function LogsPane({
   }, [merged, filter, lv, q]);
 
   useEffect(() => {
-    if (follow && body.current) body.current.scrollTop = body.current.scrollHeight;
-  }, [shown.length, follow]);
+    if (visible && follow && body.current) body.current.scrollTop = body.current.scrollHeight;
+  }, [shown.length, follow, visible]);
 
   // A worktree with nothing to run has nothing to read — offer the next step
   // instead. Declared after every hook so hook order stays stable across
@@ -113,7 +163,7 @@ export default function LogsPane({
   if (wt.services.length === 0) {
     const Icon = na?.icon;
     return (
-      <div className="cxs-empty">
+      <> <div className="cxs-ltool">{navigation}</div><div className="cxs-empty">
         <span className="eic">{Icon && <Icon size={17} />}</span>
         <span className="et">No services yet</span>
         <span className="es">
@@ -126,41 +176,22 @@ export default function LogsPane({
             {na.key && <span className="cx-k">{na.key}</span>}
           </button>
         )}
-      </div>
+      </div></>
     );
   }
 
   return (
     <>
       <div className="cxs-ltool">
-        <div className="cxs-ltool-scroll">
-          <button className={"cxs-fchip" + (filter === "all" ? " is-on" : "")} onClick={() => onFilter("all")}>
-            All
-          </button>
-          {wt.services.map((s) => (
-            <button key={s.svcKey} className={"cxs-fchip" + (filter === s.svcKey ? " is-on" : "")} onClick={() => onFilter(s.svcKey)}>
-              <span
-                className="d"
-                style={{
-                  background:
-                    s.status === "running"
-                      ? "var(--state-running)"
-                      : s.status === "error"
-                        ? "var(--state-error)"
-                        : "var(--state-idle)",
-                }}
-              />
-              {s.name}
-            </button>
-          ))}
-        </div>
+        {navigation}
+        <ServiceFilter services={wt.services} filter={filter} onFilter={onFilter} />
         <LevelFilter lv={lv} setLv={setLv} />
         <div className="cxs-lsearch">
           <Search size={11} />
-          <input placeholder="Search logs…" value={q} onChange={(e) => setQ(e.target.value)} />
+          <input aria-label="Search logs" placeholder="Search logs…" value={q} onChange={(e) => setQ(e.target.value)} />
         </div>
-        <button className={"cxs-fchip" + (follow ? " is-on" : "")} onClick={() => setFollow(!follow)} title="Follow tail">
-          Follow
+        <button className={"cxs-fchip" + (follow ? " is-on" : "")} onClick={() => setFollow(!follow)} title="Follow tail" aria-pressed={follow}>
+          {follow ? "Follow" : "Paused"}
         </button>
         <button
           className="cx-ib cx-ib--tool"
@@ -198,7 +229,14 @@ export default function LogsPane({
         </div>
       )}
 
-      <div className="cxs-pbody" ref={body} onWheel={() => setFollow(false)}>
+      {!follow && <div className="cxs-logpause" role="status"><span>Paused{newLines > 0 ? ` · ${newLines} new ${newLines === 1 ? "line" : "lines"}` : ""}</span><button className="cx-btn cx-btn--sm" onClick={() => { setNewLines(0); setFollow(true); }}>Return to latest</button></div>}
+      <div className="cxs-pbody" ref={body} onScroll={e => {
+        if (!visible) return;
+        const node = e.currentTarget;
+        const atLatest = node.scrollHeight - node.clientHeight - node.scrollTop <= 24;
+        if (!atLatest && follow) setFollow(false);
+        else if (atLatest && !follow) { setFollow(true); setNewLines(0); }
+      }}>
         <div className="cx-logs cxs-logs">
           {shown.length === 0 ? (
             <div className="cxs-logempty">

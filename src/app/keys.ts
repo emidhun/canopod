@@ -62,11 +62,9 @@ export const KEY_ACTIONS: KeyAction[] = [
   { id: "add-repo", label: "Add repository", scope: "Global", def: "Mod+Shift+n" },
   { id: "sync-submodules", label: "Sync submodules", scope: "Worktree", def: "Mod+Shift+s" },
   { id: "switch-branch", label: "Switch branch", scope: "Worktree", def: "Mod+\\" },
-  { id: "layout-1", label: "Runtime layout", scope: "Worktree", def: "Mod+1" },
-  { id: "layout-2", label: "Split layout", scope: "Worktree", def: "Mod+2" },
-  { id: "layout-3", label: "Agent layout", scope: "Worktree", def: "Mod+3" },
-  { id: "layout-4", label: "Shell layout", scope: "Worktree", def: "Mod+4" },
-  { id: "layout-5", label: "Logs layout", scope: "Worktree", def: "Mod+5" },
+  { id: "layout-1", label: "Logs layout", scope: "Worktree", def: "Mod+1" },
+  { id: "layout-2", label: "Terminal layout", scope: "Worktree", def: "Mod+2" },
+  { id: "layout-3", label: "Terminal + logs layout", scope: "Worktree", def: "Mod+3" },
   { id: "run-next", label: "Run next action", scope: "Worktree", def: "Enter" },
 ];
 

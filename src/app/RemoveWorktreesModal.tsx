@@ -19,30 +19,38 @@ export default function RemoveWorktreesModal({ wts, onClose }: { wts: WorktreeNo
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   // wtKey → has uncommitted changes (undefined until the probe returns)
+  const [probeErrors, setProbeErrors] = useState<Record<string, string>>({});
+  const [probeRevision, setProbeRevision] = useState(0);
   const [dirty, setDirty] = useState<Record<string, boolean>>({});
 
   const withDb = useMemo(() => wts.filter((w) => w.dbName).length, [wts]);
   const dirtyCount = wts.filter((w) => dirty[w.wtKey]).length;
 
+  const checked = wts.length > 0 && wts.every(w => dirty[w.wtKey] !== undefined) && !Object.keys(probeErrors).length;
   useEffect(() => {
-    if (!hasBackend()) return;
+    setDirty({}); setProbeErrors({});
+    if (!hasBackend()) { setDirty(Object.fromEntries(wts.map(w => [w.wtKey, false]))); return; }
     let alive = true;
     Promise.all(
       wts.map((w) =>
         ipc
           .worktreeDirtyReport(w.wtKey)
-          .then((r) => [w.wtKey, r.dirty] as const)
-          .catch(() => [w.wtKey, false] as const),
+          .then((r) => ({ key: w.wtKey, dirty: r.dirty, error: "" }))
+          .catch(e => ({ key: w.wtKey, dirty: undefined, error: errText(e) })),
       ),
     ).then((pairs) => {
-      if (alive) setDirty(Object.fromEntries(pairs));
+      if (alive) {
+        setDirty(Object.fromEntries(pairs.filter(p => p.dirty !== undefined).map(p => [p.key, p.dirty as boolean])));
+        setProbeErrors(Object.fromEntries(pairs.filter(p => p.error).map(p => [p.key, p.error])));
+      }
     });
     return () => {
       alive = false;
     };
-  }, [wts]);
+  }, [wts, probeRevision]);
 
   async function remove() {
+    if (!checked || busy) return;
     setBusy(true);
     setError(null);
     try {
@@ -76,7 +84,7 @@ export default function RemoveWorktreesModal({ wts, onClose }: { wts: WorktreeNo
       icon={Trash}
       danger
       title={`Remove ${wts.length} worktrees`}
-      sub={dirtyCount > 0 ? `${dirtyCount} with uncommitted changes` : "all clean"}
+      sub={!checked ? (Object.keys(probeErrors).length ? "Could not check all worktrees" : "Checking worktrees…") : dirtyCount > 0 ? `${dirtyCount} with uncommitted changes` : "all clean"}
       busy={busy}
       onClose={onClose}
       foot={
@@ -88,7 +96,7 @@ export default function RemoveWorktreesModal({ wts, onClose }: { wts: WorktreeNo
           <button className="cx-btn cx-btn--ghost" onClick={busy ? runInBackground : onClose}>
             {busy ? "Run in background" : "Cancel"}
           </button>
-          <button className="cx-btn cx-btn--danger" onClick={remove} disabled={busy}>
+          <button className="cx-btn cx-btn--danger" onClick={remove} disabled={busy || !checked}>
             {busy ? (
               <>
                 <Spinner size={12} />
@@ -104,6 +112,7 @@ export default function RemoveWorktreesModal({ wts, onClose }: { wts: WorktreeNo
         </>
       }
     >
+      {Object.keys(probeErrors).length > 0 && <div className="cx-alert cx-alert--error" role="alert"><div>Removal is disabled until every worktree can be checked.{Object.entries(probeErrors).map(([key, message]) => <p key={key}>{key}: {message}</p>)}<button className="cx-btn cx-btn--sm" onClick={() => setProbeRevision(v => v + 1)}>Retry checks</button></div></div>}
       {dirtyCount > 0 && (
         <div className="cx-alert cx-alert--error">
           <span className="cx-alert__ic">

@@ -1,9 +1,5 @@
-/* The work surface — Logs, Terminal and Agent as tabs in ONE pane instead of
-   three competing columns, splittable into two.
-
-   Layout presets are the answer to "it doesn't adapt between runtime-heavy and
-   AI-heavy work": each is one keystroke (⌘1–⌘4) and the panes are the same
-   components either way. */
+/* Agent and shell sessions share a persistent Terminal workspace. Logs can
+   appear alongside it without remounting sessions or resetting filters. */
 import { useEffect, useRef, useState } from "react";
 import { Play, PopIn, PopOut, Sparkle, Spinner, Terminal as TerminalIcon, Logs as LogsIcon, Plus, X } from "../../icons";
 import { hasBackend, type AgentCfg } from "../../ipc";
@@ -20,35 +16,19 @@ import type { LaneLaunch } from "./laneLaunch";
 export type PaneKind = "logs" | "shell" | "agent";
 export type LayoutId = "runtime" | "split" | "agent" | "shell" | "terminal";
 
+// Legacy layout IDs remain valid for commands and saved preferences.
 export const LAYOUTS: Record<LayoutId, { panes: PaneKind[]; label: string }> = {
-  runtime: { panes: ["logs"], label: "Runtime" },
-  split: { panes: ["logs", "agent"], label: "Split" },
-  agent: { panes: ["agent"], label: "Agent" },
-  shell: { panes: ["shell", "logs"], label: "Shell" },
-  // Terminal alone. The handoff stops at four presets, but it has logs alone
-  // and agent alone, so the omission reads as a gap rather than a decision.
+  runtime: { panes: ["logs"], label: "Logs" },
   terminal: { panes: ["shell"], label: "Terminal" },
+  shell: { panes: ["shell", "logs"], label: "Terminal + Logs" },
+  agent: { panes: ["shell"], label: "Terminal" },
+  split: { panes: ["shell", "logs"], label: "Terminal + Logs" },
 };
-
-/** ⌘1–⌘5, and the order the status bar cycles through. */
-export const LAYOUT_ORDER: LayoutId[] = ["runtime", "split", "agent", "shell", "terminal"];
-
-/** The pane set IS the state — a preset is just a named one. Deriving the
-    label instead of storing a preset id means a hand-made combination (swap
-    one pane's tab to something no preset covers) is a first-class layout
-    rather than a click that silently does nothing. */
+export const LAYOUT_ORDER: LayoutId[] = ["runtime", "terminal", "shell"];
 export function layoutLabel(panes: PaneKind[]): string {
-  const key = LAYOUT_ORDER.find((l) => LAYOUTS[l].panes.join() === panes.join());
-  return key ? LAYOUTS[key].label : "Custom";
+  return panes.every(p => p === "logs") ? "Logs" : panes.includes("logs") ? "Terminal + Logs" : "Terminal";
 }
-
 export const panesOf = (l: LayoutId): PaneKind[] => [...LAYOUTS[l].panes];
-
-const TAB_META: Record<PaneKind, { label: string; Icon: typeof LogsIcon }> = {
-  logs: { label: "Logs", Icon: LogsIcon },
-  shell: { label: "Terminal", Icon: TerminalIcon },
-  agent: { label: "Agent", Icon: Sparkle },
-};
 
 const EMPTY: LaneSession[] = [];
 
@@ -124,90 +104,61 @@ export default function WorkSurface({
   launch: LaneLaunch;
   onEditContext: () => void;
 }) {
-  const [split, setSplit] = useState(0.56);
+  const [split, setSplit] = useState(0.6);
   const [drag, setDrag] = useState(false);
+  const [alongside, setAlongside] = useState(panes.length > 1);
   const workRef = useRef<HTMLDivElement>(null);
-
+  const terminalVisible = panes.some(p => p !== "logs");
+  const showLogs = !terminalVisible || panes.includes("logs");
+  useEffect(() => { if (terminalVisible) setAlongside(panes.includes("logs")); }, [terminalVisible, panes]);
   useEffect(() => {
     if (!drag) return;
-    const mv = (e: MouseEvent) => {
-      const r = workRef.current?.getBoundingClientRect();
-      if (!r) return;
-      setSplit(Math.min(0.78, Math.max(0.22, (e.clientX - r.left) / r.width)));
+    const move = (e: MouseEvent) => {
+      const rect = workRef.current?.getBoundingClientRect();
+      if (rect?.width) setSplit(Math.min(0.75, Math.max(0.35, (e.clientX - rect.left) / rect.width)));
     };
     const up = () => setDrag(false);
-    window.addEventListener("mousemove", mv);
+    window.addEventListener("mousemove", move);
     window.addEventListener("mouseup", up);
+    const cursor = document.body.style.cursor, selection = document.body.style.userSelect;
     document.body.style.cursor = "col-resize";
     document.body.style.userSelect = "none";
     return () => {
-      window.removeEventListener("mousemove", mv);
+      window.removeEventListener("mousemove", move);
       window.removeEventListener("mouseup", up);
-      document.body.style.cursor = "";
-      document.body.style.userSelect = "";
+      document.body.style.cursor = cursor;
+      document.body.style.userSelect = selection;
     };
   }, [drag]);
-
-  /** Swapping one pane's tab always takes effect; the status bar names the
-      result, falling back to "Custom" when it isn't one of the presets. */
-  const setPane = (index: number, kind: PaneKind) => {
-    const next = panes.slice();
-    next[index] = kind;
-    setPanes(next);
-  };
-
-  return (
-    <div className="cxs-work" ref={workRef}>
-      {panes.map((p, n) => (
-        <div
-          key={p + n}
-          style={panes.length > 1 ? { flex: n === 0 ? split : 1 - split, display: "flex", minWidth: 0 } : { flex: 1, display: "flex", minWidth: 0 }}
-        >
-          {n > 0 && <div className={"cxs-vdiv" + (drag ? " is-on" : "")} onMouseDown={(e) => { e.preventDefault(); setDrag(true); }} />}
-          <Pane
-            kind={p}
-            index={n}
-            wt={wt}
-            setPane={setPane}
-            filter={filter}
-            onFilter={onFilter}
-            na={na}
-            onNext={onNext}
-            onRestart={onRestart}
-            launch={launch}
-            onEditContext={onEditContext}
-          />
-        </div>
-      ))}
+  return <div className="cxs-work cxs-work--unified">
+    <div className="cx-tabs cxs-worknav" aria-label="Workspace view">
+      <button className={"cx-tab" + (!terminalVisible ? " is-on" : "")} aria-pressed={!terminalVisible} onClick={() => setPanes(["logs"])}><LogsIcon size={12} />Logs</button>
+      <button className={"cx-tab" + (terminalVisible ? " is-on" : "")} aria-pressed={terminalVisible} onClick={() => setPanes(alongside ? ["shell", "logs"] : ["shell"])}><TerminalIcon size={12} />Terminal</button>
+      {terminalVisible && <button className="cx-btn cx-btn--sm cxs-alongside" aria-pressed={showLogs} onClick={() => { setAlongside(!showLogs); setPanes(showLogs ? ["shell"] : ["shell", "logs"]); }}>Logs alongside</button>}
     </div>
-  );
+    <div className={"cxs-workbody" + (terminalVisible && showLogs ? " is-split" : "")} ref={workRef}>
+      <div className="cxs-workslot" hidden={!terminalVisible} style={{ flex: showLogs ? split : 1 }}>
+        <Pane wt={wt} hidden={!terminalVisible} launch={launch} onEditContext={onEditContext} />
+      </div>
+      {terminalVisible && showLogs && <div className={"cxs-vdiv" + (drag ? " is-on" : "")} role="separator" aria-label="Resize terminal pane" aria-orientation="vertical" aria-valuemin={35} aria-valuemax={75} aria-valuenow={Math.round(split * 100)} tabIndex={0}
+        onMouseDown={e => { e.preventDefault(); setDrag(true); }}
+        onKeyDown={e => { if (e.key === "ArrowLeft" || e.key === "ArrowRight") { e.preventDefault(); setSplit(v => Math.min(0.75, Math.max(0.35, v + (e.key === "ArrowRight" ? 0.02 : -0.02)))); } }} />}
+      <div className="cxs-workslot cxs-workslot--logs" hidden={!showLogs} style={{ flex: terminalVisible ? 1 - split : 1 }}>
+        <div className="cxs-pane"><LogsPane visible={showLogs} wt={wt} filter={filter} onFilter={onFilter} na={na} onNext={onNext} onRestart={onRestart} /></div>
+      </div>
+    </div>
+  </div>;
 }
 
-function Pane({
-  kind,
-  index,
-  wt,
-  setPane,
-  filter,
-  onFilter,
-  na,
-  onNext,
-  onRestart,
-  launch,
-  onEditContext,
-}: {
-  kind: PaneKind;
-  index: number;
+function Pane({ wt, hidden, launch, onEditContext }: {
   wt: WorktreeNode;
-  setPane: (i: number, k: PaneKind) => void;
-  filter: string;
-  onFilter: (svcKey: string) => void;
-  na: NextAction | null;
-  onNext: () => void;
-  onRestart: (s: ServiceNode) => void;
+  hidden: boolean;
   launch: LaneLaunch;
   onEditContext: () => void;
 }) {
+  const [addOpen, setAddOpen] = useState(false);
+  const [pickProfile, setPickProfile] = useState(false);
+  const addRef = useRef<HTMLButtonElement>(null);
   const [ctx] = useWtContext(wt.wtKey);
   const all = useStore((s) => s.sessions[wt.wtKey] ?? EMPTY);
   const activeTerm = useStore((s) => s.activeTerm[wt.wtKey]);
@@ -218,10 +169,13 @@ function Pane({
   const setTermDetached = useStore((s) => s.setTermDetached);
   const showToast = useStore((s) => s.showToast);
 
-  const laneKind = kind === "shell" ? "shell" : "agent";
-  const mine = all.filter((s) => s.kind === laneKind);
-  const active = mine.find((s) => s.id === activeTerm) ?? mine[mine.length - 1];
-  const agentSess = all.find((s) => s.kind === "agent" && s.running);
+  const mine = all;
+  const active = mine.find(s => s.id === activeTerm) ?? mine[mine.length - 1];
+  const startAgent = (profile?: AgentCfg) => {
+    setAddOpen(false);
+    setPickProfile(false);
+    void launch.startAgent(profile ? { profile } : undefined);
+  };
 
   const popOut = async (id: string) => {
     if (!hasBackend()) {
@@ -267,135 +221,41 @@ function Pane({
 
   return (
     <div className="cxs-pane">
-      {kind === "agent" && (
-        <button className="cxs-ctxbar" onClick={onEditContext} title="Edit the context this worktree's agents inherit">
-          <span className="lb">Context</span>
-          <span className={"ti" + (ctx.title.trim() ? "" : " is-empty")}>
-            {ctx.title.trim() || "No task set — the agent still inherits branch, ports and database"}
-          </span>
-          {ctx.links.length > 0 && <span className="lk">{ctx.links.length} links</span>}
-          <Chevron size={11} />
-        </button>
-      )}
-      <div className="cx-tabs">
-        <div className="cx-tabs__scroll">
-          {(Object.keys(TAB_META) as PaneKind[]).map((t) => {
-            const { label, Icon } = TAB_META[t];
-            const state = t === "agent" && agentSess ? agentState(agentSess) : null;
-            return (
-              <button key={t} className={"cx-tab" + (kind === t ? " is-on" : "")} onClick={() => setPane(index, t)}>
-                <Icon size={12} />
-                {label}
-                {state && <span className={"cx-tab__pip" + (state === "waiting" ? " cx-tab__pip--wait" : "")} />}
+      <div className="cxs-sessionbar">
+        <div className="cxs-sessionlist" aria-label="Terminal sessions">
+          {mine.map(s => {
+            const state = !s.running ? "Ended" : s.kind === "agent" && agentState(s) === "waiting" ? "Waiting" : "Running";
+            const Icon = s.kind === "agent" ? Sparkle : TerminalIcon;
+            return <div key={s.id} className={"cxs-sessionchip" + (active?.id === s.id ? " is-on" : "")}>
+              <button className="cxs-sc" aria-pressed={active?.id === s.id} onClick={() => setActiveTerm(wt.wtKey, s.id)} title={`${s.title} · ${state}`}>
+                <span className={"d " + (state === "Waiting" ? "wait" : state === "Running" ? "run" : "")} /><Icon size={11} />{s.title}<span className="cxs-sessionstate">{state}</span>
               </button>
-            );
+              <button className="cx-ib cxs-sessionclose" aria-label={`Close ${s.title}`} title={`Close ${s.title}`} onClick={() => closeSession(s.id)}><X size={9} /></button>
+            </div>;
           })}
-
-          {kind !== "logs" && mine.length > 0 && (
-            <div className="cxs-sess">
-              {mine.map((s) => {
-                const st = s.kind === "agent" ? agentState(s) : s.running ? "busy" : "idle";
-                return (
-                  <span
-                    key={s.id}
-                    className={"cxs-sc" + (active?.id === s.id ? " is-on" : "")}
-                    onClick={(e) => {
-                      // the close button lives inside; don't re-select on its click
-                      if ((e.target as HTMLElement).closest(".x")) return;
-                      setActiveTerm(wt.wtKey, s.id);
-                    }}
-                    onKeyDown={(e) => {
-                      if (e.target !== e.currentTarget) return;
-                      if (e.key === "Enter" || e.key === " ") {
-                        e.preventDefault();
-                        setActiveTerm(wt.wtKey, s.id);
-                      }
-                    }}
-                    role="button"
-                    tabIndex={0}
-                  >
-                    <span className={"d " + (st === "waiting" ? "wait" : st === "busy" ? "run" : "")} />
-                    {s.title}
-                    <button
-                      className="x"
-                      aria-label={`Close ${s.title}`}
-                      title={`Close ${s.title}`}
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        closeSession(s.id);
-                      }}
-                    >
-                      <X size={9} />
-                    </button>
-                  </span>
-                );
-              })}
-              {kind === "agent" ? (
-                <StartAgent
-                  agents={launch.agents}
-                  onPick={(profile) => launch.startAgent(profile ? { profile } : undefined)}
-                  render={(open, ref) => (
-                    <button
-                      ref={ref}
-                      className="cxs-sc"
-                      title={launch.agents.length > 1 ? "New agent — choose which" : "New agent"}
-                      onClick={open}
-                    >
-                      <Plus size={10} />
-                    </button>
-                  )}
-                />
-              ) : (
-                <button className="cxs-sc" title="New shell" onClick={() => launch.startShell()}>
-                  <Plus size={10} />
-                </button>
-              )}
-            </div>
-          )}
         </div>
-
-        {kind !== "logs" && active && (
-          <button
-            className="cx-ib cx-ib--tab"
-            title="Open in a separate window"
-            onClick={() => popOut(active.id)}
-          >
-            <PopOut size={12} />
-          </button>
-        )}
+        <button ref={addRef} className="cx-ib cxs-sessionadd" aria-label="Add session" title="Add session" aria-haspopup="menu" aria-expanded={addOpen} onClick={() => { setPickProfile(false); setAddOpen(v => !v); }}><Plus size={12} /></button>
+        {addOpen && <AnchoredMenu anchor={addRef} onClose={() => setAddOpen(false)} width={214} label={pickProfile ? "Choose agent profile" : "Add session"}>
+          {pickProfile ? launch.agents.map(profile => <button className="cx-pop__item" role="menuitem" key={profile.id} onClick={() => startAgent(profile)}><Sparkle size={12} />{profile.name || profile.command}</button>) : <>
+            <button className="cx-pop__item" role="menuitem" onClick={() => launch.agents.length > 1 ? setPickProfile(true) : startAgent()}><Sparkle size={12} />Start agent{launch.agents.length > 1 && <Chevron size={10} />}</button>
+            <button className="cx-pop__item" role="menuitem" onClick={() => { setAddOpen(false); launch.startShell(); }}><TerminalIcon size={12} />Open terminal</button>
+          </>}
+        </AnchoredMenu>}
+        {active && !detached.has(active.id) && <button className="cx-btn cx-btn--sm cxs-sessionpop" onClick={() => void popOut(active.id)} title="Open in a separate window"><PopOut size={12} />Pop out</button>}
       </div>
-
-      {kind === "logs" ? (
-        <LogsPane wt={wt} filter={filter} onFilter={onFilter} na={na} onNext={onNext} onRestart={onRestart} />
-      ) : mine.length === 0 ? (
-        <div className="cxs-empty">
-          <span className="eic">{kind === "agent" ? <Sparkle size={17} /> : <TerminalIcon size={17} />}</span>
-          <span className="et">{kind === "agent" ? "No agent running here" : "No terminal open here"}</span>
-          <span className="es">
-            {kind === "agent"
-              ? "It starts in a real terminal, seeded with this worktree's context — the task, its links, and the branch, database and ports."
-              : "A login shell in this worktree's directory, on its pinned toolchain."}
-          </span>
-          {kind === "agent" ? (
-            <StartAgent
-              agents={launch.agents}
-              onPick={(profile) => launch.startAgent(profile ? { profile } : undefined)}
-              render={(open, ref) => (
-                <button ref={ref} className={nextClass("primary")} onClick={open}>
-                  <Sparkle size={12} />
-                  Start agent
-                  {launch.agents.length > 1 && <Chevron size={10} />}
-                </button>
-              )}
-            />
-          ) : (
-            <button className={nextClass("primary")} onClick={() => launch.startShell()}>
-              <TerminalIcon size={12} />
-              Open terminal
-            </button>
-          )}
+      {active?.kind === "agent" && <button className="cxs-ctxbar" onClick={onEditContext} title="Edit the context this worktree's agents inherit">
+        <span className="lb">Task context</span><span className={"ti" + (ctx.title.trim() ? "" : " is-empty")}>{ctx.title.trim() || "No task set — branch, ports and database are included"}</span>
+        {ctx.links.length > 0 && <span className="lk">{ctx.links.length} links</span>}<Chevron size={11} />
+      </button>}
+      {mine.length === 0 ? <div className="cxs-empty">
+        <span className="eic"><TerminalIcon size={17} /></span>
+        <span className="et">Start working in this terminal</span>
+        <span className="es">Start an agent with this worktree’s context, or open a shell in its directory.</span>
+        <div className="cxs-emptyactions">
+          <StartAgent agents={launch.agents} onPick={startAgent} render={(open, ref) => <button ref={ref} className={nextClass("primary")} onClick={open}><Sparkle size={12} />Start agent{launch.agents.length > 1 && <Chevron size={10} />}</button>} />
+          <button className="cx-btn cx-btn--sm" onClick={() => launch.startShell()}><TerminalIcon size={12} />Open terminal</button>
         </div>
-      ) : (
+      </div> : (
         <div className="cxs-pbody cxs-pbody--term">
           {mine.map((s) => {
             const isActive = active?.id === s.id;
@@ -418,13 +278,13 @@ function Pane({
                 )
               );
             return (
-              <div key={s.id} className={"term-body" + (isActive ? "" : " hidden")} role="tabpanel" aria-label={s.title} aria-hidden={!isActive}>
+              <div key={s.id} className={"term-body" + (isActive ? "" : " hidden")} role="tabpanel" aria-label={s.title} aria-hidden={hidden || !isActive}>
                 <TerminalPane
                   key={`${s.id}#${s.gen}`}
                   termId={s.id}
                   cwd={wt.path}
                   command={s.command}
-                  hidden={!isActive}
+                  hidden={hidden || !isActive}
                   readOnly={!s.running}
                 />
               </div>

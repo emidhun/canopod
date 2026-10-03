@@ -17,7 +17,7 @@ import WorktreeView from "./canopy/WorktreeView";
 import Overview from "./canopy/Overview";
 import Palette from "./canopy/Palette";
 import StatusBar from "./canopy/StatusBar";
-import { LAYOUT_ORDER, LAYOUTS, panesOf, type LayoutId, type PaneKind } from "./canopy/WorkSurface";
+import { LAYOUT_ORDER, panesOf, type LayoutId, type PaneKind } from "./canopy/WorkSurface";
 import { useLaneLaunch } from "./canopy/laneLaunch";
 import DatabaseModal from "./canopy/DatabaseModal";
 import NoticeModal from "./canopy/NoticeModal";
@@ -66,11 +66,11 @@ export default function App() {
   const [sideHidden, setSideHidden] = useState(false);
   const [palette, setPalette] = useState(false);
   const [attnOpen, setAttnOpen] = useState(false);
-  const [showSettings, setShowSettings] = useState(false);
+  const [showSettings, setShowSettings] = useState(() => import.meta.env.DEV && !hasBackend() && new URLSearchParams(window.location.search).get("review") === "settings");
   const [showNewWt, setShowNewWt] = useState(false);
   const [showSwitchBranch, setShowSwitchBranch] = useState(false);
-  const [showDirty, setShowDirty] = useState(false);
-  const [showDb, setShowDb] = useState(false);
+  const [showDirty, setShowDirty] = useState(() => import.meta.env.DEV && !hasBackend() && new URLSearchParams(window.location.search).get("changes-demo") === "1");
+  const [showDb, setShowDb] = useState(() => import.meta.env.DEV && !hasBackend() && ["database", "restore"].includes(new URLSearchParams(window.location.search).get("review") || ""));
   const [showSetup, setShowSetup] = useState(false);
   /* A setup run handed over by the create dialog. Kept separate from
      `showSetup` because the worktree is not in the tree yet — the backend
@@ -374,8 +374,8 @@ export default function App() {
   return (
     <div className="cxs-shell">
       <TopBar
-        repo={sel?.repo ?? null}
-        wt={view === "overview" ? null : (sel?.wt ?? null)}
+        repo={showSettings ? null : (sel?.repo ?? null)}
+        wt={showSettings || view === "overview" ? null : (sel?.wt ?? null)}
         attn={attn}
         running={running}
         agents={agentCount}
@@ -388,7 +388,7 @@ export default function App() {
       />
 
       <div className="cxs-body">
-        <SidebarNav
+        {!showSettings && <SidebarNav
           hidden={sideHidden}
           view={view}
           selKey={sel?.wt.wtKey ?? null}
@@ -399,7 +399,7 @@ export default function App() {
           onNew={() => setShowNewWt(true)}
           onOpenTerminal={openTerminalFor}
           onRemoveMany={(keys) => setRemoveWtsFor(tree.flatMap((r) => r.worktrees).filter((w) => keys.includes(w.wtKey)))}
-        />
+        />}
 
         {showSettings ? (
           <SettingsView onClose={() => setShowSettings(false)} />
@@ -442,6 +442,7 @@ export default function App() {
               onSetup={() => setShowSetup(true)}
               onOpenService={(s) => setSvcDetail(s.svcKey)}
               onEditContext={() => setShowCtx(true)}
+              onDirty={() => setShowDirty(true)}
               onSwitchBranch={switchBranchEnabled ? () => setShowSwitchBranch(true) : undefined}
             />
           )
@@ -453,13 +454,9 @@ export default function App() {
         view={showSettings ? "overview" : view}
         attn={attn}
         panes={panes}
-        onCycleLayout={() => {
-          const at = LAYOUT_ORDER.findIndex((l) => LAYOUTS[l].panes.join() === panes.join());
-          setLayout(LAYOUT_ORDER[(at + 1) % LAYOUT_ORDER.length]);
-        }}
+        onLayout={setLayout}
         onAttn={() => setAttnOpen((a) => !a)}
         onSwitchBranch={switchBranchEnabled ? () => setShowSwitchBranch(true) : undefined}
-        onDirty={() => setShowDirty(true)}
         worktreeCount={worktreeCount}
         repoCount={tree.length}
       />

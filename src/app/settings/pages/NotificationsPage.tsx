@@ -23,7 +23,7 @@ export default function NotificationsPage({ settings, patch, markDirty }: PagePr
         <TRow title="Play a sound" on={n.sound} onToggle={() => set({ sound: !n.sound })} />
         <div className="fgrid" style={{ marginTop: 8 }}>
           <span className="lb">Badge</span>
-          <select className="inp" value={n.badge} onChange={(e) => set({ badge: e.target.value })}>
+          <select aria-label="Badge" className="inp" value={n.badge} onChange={(e) => set({ badge: e.target.value })}>
             <option value="count">Count of things needing you</option>
             <option value="dot">A dot</option>
             <option value="off">Nothing</option>

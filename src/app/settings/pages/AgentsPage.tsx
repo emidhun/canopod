@@ -25,7 +25,7 @@ export default function AgentsPage({ repo, patchRepo, markDirty, flash, invalid 
             const bad = invalid.get(rowKey("agent", i));
             return (
             <div className={"obj" + (open === a.id ? " open" : "") + (bad ? " incomplete" : "")} aria-invalid={bad ? true : undefined} key={a.id}>
-              <button className="ohead" onClick={() => setOpen(open === a.id ? null : a.id)}>
+              <div className="ohead"><button className="object-toggle" aria-expanded={open === a.id} onClick={() => setOpen(open === a.id ? null : a.id)}>
                 <span className="cv"><ChevRight size={11} /></span>
                 <Sparkle size={12} />
                 <span className="nm">{a.name || "Untitled"}</span>
@@ -33,20 +33,20 @@ export default function AgentsPage({ repo, patchRepo, markDirty, flash, invalid 
                 {i === 0 && <span className="tag" style={{ color: "var(--action-primary)", background: "var(--accent-dim)" }}>default</span>}
                 <span className="gr" />
                 <span className="mono">{a.command}</span>
-                <span className="oacts">
-                  {i !== 0 && <span className="ico" title="Make default" onClick={(e) => { e.stopPropagation(); makeDefault(a.id); }}><Check size={11} /></span>}
-                  <span className="ico bad" title="Remove" onClick={(e) => { e.stopPropagation(); patchRepo({ agents: agents.filter((x) => x.id !== a.id) }); markDirty("agents"); }}><Trash size={11} /></span>
+                </button><span className="oacts">
+                  {i !== 0 && <button type="button" className="ico" title="Make default" onClick={(e) => { e.stopPropagation(); makeDefault(a.id); }}><Check size={11} /></button>}
+                  <button type="button" className="ico bad" title="Remove" onClick={(e) => { e.stopPropagation(); patchRepo({ agents: agents.filter((x) => x.id !== a.id) }); markDirty("agents"); }}><Trash size={11} /></button>
                 </span>
-              </button>
+              </div>
               {open === a.id && (
                 <div className="obody">
                   <div className="fgrid">
-                    <span className="lb">Name</span><input className="inp" value={a.name} placeholder="Claude Code" onChange={(e) => patch(a.id, { name: e.target.value })} />
-                    <span className="lb">Command</span><input className="inp mono" value={a.command} placeholder="claude" onChange={(e) => patch(a.id, { command: e.target.value })} />
+                    <span className="lb">Name</span><input aria-label="Name" className="inp" value={a.name} placeholder="Claude Code" onChange={(e) => patch(a.id, { name: e.target.value })} />
+                    <span className="lb">Command</span><input aria-label="Command" className="inp mono" value={a.command} placeholder="claude" onChange={(e) => patch(a.id, { command: e.target.value })} />
                   </div>
                   <div className="fgrid">
                     <span className="lb">Waiting phrases</span>
-                    <textarea
+                    <textarea aria-label="Waiting phrases"
                       className="inp mono"
                       rows={3}
                       value={a.waitingPatterns}
@@ -60,7 +60,7 @@ export default function AgentsPage({ repo, patchRepo, markDirty, flash, invalid 
                   </div>
                   <div className="tglrow" style={{ borderTop: 0 }}>
                     <span className="tt"><b>Prompt on launch</b><span>Append Canopy's structured handoff as the first prompt.</span></span>
-                    <Toggle on={a.promptOnLaunch} onClick={() => patch(a.id, { promptOnLaunch: !a.promptOnLaunch })} />
+                    <Toggle label={`Prompt on launch for ${a.name}`} on={a.promptOnLaunch} onClick={() => patch(a.id, { promptOnLaunch: !a.promptOnLaunch })} />
                   </div>
                 </div>
               )}
@@ -83,13 +83,13 @@ export default function AgentsPage({ repo, patchRepo, markDirty, flash, invalid 
         <div className="fgrid">
           <span className="lb">Max parallel</span>
           <div className="row">
-            <input className="inp mono" style={{ width: 80 }} value={repo.maxParallelAgents || ""} placeholder="no limit"
+            <input aria-label="Maximum parallel agents" className="inp mono" style={{ width: 80 }} value={repo.maxParallelAgents || ""} placeholder="no limit"
               onChange={(e) => { patchRepo({ maxParallelAgents: Number(e.target.value) || 0 }); markDirty("agents"); }} />
             <span className="hint" style={{ marginTop: 0 }}>Agents at once across this repo. A launch past the limit is refused, not queued.</span>
           </div>
           <span className="lb">Idle timeout</span>
           <div className="row">
-            <input className="inp mono" style={{ width: 80 }} value={repo.agentIdleTimeoutMin || ""} placeholder="never"
+            <input aria-label="Agent idle timeout" className="inp mono" style={{ width: 80 }} value={repo.agentIdleTimeoutMin || ""} placeholder="never"
               onChange={(e) => { patchRepo({ agentIdleTimeoutMin: Number(e.target.value) || 0 }); markDirty("agents"); }} />
             <span className="hint" style={{ marginTop: 0 }}>Minutes with no output or input before an agent is closed. Blank never closes one — a quiet agent may just be waiting for you.</span>
           </div>

@@ -1,4 +1,4 @@
-/* Uncommitted changes — the status-bar dirty chip opens this.
+/* Uncommitted changes — the header dirty indicator opens this.
 
    One modal, three answers to one question ("what happens to this work?"),
    selected by a mode segment — so the footer still ends the same way as every
@@ -13,6 +13,14 @@ import { Alert, Check, Folder, Git, Info, Search, Spinner, Trash } from "../icon
 import Modal, { Hint, Spacer } from "./canopy/Modal";
 
 type Mode = "commit" | "stash" | "discard";
+
+const demoChanges = (): StatusEntry[] => [
+  { code: " M", path: "src/components/CheckoutDrawer.tsx", sub: false },
+  { code: "MM", path: "src/styles/checkout.css", sub: false },
+  { code: " D", path: "src/components/LegacyCheckout.tsx", sub: false },
+  { code: "R ", path: "src/hooks/useCheckout.ts", from: "src/hooks/useCart.ts", sub: false },
+  ...["src/components/PaymentSummary.tsx", "src/components/checkout/ShippingAddress.tsx", "tests/checkout.spec.ts", "docs/checkout-flow.md"].map(path => ({ code: "??", path, sub: false })),
+];
 
 const isConf = (f: StatusEntry) => f.code.includes("U") || f.code === "AA" || f.code === "DD";
 const isUntr = (f: StatusEntry) => f.code === "??";
@@ -91,9 +99,9 @@ function FileRow({
   } else if (f.code === "MM") {
     tag = "staged + edited";
   }
-  const slash = f.path.lastIndexOf("/");
-  const dir = slash >= 0 ? f.path.slice(0, slash + 1) : "";
-  const base = f.path.slice(dir.length);
+  const base = f.path.replace(/\/$/, "").split("/").pop() || f.path;
+  const fromBase = f.from?.replace(/\/$/, "").split("/").pop();
+  const fullPath = f.from ? `${f.from} → ${f.path}` : f.path;
   const note = f.sub ? (f.subFiles != null ? `modified content · ${plural(f.subFiles, "file")} inside` : "modified content") : null;
   const cls = "cxm-frow" + (openable ? " cxm-frow--open" : "") + (conf ? " cxm-frow--conf" : "") + (gone ? " cxm-frow--gone" : "");
   const inner = (
@@ -102,19 +110,18 @@ function FileRow({
       <span className="cxm-pth">
         {f.from && (
           <>
-            <i>{f.from}</i> <span className="cxm-arw">→</span>{" "}
+            <i>{fromBase}</i> <span className="cxm-arw">→</span>{" "}
           </>
         )}
-        <i>{dir}</i>
         {base}
         {note && <span className="cxm-nt"> — {note}</span>}
       </span>
-      {tag && <span className={tagCls}>{tag}</span>}
+      {tag && !untr && <span className={tagCls}>{tag}</span>}
     </>
   );
-  if (!openable) return <div className={cls}>{inner}</div>;
+  if (!openable) return <div className={cls} title={fullPath}>{inner}</div>;
   return (
-    <button type="button" className={cls} title={`Open ${f.path} in editor`} onClick={() => onOpen(f)}>
+    <button type="button" className={cls} title={fullPath} aria-label={`Open ${f.path} in editor`} onClick={() => onOpen(f)}>
       {inner}
     </button>
   );
@@ -134,7 +141,7 @@ function FileList({
   onOpen: (f: StatusEntry) => void;
 }) {
   const [q, setQ] = useState("");
-  const filterable = files.length > 25;
+  const filterable = true;
   const t = q.trim().toLowerCase();
   const shown = t ? files.filter((f) => f.path.toLowerCase().includes(t)) : files;
   const groups = [
@@ -152,7 +159,7 @@ function FileList({
       {filterable && (
         <div className="cxm-pick-f" style={{ marginBottom: "var(--sp-2)" }}>
           <Search size={12} />
-          <input value={q} spellCheck={false} placeholder={`Filter ${files.length} paths…`} onChange={(e) => setQ(e.target.value)} />
+          <input aria-label="Filter changed files" value={q} spellCheck={false} placeholder={`Filter ${files.length} paths…`} onChange={(e) => setQ(e.target.value)} />
         </div>
       )}
       <div className="cxm-flist">
@@ -160,6 +167,7 @@ function FileList({
           <div key={g.k}>
             <div className="cxm-gsec">
               {g.label}
+              {g.k === "untracked" && <span className="changes-group-note">{mode === "discard" ? (cleanUntracked ? "Will be deleted" : "Kept") : (addUntracked ? "Included" : "Excluded")}</span>}
               <span className="cxm-gsec__n">{g.items.length}</span>
             </div>
             {g.items.map((f, i) => (
@@ -177,7 +185,7 @@ function FileList({
           </>
         ) : (
           <>
-            All {files.length} changed {files.length === 1 ? "path" : "paths"} are listed. The list scrolls; nothing is truncated.
+            Click a file to open it in your editor.
           </>
         )}
       </div>
@@ -187,10 +195,14 @@ function FileList({
 
 export default function UncommittedChangesModal({ wt, onClose }: { wt: WorktreeNode; onClose: () => void }) {
   const showToast = useStore((s) => s.showToast);
+  const demo = import.meta.env.DEV && !hasBackend() && new URLSearchParams(window.location.search).get("changes-demo") === "1";
   const [files, setFiles] = useState<StatusEntry[] | null>(null);
   const [probeError, setProbeError] = useState<string | null>(null);
 
-  const [mode, setMode] = useState<Mode>("commit");
+  const [mode, setMode] = useState<Mode>(() => {
+    const requested = demo ? new URLSearchParams(window.location.search).get("changes-mode") : null;
+    return requested === "stash" || requested === "discard" ? requested : "commit";
+  });
   const [msg, setMsg] = useState("");
   const [stashName, setStashName] = useState("");
   const [withUntracked, setWithUntracked] = useState(false);
@@ -203,7 +215,7 @@ export default function UncommittedChangesModal({ wt, onClose }: { wt: WorktreeN
   // failed probe is an error the actions stay disabled on, never "clean".
   useEffect(() => {
     if (!hasBackend()) {
-      setFiles([]);
+      setFiles(demo ? demoChanges() : []);
       return;
     }
     ipc
@@ -216,7 +228,7 @@ export default function UncommittedChangesModal({ wt, onClose }: { wt: WorktreeN
         setFiles(null);
         setProbeError(errText(e));
       });
-  }, [wt.wtKey]);
+  }, [wt.wtKey, demo]);
 
   const ahead = wt.git?.ahead ?? 0;
   const list = files ?? [];
@@ -417,7 +429,7 @@ export default function UncommittedChangesModal({ wt, onClose }: { wt: WorktreeN
       busy={busy}
       onClose={onClose}
       title="Uncommitted changes"
-      sub={`${wt.branch} · ${plural(files.length, "file")}${ahead > 0 ? ` · ↑${ahead} vs origin` : ""}`}
+      sub={wt.branch}
       foot={
         <>
           <span className="cx-modal__hint">
@@ -451,18 +463,23 @@ export default function UncommittedChangesModal({ wt, onClose }: { wt: WorktreeN
         </>
       }
     >
-      <div className="cx-seg" style={{ marginBottom: "var(--sp-modal-head)" }}>
-        <button className={mode === "commit" ? "is-on" : ""} onClick={() => setMode("commit")} disabled={busy}>
+      {demo && <div className="changes-demo">Demo data · actions do not change files</div>}
+      <div className="cx-seg changes-tabs" role="group" aria-label="Change action">
+        <button className={mode === "commit" ? "is-on" : ""} aria-pressed={mode === "commit"} onClick={() => setMode("commit")} disabled={busy}>
           Commit
         </button>
-        <button className={mode === "stash" ? "is-on" : ""} onClick={() => setMode("stash")} disabled={busy}>
+        <button className={mode === "stash" ? "is-on" : ""} aria-pressed={mode === "stash"} onClick={() => setMode("stash")} disabled={busy}>
           Stash
         </button>
-        <button className={mode === "discard" ? "is-on" : ""} onClick={() => setMode("discard")} disabled={busy}>
+        <button className={mode === "discard" ? "is-on" : ""} aria-pressed={mode === "discard"} onClick={() => setMode("discard")} disabled={busy}>
           Discard
         </button>
       </div>
 
+      <div className="changes-summary">{files.length} changed <span>·</span> {scope} included</div>
+      <div className="changes-layout">
+        <div className="changes-files"><FileList files={files} mode={mode} addUntracked={withUntracked} cleanUntracked={cleanUntracked} onOpen={openFile} /></div>
+        <div className="changes-action">
       {conflicts > 0 && (
         <div className="cx-alert cx-alert--error">
           <span className="cx-alert__ic">
@@ -507,15 +524,16 @@ export default function UncommittedChangesModal({ wt, onClose }: { wt: WorktreeN
 
       {mode === "commit" && (
         <div className="cxm-fld">
-          <div className="cxm-flab cxm-flab--f">
+          <label htmlFor="changes-message" className="cxm-flab cxm-flab--f">
             Commit message
             <span className="cxm-opt" style={{ color: subject.length > 72 ? "var(--state-attention)" : undefined }}>
               {subject.length} / 72 in the subject
             </span>
-          </div>
+          </label>
           <textarea
+            id="changes-message"
             className="cx-input cx-input--mono"
-            style={{ minHeight: 66, lineHeight: "var(--lh-body)" }}
+            style={{ minHeight: 104, lineHeight: "var(--lh-body)" }}
             value={msg}
             spellCheck={false}
             disabled={busy}
@@ -538,11 +556,12 @@ export default function UncommittedChangesModal({ wt, onClose }: { wt: WorktreeN
 
       {mode === "stash" && (
         <div className="cxm-fld">
-          <div className="cxm-flab cxm-flab--f">
+          <label htmlFor="changes-stash" className="cxm-flab cxm-flab--f">
             Stash name<span className="cxm-opt">optional</span>
-          </div>
+          </label>
           <input
             className="cx-input cx-input--mono"
+            id="changes-stash"
             value={stashName}
             spellCheck={false}
             disabled={busy}
@@ -613,6 +632,7 @@ export default function UncommittedChangesModal({ wt, onClose }: { wt: WorktreeN
               </div>
               <input
                 className="cx-input cx-input--mono"
+                aria-label="Type discard to confirm"
                 value={confirm}
                 spellCheck={false}
                 placeholder="discard"
@@ -624,12 +644,8 @@ export default function UncommittedChangesModal({ wt, onClose }: { wt: WorktreeN
         </div>
       )}
 
-      <div className="cxm-cmd">
-        <span className="cxm-cmd__rn">runs</span>
-        <code>{cmd}</code>
-      </div>
-
-      <FileList files={files} mode={mode} addUntracked={withUntracked} cleanUntracked={cleanUntracked} onOpen={openFile} />
+      <details className="changes-command"><summary>Command preview</summary><code>{cmd}</code></details>
+      </div></div>
 
       {busy && (
         <div className="cxm-prog">

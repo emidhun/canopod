@@ -21,7 +21,7 @@ it("waits for the initial config before editing and preserves existing setup on 
   expect(screen.queryByText("Add file")).not.toBeInTheDocument();
   // Import can mark this repo dirty independently of the gated editors.
   fireEvent.change(container.querySelector('input[type="file"]')!, { target: { files: [new File(['{"provision":[]}'], "config.json", { type: "application/json" })] } });
-  await screen.findByText("Discard");
+  await screen.findByText("Discard all changes");
   await user.keyboard("{Meta>}s{/Meta}");
   expect(saveRepo).not.toHaveBeenCalled();
   const setup = [{ cmd: "existing setup", cwd: "", enabled: true, continueOnFailure: false, timeoutSecs: 0 }];
@@ -66,7 +66,7 @@ it("keeps edits made while a repo save is pending", async () => {
   await user.type(field, "-new");
   await act(async () => saved());
   expect(field).toHaveValue("first-new");
-  expect(screen.getByText("Discard")).toBeInTheDocument();
+  expect(screen.getByText("Discard all changes")).toBeInTheDocument();
   saveRepo.mockResolvedValue();
   await user.keyboard("{Meta>}s{/Meta}");
   await waitFor(() => expect(saveRepo).toHaveBeenCalledTimes(2));

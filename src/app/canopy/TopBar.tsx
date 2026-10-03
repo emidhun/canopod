@@ -70,7 +70,7 @@ export function TopBar({
         <button className="cxs-gchip" onClick={onOverview} title="All worktrees  (⌘O)">
           <span className="cx-dot cx-dot--running" />
           <span>{running}</span>
-          <span className="lbl">running</span>
+          <span className="lbl">services running</span>
         </button>
         {agents > 0 && (
           <button className="cxs-gchip cxs-gchip--agent" onClick={onOverview} title="Active agents">

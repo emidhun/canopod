@@ -17,13 +17,13 @@ export default function RepoGeneralPage({ repo, patchRepo, markDirty, flash, onR
       <div className="sec">
         <div className="slab">Repository</div>
         <div className="fgrid">
-          <span className="lb">Name</span><input className="inp" value={repo.name} onChange={(e) => { patchRepo({ name: e.target.value }); markDirty("repo-general"); }} />
+          <span className="lb">Name</span><input aria-label="Name" className="inp" value={repo.name} onChange={(e) => { patchRepo({ name: e.target.value }); markDirty("repo-general"); }} />
           <span className="lb">Path</span>
-          <div className="row"><input className="inp mono gr" value={repo.path} readOnly />
+          <div className="row"><input aria-label="Repository path" className="inp mono gr" value={repo.path} readOnly />
             <button className="ico" title="Reveal in Finder" onClick={() => { if (!hasBackend()) return flash("Needs the desktop app"); ipc.revealRepo(repo.id).catch((e) => flash(errText(e))); }}><Finder size={12} /></button></div>
-          <span className="lb">Worktree root</span><input className="inp mono" value={repo.worktreeDir} placeholder=".worktrees" onChange={(e) => { patchRepo({ worktreeDir: e.target.value }); markDirty("repo-general"); }} />
+          <span className="lb">Worktree root</span><input aria-label="Worktree root" className="inp mono" value={repo.worktreeDir} placeholder=".worktrees" onChange={(e) => { patchRepo({ worktreeDir: e.target.value }); markDirty("repo-general"); }} />
           <span className="lb">Default base</span>
-          <input className="inp mono" value={repo.defaultBase} placeholder="main" onChange={(e) => { patchRepo({ defaultBase: e.target.value }); markDirty("repo-general"); }} />
+          <input aria-label="Default base" className="inp mono" value={repo.defaultBase} placeholder="main" onChange={(e) => { patchRepo({ defaultBase: e.target.value }); markDirty("repo-general"); }} />
         </div>
       </div>
       <div className="sec">

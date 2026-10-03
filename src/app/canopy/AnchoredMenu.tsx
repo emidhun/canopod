@@ -22,6 +22,8 @@ export default function AnchoredMenu({
   align = "right",
   width,
   children,
+  role = "menu",
+  label,
 }: {
   anchor: RefObject<HTMLElement | null>;
   onClose: () => void;
@@ -29,6 +31,8 @@ export default function AnchoredMenu({
   align?: "left" | "right";
   width?: number;
   children: ReactNode;
+  role?: "menu" | "dialog";
+  label?: string;
 }) {
   const ref = useRef<HTMLDivElement>(null);
   const [pos, setPos] = useState<{ top: number; left?: number; right?: number } | null>(null);
@@ -39,16 +43,19 @@ export default function AnchoredMenu({
       const a = anchor.current?.getBoundingClientRect();
       if (!a) return;
       const gap = 4;
+      const menuHeight = ref.current?.offsetHeight ?? 0;
+      const menuWidth = ref.current?.offsetWidth ?? width ?? 216;
+      const top = a.bottom + gap + menuHeight > window.innerHeight ? Math.max(gap, a.top - menuHeight - gap) : a.bottom + gap;
       setPos(
         align === "right"
-          ? { top: a.bottom + gap, right: Math.max(gap, window.innerWidth - a.right) }
-          : { top: a.bottom + gap, left: Math.min(a.left, window.innerWidth - (width ?? 216) - gap) },
+          ? { top, right: Math.max(gap, window.innerWidth - a.right) }
+          : { top, left: Math.max(gap, Math.min(a.left, window.innerWidth - menuWidth - gap)) },
       );
     };
     place();
     window.addEventListener("resize", place);
     return () => window.removeEventListener("resize", place);
-  }, [anchor, align, width]);
+  }, [anchor, align, width, !!pos]);
 
   useEffect(() => {
     // the trigger is outside this element, so a click on it would otherwise
@@ -59,9 +66,18 @@ export default function AnchoredMenu({
       onClose();
     };
     const key = (e: KeyboardEvent) => {
+      if (role === "menu" && ["ArrowDown", "ArrowUp", "Home", "End"].includes(e.key)) {
+        const items = Array.from(ref.current?.querySelectorAll<HTMLButtonElement>("button:not([disabled])") ?? []);
+        if (!items.length) return;
+        e.preventDefault();
+        const current = items.indexOf(document.activeElement as HTMLButtonElement);
+        const next = e.key === "Home" ? 0 : e.key === "End" ? items.length - 1 : (current + (e.key === "ArrowUp" ? -1 : 1) + items.length) % items.length;
+        items[next].focus();
+      }
       if (e.key === "Escape") {
         e.stopPropagation();
         onClose();
+        anchor.current?.focus();
       }
     };
     document.addEventListener("mousedown", down);
@@ -70,16 +86,17 @@ export default function AnchoredMenu({
       document.removeEventListener("mousedown", down);
       document.removeEventListener("keydown", key, true);
     };
-  }, [anchor, onClose]);
+  }, [anchor, onClose, role]);
 
   if (!pos) return null;
 
   return createPortal(
     <div
       className="cx-pop"
-      role="menu"
+      role={role}
+      aria-label={label}
       ref={ref}
-      style={{ position: "fixed", top: pos.top, left: pos.left, right: pos.right, minWidth: width }}
+      style={{ position: "fixed", top: pos.top, left: pos.left, right: pos.right, minWidth: width ? Math.min(width, window.innerWidth - 8) : undefined, maxHeight: "calc(100vh - 8px)", overflowY: "auto" }}
     >
       {children}
     </div>,

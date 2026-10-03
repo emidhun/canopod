@@ -29,9 +29,9 @@ export default function SecurityPage({ settings, patch, markDirty }: PageProps) 
         <div className="slab">Git credentials</div>
         <div className="fgrid">
           <span className="lb">SSH key</span>
-          <input className="inp mono" value={sec.sshKey} placeholder="git's own default" onChange={(e) => set({ sshKey: e.target.value })} />
+          <input aria-label="SSH key" className="inp mono" value={sec.sshKey} placeholder="git's own default" onChange={(e) => set({ sshKey: e.target.value })} />
           <span className="lb">Credential helper</span>
-          <input className="inp mono" value={sec.credentialHelper} placeholder="git's own default" onChange={(e) => set({ credentialHelper: e.target.value })} />
+          <input aria-label="Credential helper" className="inp mono" value={sec.credentialHelper} placeholder="git's own default" onChange={(e) => set({ credentialHelper: e.target.value })} />
         </div>
         <p className="hint">
           Applied per git invocation — Canopy never edits your repo or global git config.

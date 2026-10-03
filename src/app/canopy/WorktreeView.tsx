@@ -51,6 +51,7 @@ export default function WorktreeView({
   onSetup,
   onOpenService,
   onEditContext,
+  onDirty,
   onSwitchBranch,
 }: {
   wt: WorktreeNode;
@@ -66,6 +67,7 @@ export default function WorktreeView({
   onSetup: () => void;
   onOpenService: (s: ServiceNode) => void;
   onEditContext: () => void;
+  onDirty: () => void;
   /** absent when Settings has turned the Switch-branch action off */
   onSwitchBranch?: () => void;
 }) {
@@ -107,9 +109,9 @@ export default function WorktreeView({
           {wt.git && wt.git.ahead > 0 && <span className="cxs-gc cxs-gc--up">↑{wt.git.ahead}</span>}
           {wt.git && wt.git.behind > 0 && <span className="cxs-gc cxs-gc--down">↓{wt.git.behind}</span>}
           {wt.git?.dirty && (
-            <span className="cxs-gc cxs-gc--dirty" title="uncommitted changes">
-              ●
-            </span>
+            <button className="cxs-gc cxs-gc--dirty" aria-label="Review uncommitted changes" title="Review uncommitted changes — commit, stash or discard" onClick={onDirty}>
+              <span className="cxs-gc-dot" aria-hidden="true" />
+            </button>
           )}
         </div>
 

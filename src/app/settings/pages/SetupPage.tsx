@@ -24,20 +24,20 @@ export default function SetupPage({ setup, setSetup, policy, setPolicy, markDirt
             <div className={"obj" + (openTask === i ? " open" : "")} key={i}>
               <div className="ohead" style={{ cursor: "default" }}>
                 <span className="num" style={{ width: 16, height: 16, borderRadius: 4, display: "grid", placeItems: "center", font: "var(--fw-bold) var(--fs-label) var(--sans)", background: "var(--btn)", color: "var(--text-tertiary)", flex: "none" }}>{i + 1}</span>
-                <input className="inp mono gr" value={t.cmd} style={{ height: 25, opacity: t.enabled ? 1 : 0.55 }} placeholder="pnpm install" onChange={(e) => patch(i, { cmd: e.target.value })} />
-                <Toggle on={t.enabled} onClick={() => patch(i, { enabled: !t.enabled })} />
+                <input aria-label={`Setup task ${i + 1} command`} className="inp mono gr" value={t.cmd} style={{ height: 25, opacity: t.enabled ? 1 : 0.55 }} placeholder="pnpm install" onChange={(e) => patch(i, { cmd: e.target.value })} />
+                <Toggle label={`Enable setup task ${i + 1}`} on={t.enabled} onClick={() => patch(i, { enabled: !t.enabled })} />
                 <span className="oacts" style={{ opacity: 1 }}>
-                  <span className="ico" title={openTask === i ? "Hide options" : "Working directory"} onClick={() => setOpenTask(openTask === i ? null : i)}><Chevron size={11} /></span>
-                  <span className="ico" title="Move up" onClick={() => move(i, -1)}><Rot deg={180}><Chevron size={11} /></Rot></span>
-                  <span className="ico" title="Move down" onClick={() => move(i, 1)}><Chevron size={11} /></span>
-                  <span className="ico bad" title="Remove" onClick={() => { setSetup(setup.filter((_, j) => j !== i)); markDirty("setup"); }}><Trash size={11} /></span>
+                  <button type="button" className="ico" title={openTask === i ? "Hide options" : "Working directory"} onClick={() => setOpenTask(openTask === i ? null : i)}><Chevron size={11} /></button>
+                  <button type="button" className="ico" title="Move up" disabled={i === 0} onClick={() => move(i, -1)}><Rot deg={180}><Chevron size={11} /></Rot></button>
+                  <button type="button" className="ico" title="Move down" disabled={i === setup.length - 1} onClick={() => move(i, 1)}><Chevron size={11} /></button>
+                  <button type="button" className="ico bad" title="Remove" onClick={() => { setSetup(setup.filter((_, j) => j !== i)); markDirty("setup"); }}><Trash size={11} /></button>
                 </span>
               </div>
               {openTask === i && (
                 <div className="obody">
                   <div className="fgrid">
                     <span className="lb">Working directory</span>
-                    <input className="inp mono" value={t.cwd} placeholder="the worktree root" onChange={(e) => patch(i, { cwd: e.target.value })} />
+                    <input aria-label={`Setup task ${i + 1} working directory`} className="inp mono" value={t.cwd} placeholder="the worktree root" onChange={(e) => patch(i, { cwd: e.target.value })} />
                   </div>
                   <div className="hint">Relative to the worktree root, and must stay inside it. Leave blank to run from the root.</div>
                 </div>
@@ -63,14 +63,14 @@ export default function SetupPage({ setup, setSetup, policy, setPolicy, markDirt
       <Adv>
         <div className="fgrid">
           <span className="lb">On failure</span>
-          <select className="inp" value={policy.continueOnFailure ? "continue" : "stop"}
+          <select aria-label="On failure" className="inp" value={policy.continueOnFailure ? "continue" : "stop"}
             onChange={(e) => { setPolicy({ ...policy, continueOnFailure: e.target.value === "continue" }); markDirty("setup"); }}>
             <option value="stop">Stop and report</option>
             <option value="continue">Continue, report at the end</option>
           </select>
           <span className="lb">Timeout</span>
           <div className="row">
-            <input className="inp mono" style={{ width: 90 }} value={policy.timeoutSecs || ""} placeholder="3600"
+            <input aria-label="Setup task timeout" className="inp mono" style={{ width: 90 }} value={policy.timeoutSecs || ""} placeholder="3600"
               onChange={(e) => { setPolicy({ ...policy, timeoutSecs: Number(e.target.value) || 0 }); markDirty("setup"); }} />
             <span className="hint" style={{ marginTop: 0 }}>Seconds any one task may run. Blank uses the built-in one hour.</span>
           </div>

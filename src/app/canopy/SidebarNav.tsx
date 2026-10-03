@@ -340,11 +340,10 @@ function WorktreeRow({
         }
       }}
     >
-      {isMulti ? <span className="cxs-wtck"><Check size={11} /></span> : <span className={dotClass(wtDot(wt))} />}
+      {isMulti ? <span className="cxs-wtck"><Check size={11} /></span> : <span className={dotClass(wtDot(wt))} title={{run: "All services running", part: "Some services running", err: "Service error", off: "Services stopped"}[wtDot(wt)]} />}
       <span className="b">{wt.branch}</span>
 
       <span className="meta">
-        {wt.git?.dirty && <span className="dirty" title="uncommitted changes" />}
         {agents.length > 0 && (
           <span className={"agp" + (waiting ? " is-wait" : "")} title={`${agents.length} agent${agents.length > 1 ? "s" : ""}`}>
             <Sparkle size={9} />

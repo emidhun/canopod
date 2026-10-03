@@ -28,9 +28,9 @@ export default function CommandsPage({ repo, patchRepo, markDirty, flash, selKey
         <div className="slab">Database operations<span className="n">used by “Reset database” and “Run migrations” on a worktree</span></div>
         <div className="fgrid">
           <span className="lb">Reset command</span>
-          <input className="inp mono" value={repo.resetDb || ""} placeholder="pnpm db:reset" spellCheck={false} onChange={(e) => { patchRepo({ resetDb: e.target.value }); markDirty("commands"); }} />
+          <input aria-label="Reset command" className="inp mono" value={repo.resetDb || ""} placeholder="pnpm db:reset" spellCheck={false} onChange={(e) => { patchRepo({ resetDb: e.target.value }); markDirty("commands"); }} />
           <span className="lb">Migrate command</span>
-          <input className="inp mono" value={repo.migrateDb || ""} placeholder="pnpm db:migrate" spellCheck={false} onChange={(e) => { patchRepo({ migrateDb: e.target.value }); markDirty("commands"); }} />
+          <input aria-label="Migrate command" className="inp mono" value={repo.migrateDb || ""} placeholder="pnpm db:migrate" spellCheck={false} onChange={(e) => { patchRepo({ migrateDb: e.target.value }); markDirty("commands"); }} />
         </div>
       </div>
       <div className="sec">
@@ -47,27 +47,27 @@ export default function CommandsPage({ repo, patchRepo, markDirty, flash, selKey
               const bad = invalid.get(rowKey("command", i));
               return (
               <div className={"obj" + (open === i ? " open" : "") + (bad ? " incomplete" : "")} aria-invalid={bad ? true : undefined} key={i}>
-                <button className="ohead" onClick={() => setOpen(open === i ? null : i)}>
+                <div className="ohead"><button className="object-toggle" aria-expanded={open === i} onClick={() => setOpen(open === i ? null : i)}>
                   <span className="cv"><ChevRight size={11} /></span>
                   <span className="nm">{c.label || "Untitled"}</span>
                   {bad && <span className="tag warn">{missingText(bad)}</span>}
                   <span className="gr" />
                   <span className="mono" style={{ maxWidth: 250 }}>{c.command}</span>
-                  <span className="oacts">
-                    <span className="ico" title="Run once to test" onClick={(e) => { e.stopPropagation(); setOpen(i); test(i, c.command); }}>{ran && ran.i === i && ran.state === "running" ? <Spinner size={11} /> : <Play size={10} />}</span>
-                    <span className="ico" title="Move up" onClick={(e) => { e.stopPropagation(); move(i, -1); }}><Rot deg={180}><Chevron size={11} /></Rot></span>
-                    <span className="ico" title="Move down" onClick={(e) => { e.stopPropagation(); move(i, 1); }}><Chevron size={11} /></span>
-                    <span className="ico" title="Duplicate" onClick={(e) => { e.stopPropagation(); patchRepo({ customCommands: cmds.concat([{ ...c, label: c.label + " copy" }]) }); markDirty("commands"); }}><Copy size={11} /></span>
-                    <span className="ico bad" title="Remove" onClick={(e) => { e.stopPropagation(); patchRepo({ customCommands: cmds.filter((_, j) => j !== i) }); markDirty("commands"); }}><Trash size={11} /></span>
+                  </button><span className="oacts">
+                    <button type="button" className="ico" title="Run once to test" onClick={(e) => { e.stopPropagation(); setOpen(i); test(i, c.command); }}>{ran && ran.i === i && ran.state === "running" ? <Spinner size={11} /> : <Play size={10} />}</button>
+                    <button type="button" className="ico" title="Move up" onClick={(e) => { e.stopPropagation(); move(i, -1); }}><Rot deg={180}><Chevron size={11} /></Rot></button>
+                    <button type="button" className="ico" title="Move down" onClick={(e) => { e.stopPropagation(); move(i, 1); }}><Chevron size={11} /></button>
+                    <button type="button" className="ico" title="Duplicate" onClick={(e) => { e.stopPropagation(); patchRepo({ customCommands: cmds.concat([{ ...c, label: c.label + " copy" }]) }); markDirty("commands"); }}><Copy size={11} /></button>
+                    <button type="button" className="ico bad" title="Remove" onClick={(e) => { e.stopPropagation(); patchRepo({ customCommands: cmds.filter((_, j) => j !== i) }); markDirty("commands"); }}><Trash size={11} /></button>
                   </span>
-                </button>
+                </div>
                 {open === i && (
                   <div className="obody">
                     <div className="fgrid">
-                      <span className="lb">Label</span><input className="inp" value={c.label} placeholder="Lint" onChange={(e) => patch(i, { label: e.target.value })} />
-                      <span className="lb">Command</span><input className="inp mono" value={c.command} placeholder="pnpm lint" onChange={(e) => patch(i, { command: e.target.value })} />
+                      <span className="lb">Label</span><input aria-label="Label" className="inp" value={c.label} placeholder="Lint" onChange={(e) => patch(i, { label: e.target.value })} />
+                      <span className="lb">Command</span><input aria-label="Command" className="inp mono" value={c.command} placeholder="pnpm lint" onChange={(e) => patch(i, { command: e.target.value })} />
                       <span className="lb">Group</span>
-                      <input className="inp" value={c.group ?? ""} placeholder="ungrouped" list="cx-cmd-groups"
+                      <input aria-label="Group" className="inp" value={c.group ?? ""} placeholder="ungrouped" list="cx-cmd-groups"
                         title="Commands sharing a group get a header in the rail's Commands menu"
                         onChange={(e) => patch(i, { group: e.target.value })} />
                     </div>
