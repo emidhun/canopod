@@ -53,7 +53,7 @@ description: Symptom, cause, fix. The failures that actually happen, and what to
 | "PG_DB not set in this worktree's .env" | The provisioned `.env` has no `PG_DB` | Add `"PG_DB": "${WT_DB_NAME}"` to your provision keys, then ⋯ → **Run setup…** |
 | A snapshot or export fails on version | Client and server major versions don't match | Install the Postgres version matching your server. `Postgres.app/Versions/<major>` is preferred |
 | Restore fails on a file that dumped fine elsewhere | A newer `pg_dump` produced an archive the older server rejects | Dump and restore with the server's own major version |
-| The database chip is missing | The worktree has no database name | Same as the first row: no `PG_DB`, no database features |
+| **Database tools** is missing from the rail's ⋯ menu | The worktree has no database name | Same as the first row: no `PG_DB`, no database features |
 | A database job seems stuck | They take seconds to minutes and hold the worktree's operation lease | Use **Run in background**. Each Postgres invocation is capped at 15 minutes |
 | Two worktrees share data | They're pointing at the same database name | Check the worktree's `.env`: `PG_DB` should be its own `${WT_DB_NAME}` |
 

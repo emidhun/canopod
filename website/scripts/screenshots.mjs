@@ -84,19 +84,14 @@ async function main() {
     if (wanted("main-rail")) await shot(page, "main-rail", page.locator(".cxs-rail"));
     if (wanted("main-statusbar")) await shot(page, "main-statusbar", page.locator(".cxs-statusbar"));
 
-    // layouts
+    // layouts: ⌘1 Logs, ⌘2 Terminal, ⌘3 Terminal + logs
     if (wanted("layout-split")) {
-      await page.keyboard.press("Meta+2");
+      await page.keyboard.press("Meta+3");
       await pause(500);
       await shot(page, "layout-split");
     }
-    if (wanted("layout-agent")) {
-      await page.keyboard.press("Meta+3");
-      await pause(400);
-      await shot(page, "layout-agent");
-    }
     if (wanted("layout-terminal")) {
-      await page.keyboard.press("Meta+5");
+      await page.keyboard.press("Meta+2");
       await pause(400);
       await shot(page, "layout-terminal");
     }
@@ -159,6 +154,20 @@ async function main() {
     await ctx.close();
   }
 
+  /* ── an agent session (its own page, so the agent chip stays out of other shots) ── */
+  if (wanted("layout-agent")) {
+    const { ctx, page } = await open();
+    await page.waitForSelector(".cxs-shell");
+    await pause(1200);
+    await page.keyboard.press("Meta+2");
+    await page.locator(".cx-btn--primary", { hasText: "Start agent" }).click();
+    await page.waitForSelector(".cxs-ctxbar");
+    // let the launch toast clear
+    await pause(4500);
+    await shot(page, "layout-agent");
+    await ctx.close();
+  }
+
   /* ── a worktree with a database, dirty git and no main-checkout limits ── */
   {
     const { ctx, page } = await open();
@@ -186,7 +195,9 @@ async function main() {
     }
 
     if (wanted("modal-database")) {
-      await page.locator(".cxs-svc--db").click();
+      // the database lives in the rail's "More services and database" popover
+      await page.locator(".cxs-runtime-more").click();
+      await page.locator(".cxs-runtime-db").click();
       await page.waitForSelector(".cx-modal");
       await pause(350);
       await shot(page, "modal-database");
@@ -205,7 +216,7 @@ async function main() {
     }
 
     if (wanted("modal-service")) {
-      await page.locator(".cxs-svc").first().click();
+      await page.locator(".cxs-svc .svc-detail").first().click();
       await page.waitForSelector(".cx-modal");
       await pause(350);
       await shot(page, "modal-service");
@@ -233,7 +244,7 @@ async function main() {
     }
 
     if (wanted("modal-uncommitted")) {
-      await page.locator(".cxs-sb--dirty").click();
+      await page.locator(".cxs-gc--dirty").click();
       await page.waitForSelector(".cx-modal");
       await pause(500);
       await shot(page, "modal-uncommitted");

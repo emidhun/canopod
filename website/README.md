@@ -113,5 +113,3 @@ Jekyll and drops the files and folders it does not recognise.
 - **Screenshots earn their place.** They show a real state, and the caption says what to look at.
 - **Both themes, always.** A page is not finished until its screenshots exist in `light/` **and**
   `dark/` under the same filename.
-
-The written guides target 0.5.0. Some screenshot illustrations were captured before the workspace refinements; follow the current control names and shortcuts in the text.

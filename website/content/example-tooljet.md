@@ -127,5 +127,5 @@ client can't dump a 16 server, and a 17 client emits a dump a 16 server rejects.
 3. Status bar **Pull**, then the database dialog's **Run migration** when migrations landed upstream.
 4. `⌘2` to put the agent beside the logs, ⋯ → **Context…** to give it the issue and the acceptance
    criteria, then **Start agent**.
-5. Review with the status bar's **uncommitted** chip → **Commit**.
+5. Review with the uncommitted-changes dot beside the branch name → **Commit**.
 6. When the branch merges: ⋯ → **Remove worktree…**, keeping **Drop database** ticked.

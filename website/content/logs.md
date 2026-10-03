@@ -9,7 +9,7 @@ The Logs pane shows one stream for the whole worktree instead of a tab per servi
 want to read is what happened here, in order, across processes, so the service is a filter and not a
 destination.
 
-!shot layout-split | Logs on the left of a split layout; each line carries its time and its service.
+!shot layout-split | Terminal + logs (`⌘3`): service output on the right; each line carries its time and its service.
 
 ## Log line format
 
