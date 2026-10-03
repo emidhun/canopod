@@ -14,9 +14,9 @@ use std::io::Write;
 /// Where release metadata comes from. The repository is public, so this needs
 /// no token; unauthenticated GitHub API requests are rate-limited to 60/hour
 /// per IP, which a daily check cannot approach.
-const RELEASES_URL: &str = "https://api.github.com/repos/emidhun/canopy/releases/latest";
+const RELEASES_URL: &str = "https://api.github.com/repos/emidhun/canopod/releases/latest";
 #[cfg(feature = "desktop")]
-const PROJECT_URL: &str = "https://github.com/emidhun/canopy";
+const PROJECT_URL: &str = "https://github.com/emidhun/canopod";
 
 /// The reminders and automatic release check run at most once per day, even
 /// across restarts. The task wakes hourly so a newly enabled preference does
@@ -105,7 +105,7 @@ async fn fetch_latest() -> Result<GhRelease, String> {
     let client = reqwest::Client::builder()
         .timeout(std::time::Duration::from_secs(15))
         // GitHub rejects requests without one
-        .user_agent(concat!("Canopy/", env!("CARGO_PKG_VERSION")))
+        .user_agent(concat!("Canopod/", env!("CARGO_PKG_VERSION")))
         .build()
         .map_err(|e| e.to_string())?;
     let resp = client
@@ -182,8 +182,8 @@ fn send_star_reminder(app: &RuntimeContext, now: i64) {
         return;
     }
     let _ = app.host().notify(
-        "Enjoying Canopy?",
-        &format!("Star Canopy on GitHub to support the project: {PROJECT_URL}"),
+        "Enjoying Canopod?",
+        &format!("Star Canopod on GitHub to support the project: {PROJECT_URL}"),
         false,
     );
     app.state::<crate::state::AppState>()
@@ -207,8 +207,8 @@ fn send_update_reminder(app: &RuntimeContext, status: &UpdateStatus, now: i64) {
         return;
     }
     let _ = app.host().notify(
-        "Canopy update available",
-        &format!("{latest} is ready. Open Canopy Settings to download and install it."),
+        "Canopod update available",
+        &format!("{latest} is ready. Open Canopod Settings to download and install it."),
         false,
     );
     {
@@ -291,7 +291,7 @@ pub fn spawn_desktop_check_task(
                     if let Err(error) = install_available_update(&desktop).await {
                         log::warn!("automatic update failed: {error}");
                         let _ = app.host().notify(
-                            "Canopy could not update",
+                            "Canopod could not update",
                             "Automatic installation failed. Open Settings to try again.",
                             false,
                         );
@@ -343,7 +343,7 @@ fn write_report(app: &RuntimeContext, info: &std::panic::PanicHookInfo<'_>) -> R
     // preference makes, so the writer is what keeps it.
     writeln!(
         f,
-        "Canopy {} ({} {})",
+        "Canopod {} ({} {})",
         current_version(),
         std::env::consts::OS,
         std::env::consts::ARCH
@@ -430,7 +430,7 @@ mod tests {
         super::send_update_reminder(&app, &available, 1_001);
         assert_eq!(
             host.0.lock().as_slice(),
-            ["Enjoying Canopy?", "Canopy update available"]
+            ["Enjoying Canopod?", "Canopod update available"]
         );
 
         let next = super::UpdateStatus {

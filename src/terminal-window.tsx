@@ -1,3 +1,4 @@
+import "./legacyStorage";
 // Entry for the detached terminal window. Reads the session id / cwd / branch
 // from the URL and renders the terminal, attaching to the same backend PTY.
 import React from "react";

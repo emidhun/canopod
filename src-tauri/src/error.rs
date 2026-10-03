@@ -1,6 +1,6 @@
 // Structured errors crossing the IPC boundary.
 //
-// Every #[tauri::command] returns `Result<T, CanopyError>`. The error
+// Every #[tauri::command] returns `Result<T, CanopodError>`. The error
 // serializes as `{ "code": "...", "message": "..." }` so the frontend can
 // branch on `code` (retry vs. destructive-confirm vs. plain toast) instead of
 // pattern-matching display strings. Internal modules (git.rs, db.rs, setup.rs)
@@ -34,12 +34,12 @@ pub enum ErrorCode {
 }
 
 #[derive(Debug, Clone, Serialize)]
-pub struct CanopyError {
+pub struct CanopodError {
     pub code: ErrorCode,
     pub message: String,
 }
 
-impl CanopyError {
+impl CanopodError {
     pub fn new(code: ErrorCode, message: impl Into<String>) -> Self {
         Self { code, message: message.into() }
     }
@@ -75,22 +75,22 @@ impl CanopyError {
     }
 }
 
-impl std::fmt::Display for CanopyError {
+impl std::fmt::Display for CanopodError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.write_str(&self.message)
     }
 }
 
-impl std::error::Error for CanopyError {}
+impl std::error::Error for CanopodError {}
 
 /// Bare-`?` compatibility while internal modules still return `String`.
-impl From<String> for CanopyError {
+impl From<String> for CanopodError {
     fn from(m: String) -> Self {
         Self::internal(m)
     }
 }
 
-impl From<&str> for CanopyError {
+impl From<&str> for CanopodError {
     fn from(m: &str) -> Self {
         Self::internal(m)
     }
@@ -102,7 +102,7 @@ mod tests {
 
     #[test]
     fn serializes_as_code_and_message() {
-        let e = CanopyError::git("pull failed");
+        let e = CanopodError::git("pull failed");
         let v = serde_json::to_value(&e).unwrap();
         assert_eq!(v["code"], "git");
         assert_eq!(v["message"], "pull failed");
@@ -110,7 +110,7 @@ mod tests {
 
     #[test]
     fn bare_string_maps_to_internal() {
-        let e: CanopyError = "boom".into();
+        let e: CanopodError = "boom".into();
         assert_eq!(e.code, ErrorCode::Internal);
         assert_eq!(e.to_string(), "boom");
     }

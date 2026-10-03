@@ -26,28 +26,28 @@ On Fedora the equivalents are `webkit2gtk4.1`, `gtk3`, `libappindicator-gtk3` an
 
 ## Install
 
-All three packages are on the [releases page](https://github.com/emidhun/canopy/releases).
+All three packages are on the [releases page](https://github.com/emidhun/canopod/releases).
 
 ```sh
 # Debian / Ubuntu
-sudo dpkg -i Canopy_0.5.0_amd64.deb || sudo apt-get -f install
+sudo dpkg -i Canopod_0.5.0_amd64.deb || sudo apt-get -f install
 
 # Fedora / RHEL
-sudo rpm -i Canopy-0.5.0-1.x86_64.rpm
+sudo rpm -i Canopod-0.5.0-1.x86_64.rpm
 
 # Anywhere, no install, no root
-chmod +x Canopy_0.5.0_amd64.AppImage
-./Canopy_0.5.0_amd64.AppImage
+chmod +x Canopod_0.5.0_amd64.AppImage
+./Canopod_0.5.0_amd64.AppImage
 ```
 
 ## The tray on Linux
 
 This is the difference worth knowing about. Linux tray implementations (AppIndicator and
-StatusNotifier) don't deliver click events at all, so the click-toggles-popover behaviour Canopy uses
+StatusNotifier) don't deliver click events at all, so the click-toggles-popover behaviour Canopod uses
 on macOS isn't available. The icon carries a menu instead:
 
-- **Open Canopy** shows the main window.
-- **Quit Canopy** stops every service and exits.
+- **Open Canopod** shows the main window.
+- **Quit Canopod** stops every service and exits.
 
 The popover window still exists here (a regular borderless always-on-top window, not an `NSPanel`),
 and the main window is the primary surface.
@@ -68,12 +68,12 @@ icon, the app is still running: the main window appears at launch and normal win
 | A terminal emulator | "Open terminal" detects a common one; the Terminal settings page lets you name the program. |
 | **Postgres** (optional) | Only for the database features, and the client binaries have to match the server's major version. |
 
-## Where Canopy keeps its files
+## Where Canopod keeps its files
 
 | What | Path |
 |---|---|
-| Settings and runtime state | `~/.config/com.midhunkumare.canopy/` (`settings.json`, `state.json`) |
-| Log file | `~/.local/share/com.midhunkumare.canopy/logs/canopy.log` |
+| Settings and runtime state | `~/.config/com.midhunkumare.canopod/` (`settings.json`, `state.json`) |
+| Log file | `~/.local/share/com.midhunkumare.canopod/logs/canopod.log` |
 | Appearance and per-worktree context | the webview's `localStorage` |
 
 ## Known issues

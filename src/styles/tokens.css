@@ -1,4 +1,4 @@
-/* Canopy design tokens.
+/* Canopod design tokens.
 
    The palette is layered charcoal for depth (never flat near-black) with ONE
    accent. Teal is scarce on purpose: it marks the single next action, live
@@ -534,7 +534,7 @@ body {
   background-clip: padding-box;
 }
 
-/* Respect the OS setting. Canopy's motion is functional (spinners, pulses that
+/* Respect the OS setting. Canopod's motion is functional (spinners, pulses that
    mean "waiting on you"), so reduce rather than remove: durations collapse but
    state changes stay visible. */
 @media (prefers-reduced-motion: reduce) {

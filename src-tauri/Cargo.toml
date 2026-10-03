@@ -1,24 +1,24 @@
 [package]
-name = "canopy"
+name = "canopod"
 version = "0.5.0"
-description = "Canopy — lightweight git worktree and dev-service manager"
+description = "Canopod — lightweight git worktree and dev-service manager"
 authors = ["Midhun Kumar"]
 license = "AGPL-3.0-only"
 edition = "2021"
 rust-version = "1.95"
-default-run = "canopy"
+default-run = "canopod"
 
 [[bin]]
-name = "canopy"
+name = "canopod"
 path = "src/main.rs"
 required-features = ["desktop"]
 
 [[bin]]
-name = "canopy-backend"
+name = "canopod-backend"
 path = "src/backend_main.rs"
 
 [lib]
-name = "canopy_lib"
+name = "canopod_lib"
 crate-type = ["staticlib", "cdylib", "rlib"]
 
 [features]
@@ -72,7 +72,7 @@ hyper-util = { version = "0.1", features = ["tokio", "service"] }
 # non-poisoning locks: with std, one panic while holding a lock poisons it and
 # every later .unwrap() panics forever — the app survives as a zombie window.
 parking_lot = "0.12"
-# two Canopy instances would sweep each other's live pgids as "orphans" and
+# two Canopod instances would sweep each other's live pgids as "orphans" and
 # race on settings/state writes — a second launch focuses the first instead.
 tauri-plugin-single-instance = { version = "2", optional = true }
 # embedded per-worktree terminals: a real PTY per session (the agent lane runs
@@ -81,7 +81,7 @@ portable-pty = "0.9"
 base64 = "0.23"
 # Exclusive private image files, deleted with the terminal session.
 tempfile = "3"
-# OS notifications for the states that need a human while Canopy is in the
+# OS notifications for the states that need a human while Canopod is in the
 # tray — a crashed service, a blocked agent, a finished setup.
 tauri-plugin-notification = { version = "2", optional = true }
 tauri-plugin-updater = { version = "2", optional = true }

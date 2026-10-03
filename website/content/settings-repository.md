@@ -25,11 +25,11 @@ status line always names which one is in scope:
 | **Worktree root** | Where new worktrees are created. Absolute, or relative to the repo. Empty means `<repo>/.worktrees`. |
 | **Default base** | Not stored per repo yet. |
 | **Configuration file** | **Export config** writes `.worktreemanager.json` to a path you pick. **Import config** replaces this repo's provisioned files and setup from a file you pick, for you to review and then Save. |
-| **Danger zone → Remove repository** | Stops tracking the repo in Canopy and drops its configuration here: services, commands, agents. The repository, its worktrees and its `.worktreemanager.json` on disk are untouched. |
+| **Danger zone → Remove repository** | Stops tracking the repo in Canopod and drops its configuration here: services, commands, agents. The repository, its worktrees and its `.worktreemanager.json` on disk are untouched. |
 
 :::note Coming soon
 *Defaults for new worktrees* (run setup automatically, start services after setup, create an isolated
-database) aren't stored per repo yet. Today Canopy always provisions and runs setup on create, and
+database) aren't stored per repo yet. Today Canopod always provisions and runs setup on create, and
 doesn't auto-start services.
 :::
 
@@ -60,14 +60,14 @@ Services with an empty id or command are dropped when you save.
 |---|---|
 | **Name** | The tab label in the agent lane. |
 | **Command** | The CLI to run (`claude`, `codex`, `aider`, and so on). |
-| **Prompt on launch** | Append Canopy's structured handoff as the first prompt argument. Turn it off for CLIs that take no positional prompt; they still get `.canopy/context.md`. |
+| **Prompt on launch** | Append Canopod's structured handoff as the first prompt argument. Turn it off for CLIs that take no positional prompt; they still get `.canopod/context.md`. |
 
 The first profile in the list is the default, and a row's tick promotes it to first. Agents missing an
 id, name or command are dropped on save.
 
 :::note Coming soon
 The per-agent context toggles (worktree context, runtime facts, recent failing logs) and a concurrency
-limit aren't stored yet. Canopy seeds the worktree context by default.
+limit aren't stored yet. Canopod seeds the worktree context by default.
 :::
 
 ## Commands
@@ -79,7 +79,7 @@ limit aren't stored yet. Canopy seeds the worktree context by default.
 | Field | Used by |
 |---|---|
 | **Reset command** | *Reset database*. |
-| **Migrate command** | *Run migration*. If it's empty, Canopy falls back to the `migrate` array in `.worktreemanager.json`. |
+| **Migrate command** | *Run migration*. If it's empty, Canopod falls back to the `migrate` array in `.worktreemanager.json`. |
 
 **Custom commands**, the launchers that show up in the service rail:
 
@@ -114,7 +114,7 @@ Setup tasks support enabled state and per-task working directories, with failure
 
 ## Security
 
-Security is application-wide. Secret masking controls the JSON preview; export masking is a separate option. Masking never changes the real values saved to `.worktreemanager.json`. SSH key and credential-helper overrides apply to Canopy's Git invocations without editing repository or global Git configuration.
+Security is application-wide. Secret masking controls the JSON preview; export masking is a separate option. Masking never changes the real values saved to `.worktreemanager.json`. SSH key and credential-helper overrides apply to Canopod's Git invocations without editing repository or global Git configuration.
 
 ## The JSON preview
 

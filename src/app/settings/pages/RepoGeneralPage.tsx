@@ -1,6 +1,6 @@
 // Repository — where this repo lives and what new worktrees start with.
 import { useState } from "react";
-import Modal, { Hint, Spacer } from "../../canopy/Modal";
+import Modal, { Hint, Spacer } from "../../canopod/Modal";
 import { Download, Finder, Pull, Trash } from "../../../icons";
 import { TRow, Adv } from "../primitives";
 import { errText, hasBackend, ipc, type WorktreeDefaults } from "../../../ipc";
@@ -46,7 +46,7 @@ export default function RepoGeneralPage({ repo, patchRepo, markDirty, flash, onR
       <Adv label="Danger zone">
         <div className="row">
           <button className="btn danger" onClick={() => setConfirm(true)}><Trash size={11} />Remove repository</button>
-          <span className="hint" style={{ marginTop: 0 }}>Stops tracking {repo.name} in Canopy. Your files are untouched.</span>
+          <span className="hint" style={{ marginTop: 0 }}>Stops tracking {repo.name} in Canopod. Your files are untouched.</span>
         </div>
       </Adv>
       {confirm && (
@@ -68,7 +68,7 @@ export default function RepoGeneralPage({ repo, patchRepo, markDirty, flash, onR
           }
         >
           <p style={{ margin: 0, fontSize: "var(--fs-body)", lineHeight: 1.55, color: "var(--text-secondary)" }}>
-            Canopy will stop tracking <b style={{ color: "var(--text-primary)" }}>{repo.name}</b> and remove its
+            Canopod will stop tracking <b style={{ color: "var(--text-primary)" }}>{repo.name}</b> and remove its
             configuration here — its services, custom commands and agents.
           </p>
           <p style={{ margin: "10px 0 0", fontSize: "var(--fs-small)", lineHeight: 1.55, color: "var(--text-tertiary)" }}>

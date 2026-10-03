@@ -168,7 +168,7 @@ function App() {
   return (
     <div className="page">
       <div className="page-head">
-        <p className="eyebrow">Canopy · Menu-bar</p>
+        <p className="eyebrow">Canopod · Menu-bar</p>
         <h1>Status popover</h1>
         <p>Replaces the native tray menu with a custom frameless popover. Each worktree shows its services as status chips, with three quick actions: <b>open</b> the worktree, <b>reset its database</b>, and <b>Start / Stop</b> the whole tree at once. Both views share one state and stay in sync. <a href="Worktree Manager App.html" style={{color:'#3a7f84',fontWeight:550,textDecoration:'none'}}>Open the main window →</a></p>
       </div>

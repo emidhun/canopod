@@ -27,7 +27,7 @@ what it found: *"Fetched — 14 local, 62 remote, 9 tags"*.
 
 Your pick becomes a git operation like this:
 
-| You picked | Canopy asks git for |
+| You picked | Canopod asks git for |
 |---|---|
 | New branch `feat/x` from `main` | create `feat/x` from `main` |
 | Existing local branch `feat/x` | check out `feat/x` (no branch creation) |
@@ -35,7 +35,7 @@ Your pick becomes a git operation like this:
 | Tag `v1.2.0` | a local branch named `v1.2.0` created from `refs/tags/v1.2.0` |
 
 That last pair matters. `git worktree add <path> origin/foo` checks the remote-tracking ref out
-detached, so Canopy always resolves to a real local branch.
+detached, so Canopod always resolves to a real local branch.
 
 ## 3. Read the destination panel
 
@@ -51,7 +51,7 @@ only be guessing.
 
 !shot modal-new-worktree-handoff | The agent handoff is collapsed by default: a PR link, an issue link, and what each one is about.
 
-Anything you type here seeds the worktree's context. That becomes `.canopy/context.md` when you launch
+Anything you type here seeds the worktree's context. That becomes `.canopod/context.md` when you launch
 an agent, and you can copy it as a PR body later. Most worktrees don't need it.
 
 ## 5. Create it
@@ -102,7 +102,7 @@ service, shows errors only, and scrolls to the end) and **Restart**.
 - **Open in editor** from the icon in the worktree bar, using the editor command from settings.
 - **Terminal**: `⌘2` or `⌘3` for the terminal layouts, or the sidebar row's terminal button. It's a real
   login shell in the worktree, on its pinned toolchain.
-- **Agent**: `⌘2`, then **Start agent**. Canopy writes `.canopy/context.md` first, then runs your agent
+- **Agent**: `⌘2`, then **Start agent**. Canopod writes `.canopod/context.md` first, then runs your agent
   CLI with a composed prompt. See [Terminals and agents](agents-terminals.html).
 - **Pull** from the status bar. The caret opens per-submodule control.
 - **Uncommitted changes**: the status bar's dirty chip opens commit, stash or discard.
@@ -118,7 +118,7 @@ rather than claiming the tree is clean. **Drop database** is on by default, sinc
 to this worktree. **Also delete the branch** is off by default, and warns you when the branch has
 commits that aren't on origin.
 
-Canopy stops the services, runs `teardown`, removes the worktree with `--force`, optionally deletes the
+Canopod stops the services, runs `teardown`, removes the worktree with `--force`, optionally deletes the
 branch, then prunes. Like create, it can run in the background.
 
 :::tip Cheaper than a new worktree

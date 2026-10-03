@@ -28,7 +28,7 @@ describe("SettingsView shell", () => {
 
   it("opens on General", async () => {
     open();
-    expect(await screen.findByText("How Canopy looks and what it does on launch.")).toBeInTheDocument();
+    expect(await screen.findByText("How Canopod looks and what it does on launch.")).toBeInTheDocument();
   });
 
   it("renders every page without throwing", async () => {
@@ -36,12 +36,12 @@ describe("SettingsView shell", () => {
     open();
     // blurbs are unique per page, so they identify the rendered panel
     const pages: [string, string][] = [
-      ["MCP", "Connect agents to Canopy and choose which repositories they can access."],
-      ["Terminal", "The shell Canopy opens inside a worktree, and what it inherits."],
-      ["Notifications", "Canopy only interrupts you for things that need a decision."],
+      ["MCP", "Connect agents to Canopod and choose which repositories they can access."],
+      ["Terminal", "The shell Canopod opens inside a worktree, and what it inherits."],
+      ["Notifications", "Canopod only interrupts you for things that need a decision."],
       ["Shortcuts", "Every command is reachable from the keyboard."],
       ["Advanced", "Diagnostics, experiments and reset."],
-      ["Services", "Long-running processes Canopy starts per worktree. Ports derive from the worktree index so they never collide."],
+      ["Services", "Long-running processes Canopod starts per worktree. Ports derive from the worktree index so they never collide."],
       ["Agents", "Which agent CLIs are available, and what context they inherit."],
       ["Commands", "Named scripts you can launch in any worktree from the + menu."],
       ["Files", "Files seeded or templated into every new worktree — any path, any format."],
@@ -85,7 +85,7 @@ it("shows a recoverable settings load failure", async () => {
     expect(await screen.findByRole("alert")).toHaveTextContent("Backend unavailable");
     backend.mockReturnValue(false);
     await user.click(screen.getByRole("button", { name: "Retry" }));
-    expect(await screen.findByText("How Canopy looks and what it does on launch.")).toBeInTheDocument();
+    expect(await screen.findByText("How Canopod looks and what it does on launch.")).toBeInTheDocument();
   } finally { vi.restoreAllMocks(); }
 });
 

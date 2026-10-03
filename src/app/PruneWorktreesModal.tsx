@@ -1,4 +1,4 @@
-/* Sync-prune — reconcile worktrees whose folders were deleted outside Canopy.
+/* Sync-prune — reconcile worktrees whose folders were deleted outside Canopod.
 
    Reached from the Sync button when the rescan finds git-prunable worktrees.
    Pruning removes their stale git registration; per-item you can also delete the
@@ -8,7 +8,7 @@ import { useState } from "react";
 import { errText, hasBackend, ipc, type PrunableWorktree, type PruneItem } from "../ipc";
 import { useStore } from "../store";
 import { Alert, Info, Spinner, Trash } from "../icons";
-import Modal, { Hint, Spacer } from "./canopy/Modal";
+import Modal, { Hint, Spacer } from "./canopod/Modal";
 
 type Item = PrunableWorktree & { dbName: string | null };
 type Opt = { branch: boolean; db: boolean };
@@ -81,7 +81,7 @@ export default function PruneWorktreesModal({ items, onClose }: { items: Item[];
       }
     >
       <p style={{ fontSize: "var(--fs-body)", color: "var(--text-secondary)", lineHeight: "var(--lh-body)", margin: "0 0 var(--sp-modal-head)" }}>
-        These worktrees' folders are gone from disk. Canopy will drop their git registration. Choose per worktree whether to also delete
+        These worktrees' folders are gone from disk. Canopod will drop their git registration. Choose per worktree whether to also delete
         its branch or drop its leftover database.
       </p>
 

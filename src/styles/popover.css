@@ -1,4 +1,4 @@
-/* Menu-bar tray — ported 1:1 from the design system's "Canopy Tray.html".
+/* Menu-bar tray — ported 1:1 from the design system's "Canopod Tray.html".
    The design's presentation scaffolding (fake desktop + menu bar) is dropped:
    the frameless window IS the popover card, so `.pop` fills the window and the
    body is transparent. Every other rule is the design's verbatim, token-driven.

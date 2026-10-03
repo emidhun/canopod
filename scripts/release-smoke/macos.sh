@@ -9,7 +9,7 @@ mcp_pid=
 
 cleanup() {
   if [[ -n "$pid" ]] && kill -0 "$pid" 2>/dev/null; then
-    osascript -e 'tell application id "com.midhunkumare.canopy" to quit' 2>/dev/null || true
+    osascript -e 'tell application id "com.midhunkumare.canopod" to quit' 2>/dev/null || true
     kill "$pid" 2>/dev/null || true
     wait "$pid" 2>/dev/null || true
   fi
@@ -31,8 +31,8 @@ test -n "$app"
 codesign --verify --deep --strict --verbose=2 "$app"
 version=$(plutil -extract CFBundleShortVersionString raw "$app/Contents/Info.plist")
 test "$version" = "$expected"
-"$app/Contents/MacOS/canopy-backend" --version | grep -F "canopy-backend $expected"
-backend="$app/Contents/MacOS/canopy-backend"
+"$app/Contents/MacOS/canopod-backend" --version | grep -F "canopod-backend $expected"
+backend="$app/Contents/MacOS/canopod-backend"
 mkdir -p "$work/mcp-config" "$work/mcp-data" "$work/mcp-logs" "$work/mcp-fixture"
 git -C "$work/mcp-fixture" init -b main
 common=(--config-dir "$work/mcp-config" --data-dir "$work/mcp-data" --log-dir "$work/mcp-logs")
@@ -49,12 +49,12 @@ done
 "$backend" stop "${common[@]}" >/dev/null
 wait "$mcp_pid"
 mcp_pid=
-open -n -W "$app" >"$work/canopy.log" 2>&1 &
+open -n -W "$app" >"$work/canopod.log" 2>&1 &
 pid=$!
 sleep 8
 if ! kill -0 "$pid" 2>/dev/null; then
   wait "$pid" || status=$?
-  cat "$work/canopy.log" >&2
-  echo "Canopy exited during LaunchServices probe with ${status:-0}" >&2
+  cat "$work/canopod.log" >&2
+  echo "Canopod exited during LaunchServices probe with ${status:-0}" >&2
   exit 1
 fi

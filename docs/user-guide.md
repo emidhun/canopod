@@ -1,23 +1,23 @@
 # User Guide
 
-A task-oriented walkthrough of using Canopy day to day. For a reference of every control, see
+A task-oriented walkthrough of using Canopod day to day. For a reference of every control, see
 [features.md](features.md); for the config file formats, see [configuration.md](configuration.md).
 
 ---
 
 ## 1. Install and launch
 
-**Quickest:** `brew install --cask emidhun/canopy/canopy` — or grab the
-[macOS DMG](https://github.com/emidhun/canopy/releases/download/v0.5.0/Canopy_0.5.0_aarch64.dmg)
-/ [Linux packages](https://github.com/emidhun/canopy/releases) directly.
+**Quickest:** `brew install --cask emidhun/canopod/canopod` — or grab the
+[macOS DMG](https://github.com/emidhun/canopod/releases/download/v0.5.0/Canopod_0.5.0_aarch64.dmg)
+/ [Linux packages](https://github.com/emidhun/canopod/releases) directly.
 Full steps in the [README](../README.md#install) (or
-[distribution.md](distribution.md) for the details). Once installed, launch **Canopy** — it runs as a
+[distribution.md](distribution.md) for the details). Once installed, launch **Canopod** — it runs as a
 **menu-bar app**, so it has no dock icon; look for its mark in the macOS menu bar.
 
 Click the menu-bar icon to open the **popover**. From there:
 
 - **Open Manager** — opens the main window (where you do most things).
-- **Quit** — stops all services Canopy started and exits.
+- **Quit** — stops all services Canopod started and exits.
 
 ---
 
@@ -36,7 +36,7 @@ Click the menu-bar icon to open the **popover**. From there:
    | `frontend` | Frontend | web | `npm start -- --port $PORT` | `frontend` | 8082 |
    | `server` | Server | server | `npm run start:dev` | `server` | 3000 |
 
-   - Reference **`$PORT`** in a service's command to bind it to the per-worktree port Canopy assigns.
+   - Reference **`$PORT`** in a service's command to bind it to the per-worktree port Canopod assigns.
    - To point one service at another (e.g. frontend → server), use **`$WM_PORT_<SERVICE>`** or
      **`$WT_<SERVICE>_PORT`** (e.g. `$WT_SERVER_PORT`). Both work in service commands.
 
@@ -48,7 +48,7 @@ commands — see next step).
 
 ---
 
-## 3. Tell Canopy how to provision a worktree
+## 3. Tell Canopod how to provision a worktree
 
 Provisioning (what runs when a worktree is created) is declared **in the repo** so it travels with the
 branch. Commit a `.worktreemanager.json` at the repo root:
@@ -71,7 +71,7 @@ branch. Commit a `.worktreemanager.json` at the repo root:
 [configuration.md](configuration.md#variables-available-to-provisioning). A complete ToolJet example
 is in [tooljet-config.md](tooljet-config.md).
 
-> Canopy looks for the config in the **worktree first**, then the **main checkout** — so an
+> Canopod looks for the config in the **worktree first**, then the **main checkout** — so an
 > uncommitted copy in main works as a fallback while you iterate, and committing it makes it travel
 > per branch.
 
@@ -86,7 +86,7 @@ is in [tooljet-config.md](tooljet-config.md).
    - **Existing branch / tag** — search and pick a local branch, a remote branch (a local tracking
      branch is created), or a **tag** (a local branch is created from it).
    - **Fetch all** refreshes remote branches and tags first (`git fetch --all --prune`).
-4. **Create worktree**. Canopy runs `git worktree add`, initializes submodules, applies your `env`
+4. **Create worktree**. Canopod runs `git worktree add`, initializes submodules, applies your `env`
    overrides, and runs the `setup` commands — streaming progress live.
 
 The new worktree appears in the sidebar and becomes active.
@@ -95,19 +95,19 @@ The new worktree appears in the sidebar and becomes active.
 
 ## 4.1 Sync worktrees created by another agent
 
-If another agent or terminal runs `git worktree add` for a repository already registered in Canopy,
-click **Sync external worktrees** in the top bar or run it from the `⌘K` command palette. Canopy asks
+If another agent or terminal runs `git worktree add` for a repository already registered in Canopod,
+click **Sync external worktrees** in the top bar or run it from the `⌘K` command palette. Canopod asks
 Git for the repository's registered worktrees, refreshes the sidebar, and reports what it added.
 
 Sync imports only entries returned by `git worktree list`; it does not scan arbitrary copied folders
 or add unrelated repositories. It also detects worktree registrations whose directories were deleted
-outside Canopy and offers to prune the stale Git entries, with optional branch and database cleanup.
+outside Canopod and offers to prune the stale Git entries, with optional branch and database cleanup.
 
 ### Updates and project reminders
 
-Under **Settings → General**, Canopy checks GitHub at most once per day and sends a native notification
+Under **Settings → General**, Canopod checks GitHub at most once per day and sends a native notification
 only when a newer release exists. **Install updates automatically** is opt-in: downloaded bundles are
-verified with Canopy's updater signing key before installation and the app restarts cleanly. Use
+verified with Canopod's updater signing key before installation and the app restarts cleanly. Use
 **Check now** for the same flow on demand.
 
 The separate **Daily GitHub star reminder** sends at most one notification per 24 hours and can be
@@ -127,7 +127,7 @@ disabled at any time. It does not contact GitHub; only opening the project page 
 
 ### Changing a port
 
-In a service row, hover the port and click **✎**. Enter a new port — Canopy validates it, re-derives
+In a service row, hover the port and click **✎**. Enter a new port — Canopod validates it, re-derives
 any dependent env keys, and auto-restarts the service. Overrides persist per service.
 
 ---
@@ -169,7 +169,7 @@ Worktree header **⋯** → **Remove worktree**. In the confirm dialog:
 - **Also delete branch** (off by default).
 - **Drop database** (on by default) — runs your `teardown` before deletion.
 
-Canopy stops the services, runs teardown, removes the worktree, optionally deletes the branch, and
+Canopod stops the services, runs teardown, removes the worktree, optionally deletes the branch, and
 prunes.
 
 ---
@@ -178,8 +178,8 @@ prunes.
 
 | Symptom | Likely cause / fix |
 |---|---|
-| App won't open ("damaged" / "unverified") | Quarantine — run `xattr -dr com.apple.quarantine /Applications/Canopy.app` (see [Install](../README.md#install)). |
-| `setup` fails with `notsup` / wrong Node | The project needs a newer Node than your default. Canopy uses the worktree's pinned Node (`.tool-versions`/`.nvmrc`); make sure that version is installed. |
+| App won't open ("damaged" / "unverified") | Quarantine — run `xattr -dr com.apple.quarantine /Applications/Canopod.app` (see [Install](../README.md#install)). |
+| `setup` fails with `notsup` / wrong Node | The project needs a newer Node than your default. Canopod uses the worktree's pinned Node (`.tool-versions`/`.nvmrc`); make sure that version is installed. |
 | Server can't find `@tooljet/plugins/dist/server` | Plugins must be built per worktree — add `npm --prefix plugins install && npm --prefix plugins run build` to `setup`. |
 | Frontend hits the wrong API port | The frontend bakes the server URL from `TOOLJET_SERVER_PORT` at launch — set it in `env` to `${WT_SERVER_PORT}`, and give the frontend `--port $PORT`. |
 | Snapshot/export/restore fails on version | Install the Postgres version matching your server's major version. |

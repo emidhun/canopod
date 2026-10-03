@@ -14,7 +14,7 @@ Only the latest release receives security fixes.
 - Advisories are upgraded or backported rather than dismissed solely to clear the alert. RustSec's
   informational maintenance warnings are reviewed separately from vulnerabilities.
 
-Tauri 2's GTK3 dependency graph still requires the `glib` 0.18 API. Canopy pins a minimal fork that
+Tauri 2's GTK3 dependency graph still requires the `glib` 0.18 API. Canopod pins a minimal fork that
 backports the upstream `VariantStrIter` soundness fix until a supported stable Tauri line moves to a
 fixed GTK generation. The exact source commit is recorded in `src-tauri/Cargo.toml` and the lockfile.
 
@@ -22,7 +22,7 @@ fixed GTK generation. The exact source commit is recorded in `src-tauri/Cargo.to
 
 Please **do not** open a public issue for security problems. Instead:
 
-- Use GitHub's [private vulnerability reporting](https://github.com/emidhun/canopy/security/advisories/new), or
+- Use GitHub's [private vulnerability reporting](https://github.com/emidhun/canopod/security/advisories/new), or
 - Email **idhutest@gmail.com** with details and reproduction steps.
 
 You'll get an acknowledgement within a few days. Please allow a reasonable window
@@ -30,7 +30,7 @@ for a fix before public disclosure.
 
 ## Scope notes
 
-Canopy runs local shell commands **by design** (services, setup/teardown from
+Canopod runs local shell commands **by design** (services, setup/teardown from
 `.worktreemanager.json`). Reports along the lines of "a malicious repo config can
 run commands" are expected behavior — treat repo configs like you treat a
 `Makefile`. In-scope examples: command execution *outside* configured commands,

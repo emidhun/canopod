@@ -3,7 +3,7 @@
 There are **three** places config lives. Know which is which.
 
 ## 1. App Settings — `settings.json` (per machine)
-Path: `~/Library/Application Support/com.midhunkumare.canopy/settings.json`.
+Path: `~/Library/Application Support/com.midhunkumare.canopod/settings.json`.
 
 Editable in-app via the titlebar gear (SettingsView). Shape:
 ```jsonc
@@ -71,7 +71,7 @@ Lives at the repo root (or `wtm.json`). Looked up in the **worktree** first, the
 The current ToolJet config is reproduced in [tooljet-config.md](tooljet-config.md).
 
 ## 3. Runtime state — `state.json` (per machine, don't hand-edit)
-`~/Library/Application Support/com.midhunkumare.canopy/state.json`:
+`~/Library/Application Support/com.midhunkumare.canopod/state.json`:
 ```jsonc
 {
   "portIndices": { "<repoId>": { "<wtKey>": <index> } },  // stable per-worktree index

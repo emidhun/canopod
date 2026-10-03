@@ -1,11 +1,11 @@
-// canopy-brand.jsx — Canopy brandmark sheet (refined git-fork)
+// canopod-brand.jsx — Canopod brandmark sheet (refined git-fork)
 const ACCENT = "#58c2c8";
 const GREEN = "#3fb950";
 
 /* ── Canonical mark ──────────────────────────────────────────────
    Three nodes — two parents (top), one child (bottom) — joined by a
    rounded bar + stem. Built on a 24-unit grid, 2u stroke, 2u nodes. */
-function Canopy({ size = 48, color = "currentColor", nodes, sw = 2, solid = false }) {
+function Canopod({ size = 48, color = "currentColor", nodes, sw = 2, solid = false }) {
   const nc = nodes || color;
   return (
     <svg width={size} height={size} viewBox="0 0 24 24" fill="none"
@@ -101,8 +101,8 @@ function App() {
       {/* HERO */}
       <div className="hero">
         <div className="lock">
-          <Canopy size={84} color="#e8e8ea" nodes={ACCENT} sw={2} />
-          <span className="wm">canopy</span>
+          <Canopod size={84} color="#e8e8ea" nodes={ACCENT} sw={2} />
+          <span className="wm">canopod</span>
         </div>
         <p className="tag">Run every worktree's services from your menu bar. <b>One branch, one click.</b></p>
       </div>
@@ -110,9 +110,9 @@ function App() {
       {/* THE MARK */}
       <Sec eyebrow="Identity" title="The mark" sub="A git fork — two parents converging into one branch.">
         <div className="grid g3">
-          <div className="card"><Canopy size={92} color="#e8e8ea" sw={2} /><span className="cap"><b>Primary</b> · outline</span></div>
-          <div className="card"><Canopy size={92} color="#e8e8ea" nodes={ACCENT} sw={2} /><span className="cap"><b>Accent nodes</b> · teal</span></div>
-          <div className="card"><Canopy size={92} color="#e8e8ea" sw={2} solid /><span className="cap"><b>Solid nodes</b> · small sizes</span></div>
+          <div className="card"><Canopod size={92} color="#e8e8ea" sw={2} /><span className="cap"><b>Primary</b> · outline</span></div>
+          <div className="card"><Canopod size={92} color="#e8e8ea" nodes={ACCENT} sw={2} /><span className="cap"><b>Accent nodes</b> · teal</span></div>
+          <div className="card"><Canopod size={92} color="#e8e8ea" sw={2} solid /><span className="cap"><b>Solid nodes</b> · small sizes</span></div>
         </div>
       </Sec>
 
@@ -137,9 +137,9 @@ function App() {
           <div className="card" style={{padding:"30px"}}><ClearSpace px={210} /><span className="cap">Minimum clear space on all sides equals one node diameter.</span></div>
           <div className="card">
             <div style={{display:"flex",alignItems:"flex-end",gap:"30px"}}>
-              <div style={{display:"flex",flexDirection:"column",alignItems:"center",gap:"9px"}}><Canopy size={44} color="#e8e8ea" sw={2} /><span className="cap">44px</span></div>
-              <div style={{display:"flex",flexDirection:"column",alignItems:"center",gap:"9px"}}><Canopy size={24} color="#e8e8ea" sw={2.1} /><span className="cap">24px</span></div>
-              <div style={{display:"flex",flexDirection:"column",alignItems:"center",gap:"9px"}}><Canopy size={16} color="#e8e8ea" sw={2.3} solid /><span className="cap">16px · min</span></div>
+              <div style={{display:"flex",flexDirection:"column",alignItems:"center",gap:"9px"}}><Canopod size={44} color="#e8e8ea" sw={2} /><span className="cap">44px</span></div>
+              <div style={{display:"flex",flexDirection:"column",alignItems:"center",gap:"9px"}}><Canopod size={24} color="#e8e8ea" sw={2.1} /><span className="cap">24px</span></div>
+              <div style={{display:"flex",flexDirection:"column",alignItems:"center",gap:"9px"}}><Canopod size={16} color="#e8e8ea" sw={2.3} solid /><span className="cap">16px · min</span></div>
             </div>
             <span className="cap">Below 20px, switch to solid nodes so it holds up in the tray.</span>
           </div>
@@ -149,30 +149,30 @@ function App() {
       {/* COLOR */}
       <Sec eyebrow="Palette" title="Color" sub="Ink ground, teal accent, green for live state.">
         <div className="grid g4">
-          <div className="card" style={{background:"#1e1f22"}}><Canopy size={60} color="#e8e8ea" nodes={ACCENT} /><div className="swatch-line"><span className="dot" style={{background:"#1e1f22"}} />#1E1F22</div></div>
-          <div className="card" style={{background:"#1e1f22"}}><Canopy size={60} color={ACCENT} /><div className="swatch-line"><span className="dot" style={{background:ACCENT}} />#58C2C8</div></div>
-          <div className="card" style={{background:"#1e1f22"}}><Canopy size={60} color="#e8e8ea" nodes={GREEN} /><div className="swatch-line"><span className="dot" style={{background:GREEN}} />#3FB950</div></div>
-          <div className="card light" style={{background:"#f4f5f7",border:"1px solid #e2e4e9"}}><Canopy size={60} color="#23262c" nodes={ACCENT} /><div className="swatch-line" style={{color:"#5b606b"}}><span className="dot" style={{background:"#f4f5f7"}} />#F4F5F7</div></div>
+          <div className="card" style={{background:"#1e1f22"}}><Canopod size={60} color="#e8e8ea" nodes={ACCENT} /><div className="swatch-line"><span className="dot" style={{background:"#1e1f22"}} />#1E1F22</div></div>
+          <div className="card" style={{background:"#1e1f22"}}><Canopod size={60} color={ACCENT} /><div className="swatch-line"><span className="dot" style={{background:ACCENT}} />#58C2C8</div></div>
+          <div className="card" style={{background:"#1e1f22"}}><Canopod size={60} color="#e8e8ea" nodes={GREEN} /><div className="swatch-line"><span className="dot" style={{background:GREEN}} />#3FB950</div></div>
+          <div className="card light" style={{background:"#f4f5f7",border:"1px solid #e2e4e9"}}><Canopod size={60} color="#23262c" nodes={ACCENT} /><div className="swatch-line" style={{color:"#5b606b"}}><span className="dot" style={{background:"#f4f5f7"}} />#F4F5F7</div></div>
         </div>
       </Sec>
 
       {/* LOCKUPS */}
-      <Sec eyebrow="Wordmark" title="Lockups" sub="Lowercase “canopy”, tight tracking. Mark leads.">
+      <Sec eyebrow="Wordmark" title="Lockups" sub="Lowercase “canopod”, tight tracking. Mark leads.">
         <div className="grid g2">
           <div className="card lock-card">
-            <div className="lock-h"><Canopy size={48} color="#e8e8ea" nodes={ACCENT} /><span className="wm wm-lg">canopy</span></div>
+            <div className="lock-h"><Canopod size={48} color="#e8e8ea" nodes={ACCENT} /><span className="wm wm-lg">canopod</span></div>
             <span className="cap">Horizontal · primary</span>
           </div>
           <div className="card lock-card light">
-            <div className="lock-h"><Canopy size={48} color="#23262c" nodes={ACCENT} /><span className="wm wm-lg" style={{color:"#23262c"}}>canopy</span></div>
+            <div className="lock-h"><Canopod size={48} color="#23262c" nodes={ACCENT} /><span className="wm wm-lg" style={{color:"#23262c"}}>canopod</span></div>
             <span className="cap" style={{color:"#8a8f99"}}>Horizontal · light ground</span>
           </div>
           <div className="card lock-card">
-            <div className="lock-v"><Canopy size={56} color="#e8e8ea" nodes={ACCENT} /><span className="wm wm-md">canopy</span></div>
+            <div className="lock-v"><Canopod size={56} color="#e8e8ea" nodes={ACCENT} /><span className="wm wm-md">canopod</span></div>
             <span className="cap">Stacked · for square spaces</span>
           </div>
           <div className="card lock-card">
-            <div className="lock-h"><Canopy size={30} color="#9a9ba0" /><span className="wm" style={{fontSize:"20px",color:"#9a9ba0"}}>canopy</span></div>
+            <div className="lock-h"><Canopod size={30} color="#9a9ba0" /><span className="wm" style={{fontSize:"20px",color:"#9a9ba0"}}>canopod</span></div>
             <span className="cap">Mono · UI chrome / footers</span>
           </div>
         </div>
@@ -181,9 +181,9 @@ function App() {
       {/* APP ICON */}
       <Sec eyebrow="Product" title="App icon" sub="macOS squircle, three ways.">
         <div className="grid g3">
-          <div className="card"><div className="appicon ic-dark" style={{width:108,height:108}}><Canopy size={62} color="#e8e8ea" nodes={ACCENT} /></div><span className="cap"><b>Dark</b> · default</span></div>
-          <div className="card"><div className="appicon ic-teal" style={{width:108,height:108}}><Canopy size={62} color="#0d2426" /></div><span className="cap"><b>Teal</b> · marketing</span></div>
-          <div className="card"><div className="appicon ic-ink" style={{width:108,height:108}}><Canopy size={62} color={ACCENT} nodes={GREEN} /></div><span className="cap"><b>Ink</b> · with live nodes</span></div>
+          <div className="card"><div className="appicon ic-dark" style={{width:108,height:108}}><Canopod size={62} color="#e8e8ea" nodes={ACCENT} /></div><span className="cap"><b>Dark</b> · default</span></div>
+          <div className="card"><div className="appicon ic-teal" style={{width:108,height:108}}><Canopod size={62} color="#0d2426" /></div><span className="cap"><b>Teal</b> · marketing</span></div>
+          <div className="card"><div className="appicon ic-ink" style={{width:108,height:108}}><Canopod size={62} color={ACCENT} nodes={GREEN} /></div><span className="cap"><b>Ink</b> · with live nodes</span></div>
         </div>
       </Sec>
 
@@ -191,17 +191,17 @@ function App() {
       <Sec eyebrow="Product" title="In context" sub="Where it actually lives.">
         <div className="grid g2">
           <div className="card">
-            <div className="mbar"><span style={{fontWeight:700}}></span><span className="sp" /><span className="tray"><Canopy size={15} color="#fff" sw={2.3} solid /></span><span>Thu 9:41 AM</span></div>
+            <div className="mbar"><span style={{fontWeight:700}}></span><span className="sp" /><span className="tray"><Canopod size={15} color="#fff" sw={2.3} solid /></span><span>Thu 9:41 AM</span></div>
             <span className="cap">Menu-bar tray · 15px</span>
           </div>
           <div className="card">
-            <div className="tbar"><span className="lights"><i style={{background:"#ff5f57"}} /><i style={{background:"#febc2e"}} /><i style={{background:"#28c840"}} /></span><span className="tt"><Canopy size={17} color={ACCENT} sw={2.1} />Canopy</span></div>
+            <div className="tbar"><span className="lights"><i style={{background:"#ff5f57"}} /><i style={{background:"#febc2e"}} /><i style={{background:"#28c840"}} /></span><span className="tt"><Canopod size={17} color={ACCENT} sw={2.1} />Canopod</span></div>
             <span className="cap">App titlebar · 17px</span>
           </div>
         </div>
       </Sec>
 
-      <div className="footer"><span>Canopy — brandmark</span><span>git-fork · symmetric · 24u grid</span></div>
+      <div className="footer"><span>Canopod — brandmark</span><span>git-fork · symmetric · 24u grid</span></div>
     </div>
   );
 }

@@ -9,7 +9,7 @@ struct Directory(PathBuf);
 impl Drop for Directory { fn drop(&mut self) { let _ = std::fs::remove_dir_all(&self.0); } }
 
 fn backend_command(dir: &Directory, action: &str) -> Command {
-    let mut command = Command::new(env!("CARGO_BIN_EXE_canopy-backend"));
+    let mut command = Command::new(env!("CARGO_BIN_EXE_canopod-backend"));
     command.args(action.split_whitespace()).arg("--data-dir").arg(&dir.0).arg("--config-dir").arg(&dir.0).arg("--log-dir").arg(&dir.0);
     command
 }
@@ -56,7 +56,7 @@ fn start_backend(dir: &Directory, initial_port: Option<u16>) -> Started {
 
 #[test]
 fn a_contended_process_port_is_retried_once() {
-    let dir = Directory(std::env::temp_dir().join(format!("canopy-backend-retry-{}", std::process::id())));
+    let dir = Directory(std::env::temp_dir().join(format!("canopod-backend-retry-{}", std::process::id())));
     std::fs::create_dir_all(&dir.0).unwrap();
     let occupied = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
     let started = start_backend(&dir, Some(occupied.local_addr().unwrap().port()));
@@ -68,7 +68,7 @@ fn a_contended_process_port_is_retried_once() {
 #[test]
 fn cli_rejects_incomplete_or_ambiguous_repository_and_smoke_arguments() {
     let dir = Directory(std::env::temp_dir().join(format!(
-        "canopy-backend-cli-validation-{}",
+        "canopod-backend-cli-validation-{}",
         std::process::id()
     )));
     std::fs::create_dir_all(&dir.0).unwrap();
@@ -112,7 +112,7 @@ fn foreground_duplicate_launch_status_and_stop_release_the_owner() {
 #[test]
 fn fresh_headless_backend_bootstraps_and_smokes_mcp_without_a_gui() {
     let dir = Directory(std::env::temp_dir().join(format!(
-        "canopy-backend-mcp-smoke-{}",
+        "canopod-backend-mcp-smoke-{}",
         std::process::id()
     )));
     std::fs::create_dir_all(&dir.0).unwrap();
@@ -164,8 +164,8 @@ fn fresh_headless_backend_bootstraps_and_smokes_mcp_without_a_gui() {
     );
     let report: serde_json::Value = serde_json::from_slice(&smoke.stdout).unwrap();
     assert_eq!(report["status"], "ok");
-    assert_eq!(report["server"], "canopy-mcp");
-    assert_eq!(report["workflowPrompt"], "canopy_worktree_delivery");
+    assert_eq!(report["server"], "canopod-mcp");
+    assert_eq!(report["workflowPrompt"], "canopod_worktree_delivery");
     assert_eq!(report["tools"], 9);
     assert_eq!(report["outputSchemas"], report["tools"]);
     assert!(report["cachedStatusMs"]["p95"].as_f64().unwrap() <= 50.0);
@@ -185,14 +185,14 @@ fn fresh_headless_backend_bootstraps_and_smokes_mcp_without_a_gui() {
 }
 
 fn run_lifecycle(method: &str) {
-    let dir = Directory(std::env::temp_dir().join(format!("canopy-backend-process-{}-{method}", std::process::id())));
+    let dir = Directory(std::env::temp_dir().join(format!("canopod-backend-process-{}-{method}", std::process::id())));
     std::fs::create_dir_all(&dir.0).unwrap();
     std::fs::write(dir.0.join("settings.json"), serde_json::to_vec(&serde_json::json!({"repos":[{"id":"fixture","path":dir.0,"name":"fixture"}]})).unwrap()).unwrap();
     let command = |action: &str| backend_command(&dir, action);
     let Started { mut child, reader, .. } = start_backend(&dir, None);
     let second = command("serve").output().unwrap();
     assert!(!second.status.success());
-    assert!(String::from_utf8_lossy(&second.stderr).contains("another Canopy backend"));
+    assert!(String::from_utf8_lossy(&second.stderr).contains("another Canopod backend"));
     assert!(child.0.try_wait().unwrap().is_none());
     let status = command("status").output().unwrap();
     assert!(status.status.success(), "{}", String::from_utf8_lossy(&status.stderr));
@@ -240,7 +240,7 @@ fn run_lifecycle(method: &str) {
         std::thread::sleep(Duration::from_millis(20));
     }
     reader.join().unwrap();
-    let owner = canopy_lib::ownership::RuntimeOwner::acquire(&dir.0).unwrap();
+    let owner = canopod_lib::ownership::RuntimeOwner::acquire(&dir.0).unwrap();
     drop(owner);
 }
 
@@ -248,7 +248,7 @@ fn run_lifecycle(method: &str) {
 #[test]
 fn foreground_logger_exposes_stale_orphan_expiry() {
     use std::os::unix::process::CommandExt;
-    let dir = Directory(std::env::temp_dir().join(format!("canopy-backend-warning-{}", std::process::id())));
+    let dir = Directory(std::env::temp_dir().join(format!("canopod-backend-warning-{}", std::process::id())));
     std::fs::create_dir_all(&dir.0).unwrap();
     let mut unrelated = ChildGuard(Command::new("sleep").arg("30").process_group(0).spawn().unwrap());
     std::fs::write(dir.0.join("state.json"), serde_json::to_vec(&serde_json::json!({"orphans":[{"svcKey":"stale", "pgid":unrelated.0.id(), "spawnTimeSecs":1}]})).unwrap()).unwrap();

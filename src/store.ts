@@ -65,7 +65,7 @@ export interface CreateWorktreeArgs {
   /** the path the backend will create. Progress events are keyed by it, so it
       is also what the in-progress row and the failure notice are filed under. */
   wtPath: string;
-  /** called with the REAL path once it exists (seeding .canopy/context.md) */
+  /** called with the REAL path once it exists (seeding .canopod/context.md) */
   onCreated?: (wtPath: string) => void;
 }
 

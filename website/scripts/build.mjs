@@ -21,7 +21,7 @@ const quiet = process.argv.includes("--quiet");
 
 const VERSION = "0.5.0";
 
-/* The canonical Canopy brandmark, copied from the brand sheet (24u grid, 2u
+/* The canonical Canopod brandmark, copied from the brand sheet (24u grid, 2u
    stroke): two parents bracketed into one child. The ink strokes take
    `currentColor` so the mark follows the page's text colour in either theme,
    while the nodes keep the fixed brand teal they have in the app icon. */
@@ -102,7 +102,7 @@ function page({ slug, title, description, bodyHtml, toc, prev, next, home }) {
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>${esc(title)} · Canopy docs</title>
+<title>${esc(title)} · Canopod docs</title>
 <meta name="description" content="${esc(description || "")}" />
 <link rel="icon" type="image/png" sizes="32x32" href="assets/icons/favicon-32.png" />
 <link rel="icon" type="image/png" sizes="128x128" href="assets/icons/favicon-128.png" />
@@ -111,7 +111,7 @@ function page({ slug, title, description, bodyHtml, toc, prev, next, home }) {
 <script>
   // Set the theme before first paint so there is no flash of the wrong palette.
   try {
-    var t = localStorage.getItem("canopydocs.theme");
+    var t = localStorage.getItem("canopoddocs.theme");
     if (t === "light" || t === "dark") document.documentElement.dataset.theme = t;
   } catch (e) {}
 </script>
@@ -121,7 +121,7 @@ function page({ slug, title, description, bodyHtml, toc, prev, next, home }) {
 <header class="hd">
   <a class="brand" href="index.html">
     ${BRANDMARK}
-    <span>Canopy<span class="brand__d">docs</span></span>
+    <span>Canopod<span class="brand__d">docs</span></span>
   </a>
   <span class="ver">v${VERSION}</span>
   <div class="search">
@@ -142,7 +142,7 @@ function page({ slug, title, description, bodyHtml, toc, prev, next, home }) {
 ${bodyHtml}
       <div class="pnrow">${prevLink}${nextLink}</div>
       <footer class="foot">
-        <p>Documentation for Canopy ${VERSION}. Controls marked <em>coming soon</em> are present in
+        <p>Documentation for Canopod ${VERSION}. Controls marked <em>coming soon</em> are present in
         the interface but have no implementation behind them yet.</p>
       </footer>
     </article>

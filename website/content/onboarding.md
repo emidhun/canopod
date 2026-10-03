@@ -1,11 +1,11 @@
 ---
 title: Adding a repository
-description: Point Canopy at a repository and watch what it finds, what it proposes, and what it writes to disk.
+description: Point Canopod at a repository and watch what it finds, what it proposes, and what it writes to disk.
 ---
 
 # Adding a repository
 
-Onboarding is one screen that adapts as you go, not a five-step wizard. Canopy checks the folder is a
+Onboarding is one screen that adapts as you go, not a five-step wizard. Canopod checks the folder is a
 git repo, reads its manifests, proposes what to run and what to set up, and shows you where each
 proposal came from. You can edit all of it here, and again later in Settings.
 
@@ -24,7 +24,7 @@ The first-run screen makes the case for worktrees before it asks you for anythin
 
 !shot onboarding-empty | First run: the add-repository prompt, beside a comparison of git checkout and git worktree.
 
-## Step 1. Point Canopy at the repository
+## Step 1. Point Canopod at the repository
 
 !shot onboarding-add | The add-repository screen: the path field also accepts a dropped folder, and detection runs as you type.
 
@@ -37,7 +37,7 @@ Three ways to name the folder:
 
 Point it at your normal clone, not at an existing worktree.
 
-Canopy then calls `detect_repo`, which reads:
+Canopod then calls `detect_repo`, which reads:
 
 - whether the path is inside a git work tree, and where the top of it is,
 - the repository name, current branch, and `origin` URL,
@@ -47,7 +47,7 @@ Canopy then calls `detect_repo`, which reads:
 
 The stack it detected shows up as a chip you can change. It isn't a step you have to confirm.
 
-## Step 2. Check the services Canopy proposes
+## Step 2. Check the services Canopod proposes
 
 Any `package.json` script whose name looks like a long-running process becomes a candidate. The
 matcher takes `start`, `dev`, `serve`, `develop`, `web`, `server`, `api`, `client`, `frontend`,
@@ -66,7 +66,7 @@ Each row is editable in place:
 | Directory | Working directory relative to the worktree root. Pre-filled from an `--prefix` flag if the script has one. |
 | Port | The **base** port. Each worktree gets `base + index × 10`. |
 | Command | The shell command that starts it. |
-| Checkbox | Whether Canopy runs this service at all. |
+| Checkbox | Whether Canopod runs this service at all. |
 
 Under the list, **Where that came from** prints the repo's own `scripts` block with the entries that
 fed a service or a database command highlighted. You can see the derivation instead of taking it on
@@ -110,7 +110,7 @@ the next step and drops you back on the add screen.
 The last screen ends on something you'd want to do next:
 
 - **Create first worktree** (`⌘N`) opens the New worktree dialog.
-- **Go to Canopy** selects the repo's main checkout in the main window.
+- **Go to Canopod** selects the repo's main checkout in the main window.
 
 It also recaps what got saved: the service list with ports, where worktrees will be created, how many
 env keys and setup steps run on create, and the fact that each worktree gets its own database named
@@ -128,5 +128,5 @@ by hand. Commit `.worktreemanager.json` so your setup travels with the branch.
 
 ## Skipping
 
-**Skip for now** and **Skip setup** dismiss onboarding. Canopy is then empty, the main window shows
+**Skip for now** and **Skip setup** dismiss onboarding. Canopod is then empty, the main window shows
 "No repositories yet" with a button back into this flow, and `⇧⌘N` always works.

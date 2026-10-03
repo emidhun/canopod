@@ -96,7 +96,7 @@ failed: *"Snapshot failed"*, *"Database reset failed"*.
 
 ## Postgres client versions
 
-The dump and restore tooling has to match your server's major version. Canopy handles that instead of
+The dump and restore tooling has to match your server's major version. Canopod handles that instead of
 leaving it to `PATH`:
 
 1. It asks the live server for `server_version_num`.
@@ -110,7 +110,7 @@ Matching the major version is the only thing that works reliably.
 :::
 
 Each Postgres CLI invocation is capped at 15 minutes, so a hung server can't wedge the app forever.
-They run through a non-login shell, since Canopy composes the command lines itself and they only need
+They run through a non-login shell, since Canopod composes the command lines itself and they only need
 `PATH`, with `PGPASSWORD` injected when `PG_PASS` is set.
 
 ## Reset from the menu bar

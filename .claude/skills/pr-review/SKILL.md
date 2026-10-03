@@ -1,9 +1,9 @@
 ---
 name: pr-review
-description: Review a Canopy pull request against project-specific conventions. Use when asked to review a PR, a diff, or a contribution — locally (/pr-review <number>) or in CI.
+description: Review a Canopod pull request against project-specific conventions. Use when asked to review a PR, a diff, or a contribution — locally (/pr-review <number>) or in CI.
 ---
 
-# Canopy PR review
+# Canopod PR review
 
 Fetch the PR first (`gh pr view <n>`, `gh pr diff <n>`), read any files the diff
 touches for context, then review against the checklist below. Be specific and

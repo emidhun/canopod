@@ -211,7 +211,7 @@ export default function ServiceDetailModal({
           <dl className="cx-kv cx-kv--env">
             {env.map((e) => (
               <span className="cx-kv__row" key={`${e.source}:${e.key}`}>
-                <dt title={e.source === "spawn" ? "Set by Canopy when the process starts" : "Read from a provisioned .env"}>{e.key}</dt>
+                <dt title={e.source === "spawn" ? "Set by Canopod when the process starts" : "Read from a provisioned .env"}>{e.key}</dt>
                 <dd className={e.masked ? "cx-kv__masked" : undefined} title={e.masked ? "Value withheld — it looks like a credential" : e.value}>
                   {e.value || <em>empty</em>}
                 </dd>

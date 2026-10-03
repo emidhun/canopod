@@ -4,13 +4,13 @@ import "../../../styles/mcp.css";
 
 type Client = "claude" | "codex" | "generic";
 export function connectionConfig(client: Client, connection: McpConnection): string {
-  if (client === "codex") return `[mcp_servers.canopy]\nurl = ${JSON.stringify(connection.endpoint)}\nbearer_token_env_var = "CANOPY_MCP_TOKEN"`;
+  if (client === "codex") return `[mcp_servers.canopod]\nurl = ${JSON.stringify(connection.endpoint)}\nbearer_token_env_var = "CANOPOD_MCP_TOKEN"`;
   if (client === "generic") return JSON.stringify({ url: connection.endpoint, transport: "streamable-http", headers: { Authorization: `Bearer ${connection.token}` } }, null, 2);
-  return JSON.stringify({ mcpServers: { canopy: { type: "http", url: connection.endpoint, headers: { Authorization: `Bearer ${connection.token}` } } } }, null, 2);
+  return JSON.stringify({ mcpServers: { canopod: { type: "http", url: connection.endpoint, headers: { Authorization: `Bearer ${connection.token}` } } } }, null, 2);
 }
 
 export function firstTask(repoId: string): string {
-  return `Call canopy_status for repository ${JSON.stringify(repoId)}. Then list its worktrees and services, report anything stopped or failing, and do not make changes.`;
+  return `Call canopod_status for repository ${JSON.stringify(repoId)}. Then list its worktrees and services, report anything stopped or failing, and do not make changes.`;
 }
 
 export default function McpPage({ preferredRepoPath }: { preferredRepoPath?: string }) {
@@ -59,7 +59,7 @@ export default function McpPage({ preferredRepoPath }: { preferredRepoPath?: str
     setBusy(true); setError(""); setNotice("");
     try {
       const path = await ipc.mcpConnectAgent(client);
-      setNotice(`Agent configured in ${path}. Restart or reconnect the agent to use Canopy. The connection reads the current token automatically.`);
+      setNotice(`Agent configured in ${path}. Restart or reconnect the agent to use Canopod. The connection reads the current token automatically.`);
     } catch (e) { setError(errText(e)); }
     finally { setBusy(false); }
   }
@@ -82,7 +82,7 @@ export default function McpPage({ preferredRepoPath }: { preferredRepoPath?: str
   async function copy(kind: "config" | "token" | "endpoint" | "transport" | "header" | "task") {
     setBusy(true); setError(""); setNotice("");
     try {
-      if (!navigator.clipboard) throw new Error("Clipboard is unavailable. Use Canopy's desktop app.");
+      if (!navigator.clipboard) throw new Error("Clipboard is unavailable. Use Canopod's desktop app.");
       if (kind === "endpoint") await navigator.clipboard.writeText(status!.endpoint);
       else if (kind === "transport") await navigator.clipboard.writeText("streamable-http");
       else if (kind === "task") await navigator.clipboard.writeText(firstTask(status!.repoIds[0]));
@@ -90,7 +90,7 @@ export default function McpPage({ preferredRepoPath }: { preferredRepoPath?: str
         const connection = await ipc.mcpConnection();
         await navigator.clipboard.writeText(kind === "token" ? connection.token : kind === "header" ? `Bearer ${connection.token}` : connectionConfig(client, connection));
       }
-      setNotice(kind === "config" ? client === "codex" ? "Codex configuration copied. Set CANOPY_MCP_TOKEN from the separately copied token, then restart Codex."
+      setNotice(kind === "config" ? client === "codex" ? "Codex configuration copied. Set CANOPOD_MCP_TOKEN from the separately copied token, then restart Codex."
         : "Configuration copied, including the token. Paste it into your agent's private configuration and reconnect."
         : kind === "task" ? "First task copied. Paste it into your connected agent."
         : kind === "token" ? "MCP token copied." : kind === "header" ? "Authorization header value copied." : kind === "transport" ? "Transport copied." : "Endpoint copied.");
@@ -98,7 +98,7 @@ export default function McpPage({ preferredRepoPath }: { preferredRepoPath?: str
     finally { setBusy(false); }
   }
 
-  if (!native) return <div className="mcp-panel"><p>MCP configuration is available in the Canopy desktop app.</p></div>;
+  if (!native) return <div className="mcp-panel"><p>MCP configuration is available in the Canopod desktop app.</p></div>;
   const changed = status && (allowWrite !== status.allowWorktreeWrite || allowServices !== status.allowServiceControl || allowConfiguration !== status.allowConfiguration || [...selected].sort().join("\n") !== [...status.repoIds].sort().join("\n"));
   return <div className="mcp-panel" aria-busy={busy || loading}>
     {(error || notice) && <div className="mcp-feedback">
@@ -126,7 +126,7 @@ export default function McpPage({ preferredRepoPath }: { preferredRepoPath?: str
           <button className="btn pri" disabled={busy || loading || selected.length === 0 || (!!status.enabled && !changed)} onClick={() => void change("enable")}>{status.enabled ? "Apply MCP access" : "Enable MCP"}</button>
           <button className="btn" disabled={busy || loading || (!status.enabled && !status.error)} onClick={() => void change("disable")}>Disable MCP</button>
         </div>
-        <p className="mcp-hint">Changes apply immediately. Access stays available while Canopy is in the tray and ends when the app quits.</p>
+        <p className="mcp-hint">Changes apply immediately. Access stays available while Canopod is in the tray and ends when the app quits.</p>
       </>}
     </section>
     {status && <section className="mcp-section">
@@ -135,7 +135,7 @@ export default function McpPage({ preferredRepoPath }: { preferredRepoPath?: str
       <h4>Automatic setup</h4>
       <label className="mcp-label">Agent<select disabled={busy} value={client} onChange={(e) => setClient(e.target.value as Client)}><option value="claude">Claude Code</option><option value="codex">Codex</option><option value="generic">Other MCP client</option></select></label>
       {client !== "generic" && <>
-        {target && <p>Creates or updates the <code>canopy</code> MCP entry for your user in <code>{target}</code>. Other agent settings are preserved.</p>}
+        {target && <p>Creates or updates the <code>canopod</code> MCP entry for your user in <code>{target}</code>. Other agent settings are preserved.</p>}
         {targetError && <p role="alert" className="mcp-error">{targetError}</p>}
         <button className="btn pri" disabled={busy || !status.enabled || !target} onClick={() => void connect()}>Connect {client === "claude" ? "Claude Code" : "Codex"}</button>
         <p className="mcp-hint">Use an up-to-date Claude Code or Codex, then restart or reconnect after setup. Tokens refresh automatically when you reconnect.</p>
@@ -146,13 +146,13 @@ export default function McpPage({ preferredRepoPath }: { preferredRepoPath?: str
       <div className="mcp-field"><label className="mcp-label">Bearer token<input readOnly type="password" value={status.enabled ? "hidden-token" : ""} placeholder="Enable MCP to create a token" /></label><button className="btn" disabled={busy || !status.enabled} onClick={() => void copy("token")}>Copy token</button></div>
       <div className="mcp-field"><label className="mcp-label">Authorization header<input readOnly value="Authorization: Bearer <MCP_TOKEN>" /></label><button className="btn" disabled={busy || !status.enabled} onClick={() => void copy("header")}>Copy Authorization value</button></div>
       <details><summary>Copy a complete configuration instead</summary>
-      <p>{client === "codex" ? "Merge this entry into your private ~/.codex/config.toml, set CANOPY_MCP_TOKEN to the separately copied token before starting Codex, then restart it. Replace an existing canopy entry instead of adding a duplicate."
-        : client === "claude" ? "Save this as a private JSON file outside your repository, then start Claude Code with: claude --mcp-config /path/to/canopy-mcp.json. Use /mcp to check the connection."
+      <p>{client === "codex" ? "Merge this entry into your private ~/.codex/config.toml, set CANOPOD_MCP_TOKEN to the separately copied token before starting Codex, then restart it. Replace an existing canopod entry instead of adding a duplicate."
+        : client === "claude" ? "Save this as a private JSON file outside your repository, then start Claude Code with: claude --mcp-config /path/to/canopod-mcp.json. Use /mcp to check the connection."
         : "Add a Streamable HTTP server with this URL and Authorization header in your MCP client."}</p>
       <pre className="mcp-config">{connectionConfig(client, { endpoint: status.endpoint, token: "<MCP_TOKEN>" })}</pre>
       <button className="btn pri" disabled={busy || !status.enabled} onClick={() => void copy("config")}>Copy agent configuration</button>
       </details>
-      <p className="mcp-hint">{client === "codex" ? "The Codex configuration references CANOPY_MCP_TOKEN instead of embedding your secret. Keep the token private." : "The copied configuration includes your secret token. Keep the file private and out of version control."} After connecting, use one of these repository IDs:</p>
+      <p className="mcp-hint">{client === "codex" ? "The Codex configuration references CANOPOD_MCP_TOKEN instead of embedding your secret. Keep the token private." : "The copied configuration includes your secret token. Keep the file private and out of version control."} After connecting, use one of these repository IDs:</p>
       <ul>{repos.filter((r) => status.repoIds.includes(r.id)).map((r) => <li key={r.id}>{r.name}: <code>{r.id}</code></li>)}</ul>
       {status.repoIds.length > 0 && <><pre className="mcp-config">{firstTask(status.repoIds[0])}</pre><button className="btn" disabled={busy} onClick={() => void copy("task")}>Copy first task</button></>}
       <div className="mcp-actions"><button className="btn" disabled={busy} onClick={() => setRotate(true)}>Rotate token…</button></div>

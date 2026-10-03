@@ -1,11 +1,11 @@
 ---
 title: Building from source
-description: Build and run Canopy from source, find your way around the code, and avoid the pitfalls already encountered.
+description: Build and run Canopod from source, find your way around the code, and avoid the pitfalls already encountered.
 ---
 
 # Building from source
 
-Canopy is a Tauri 2 app: a Rust backend, a React and zustand frontend built by Vite, and three webview
+Canopod is a Tauri 2 app: a Rust backend, a React and zustand frontend built by Vite, and three webview
 entry points.
 
 ## Prerequisites
@@ -56,7 +56,7 @@ src/
   popover.tsx     popover/Popover.tsx        the menu-bar window
   terminal-window.tsx                        a detached terminal window
   onboarding/Onboarding.tsx                  first run + add repository
-  app/canopy/*                               the redesigned shell: TopBar, SidebarNav,
+  app/canopod/*                               the redesigned shell: TopBar, SidebarNav,
                                              WorktreeView, ServiceRail, WorkSurface,
                                              LogsPane, StatusBar, Palette, modals
   app/nextAction.ts                          the workflow engine
@@ -135,7 +135,7 @@ four surfaces can't drift. Add a state there, not in a component.
 
 :::warn Read these before you start debugging
 - **Node 18 vs 22.** With a default of 18, Vite fails and `engine-strict` installs fail with `notsup`.
-  Canopy prepends a worktree's pinned Node for setup, services, reset, migrate, teardown and custom
+  Canopod prepends a worktree's pinned Node for setup, services, reset, migrate, teardown and custom
   commands. Don't remove that (`toolchain.rs`).
 - **`pg_dump` version.** It has to match the server's major version. `db.rs` queries
   `SHOW server_version_num` and prefers `Postgres.app/Versions/<major>/bin`. Neither the oldest on

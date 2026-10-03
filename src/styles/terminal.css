@@ -1,5 +1,5 @@
 /* Agent lane — terminal + context + agent, a first-class right-hand column.
-   Ported from the "Canopy — Agent Lane" design handoff (VariantC). Tokens live
+   Ported from the "Canopod — Agent Lane" design handoff (VariantC). Tokens live
    in tokens.css. The lane mounts only in the worktree view; the .with-lane
    modifier switches .app from its 2-col grid to the 3-column flex row the lane
    needs (and gives it the positioning context the overlay drawer relies on). */

@@ -1,4 +1,4 @@
-// Capture every documentation screenshot from the REAL Canopy UI.
+// Capture every documentation screenshot from the REAL Canopod UI.
 //
 // Prerequisites: the app's Vite dev server is running (npm run dev in the repo
 // root, port 1420). In a plain browser `hasBackend()` is false, so the app runs on
@@ -8,15 +8,15 @@
 //   THEME=dark node scripts/screenshots.mjs      → assets/screens/dark/
 //   ONLY=palette,overview node scripts/screenshots.mjs   (subset, for iterating)
 //
-// Playwright is resolved from the Canopy repo, so this repo needs no
+// Playwright is resolved from the Canopod repo, so this repo needs no
 // dependencies of its own.
 import { mkdirSync, existsSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
-const APP = process.env.CANOPY_REPO || resolve(ROOT, "..");
-const BASE = process.env.CANOPY_URL || "http://localhost:1420";
+const APP = process.env.CANOPOD_REPO || resolve(ROOT, "..");
+const BASE = process.env.CANOPOD_URL || "http://localhost:1420";
 const THEME = process.env.THEME === "dark" ? "dark" : "light";
 const OUT = join(ROOT, "assets", "screens", THEME);
 const ONLY = process.env.ONLY ? new Set(process.env.ONLY.split(",").map((s) => s.trim())) : null;
@@ -31,7 +31,7 @@ const pause = (ms) => new Promise((r) => setTimeout(r, ms));
 async function main() {
   const pwPath = join(APP, "node_modules", "playwright", "index.js");
   if (!existsSync(pwPath)) {
-    console.error(`Playwright not found at ${pwPath}\nSet CANOPY_REPO to the Canopy checkout.`);
+    console.error(`Playwright not found at ${pwPath}\nSet CANOPOD_REPO to the Canopod checkout.`);
     process.exit(1);
   }
   // playwright is CommonJS: named exports may only be reachable through `default`
@@ -51,7 +51,7 @@ async function main() {
     const ctx = await browser.newContext({ viewport: view, deviceScaleFactor: SCALE, colorScheme: THEME });
     const page = await ctx.newPage();
     const appr = JSON.stringify({ theme: THEME, density: "comfortable", accent: "teal", fontScale: 1, ...appearance });
-    await page.addInitScript(`try { localStorage.setItem("canopy.appearance", ${JSON.stringify(appr)}); } catch (e) {}`);
+    await page.addInitScript(`try { localStorage.setItem("canopod.appearance", ${JSON.stringify(appr)}); } catch (e) {}`);
     await page.goto(`${BASE}/${entry}`, { waitUntil: "load" });
     return { ctx, page };
   }

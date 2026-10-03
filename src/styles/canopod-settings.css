@@ -1,6 +1,6 @@
-/* Canopy Settings — the redesigned configuration editors.
+/* Canopod Settings — the redesigned configuration editors.
 
-   Ported from the design handoff (Canopy Settings.html). Everything is scoped
+   Ported from the design handoff (Canopod Settings.html). Everything is scoped
    under `.cxset-root` so the design's generic class names (.nav, .page, .inp,
    .btn, .row, .obj…) don't collide with the app's global classes. The mock's
    window chrome (traffic lights, floating shadow) is dropped — in the app this

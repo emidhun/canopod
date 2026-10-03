@@ -7,7 +7,7 @@ use crate::{
 };
 use std::{future::Future, sync::Arc, time::Duration};
 
-const APP_ID: &str = "com.midhunkumare.canopy";
+pub const APP_ID: &str = "com.midhunkumare.canopod";
 
 /// Keep these identical to Tauri's desktop PathResolver defaults.
 pub fn default_paths() -> Result<RuntimePaths, String> {
@@ -161,7 +161,7 @@ mod tests {
         fn new() -> Self {
             static NEXT: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
             let path = std::env::temp_dir().join(format!(
-                "canopy-host-{}-{}",
+                "canopod-host-{}-{}",
                 std::process::id(),
                 NEXT.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
             ));
@@ -192,7 +192,7 @@ mod tests {
     #[cfg(target_os = "linux")]
     #[test]
     fn crash_owner_helper() {
-        if std::env::var_os("CANOPY_REAPER_OWNER").is_none() {
+        if std::env::var_os("CANOPOD_REAPER_OWNER").is_none() {
             return;
         }
         use std::os::unix::process::CommandExt;
@@ -224,14 +224,14 @@ mod tests {
     #[test]
     fn linux_subreaper_recovers_child_of_dead_recorded_owner() {
         use std::process::Command;
-        if std::env::var_os("CANOPY_REAPER_TEST").is_none() {
+        if std::env::var_os("CANOPOD_REAPER_TEST").is_none() {
             let output = Command::new(std::env::current_exe().unwrap())
                 .args([
                     "--exact",
                     "backend::tests::linux_subreaper_recovers_child_of_dead_recorded_owner",
                     "--nocapture",
                 ])
-                .env("CANOPY_REAPER_TEST", "1")
+                .env("CANOPOD_REAPER_TEST", "1")
                 .output()
                 .unwrap();
             assert!(
@@ -251,7 +251,7 @@ mod tests {
                 "backend::tests::crash_owner_helper",
                 "--nocapture",
             ])
-            .env("CANOPY_REAPER_OWNER", "1")
+            .env("CANOPOD_REAPER_OWNER", "1")
             .output()
             .unwrap();
         assert!(output.status.success());
@@ -435,7 +435,7 @@ mod tests {
         assert!(open(fixture.paths())
             .err()
             .unwrap()
-            .contains("another Canopy backend"));
+            .contains("another Canopod backend"));
         drop(owner);
         assert!(open(fixture.paths()).err().unwrap().contains("parse"));
         assert_eq!(std::fs::read(fixture.0.join("state.json")).unwrap(), bytes);
@@ -461,7 +461,7 @@ mod tests {
             vec!["init", "-b", "main"],
             vec![
                 "-c",
-                "user.name=Canopy Test",
+                "user.name=Canopod Test",
                 "-c",
                 "user.email=test@example.invalid",
                 "commit",

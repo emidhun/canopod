@@ -17,17 +17,17 @@ export type PageMeta = { id: PageId; ic: string; label: string; desc: string; ti
 
 export const PLATFORM: PageMeta[] = [
 
-  { id: "general", ic: "sliders", label: "General", desc: "Appearance and behaviour", title: "General", blurb: "How Canopy looks and what it does on launch." },
-  { id: "mcp", ic: "sparkle", label: "MCP", desc: "Connect to agents", title: "MCP", blurb: "Connect agents to Canopy and choose which repositories they can access." },
-  { id: "terminal", ic: "terminal", label: "Terminal", desc: "Shell, font, env", title: "Terminal", blurb: "The shell Canopy opens inside a worktree, and what it inherits." },
-  { id: "notifications", ic: "bell", label: "Notifications", desc: "What interrupts you", title: "Notifications", blurb: "Canopy only interrupts you for things that need a decision." },
+  { id: "general", ic: "sliders", label: "General", desc: "Appearance and behaviour", title: "General", blurb: "How Canopod looks and what it does on launch." },
+  { id: "mcp", ic: "sparkle", label: "MCP", desc: "Connect to agents", title: "MCP", blurb: "Connect agents to Canopod and choose which repositories they can access." },
+  { id: "terminal", ic: "terminal", label: "Terminal", desc: "Shell, font, env", title: "Terminal", blurb: "The shell Canopod opens inside a worktree, and what it inherits." },
+  { id: "notifications", ic: "bell", label: "Notifications", desc: "What interrupts you", title: "Notifications", blurb: "Canopod only interrupts you for things that need a decision." },
   { id: "shortcuts", ic: "keyboard", label: "Shortcuts", desc: "Keyboard map", title: "Keyboard shortcuts", blurb: "Every command is reachable from the keyboard." },
   { id: "security", ic: "shield", label: "Security", desc: "Secrets, SSH", title: "Security", blurb: "How secrets are handled in provisioned files and exports." },
   { id: "advanced", ic: "cube", label: "Advanced", desc: "Diagnostics, experiments", title: "Advanced", blurb: "Diagnostics, experiments and reset." },
 ];
 export const REPOPAGES: PageMeta[] = [
   { id: "repo-general", ic: "fork", label: "General", desc: "Paths and defaults", title: "Repository", blurb: "Where this repo lives and what every new worktree starts with." },
-  { id: "services", ic: "server", label: "Services", desc: "Runtimes, ports", title: "Services", blurb: "Long-running processes Canopy starts per worktree. Ports derive from the worktree index so they never collide." },
+  { id: "services", ic: "server", label: "Services", desc: "Runtimes, ports", title: "Services", blurb: "Long-running processes Canopod starts per worktree. Ports derive from the worktree index so they never collide." },
   { id: "agents", ic: "sparkle", label: "Agents", desc: "Coding agents", title: "Agents", blurb: "Which agent CLIs are available, and what context they inherit." },
   { id: "commands", ic: "code", label: "Commands", desc: "One-off scripts", title: "Custom commands", blurb: "Named scripts you can launch in any worktree from the + menu." },
   { id: "files", ic: "doc", label: "Files", desc: "Provisioned config", title: "Provisioned files", blurb: "Files seeded or templated into every new worktree — any path, any format." },

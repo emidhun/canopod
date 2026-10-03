@@ -1,7 +1,7 @@
-/* Canopy dialog layer — form primitives and the pickers the modals share.
+/* Canopod dialog layer — form primitives and the pickers the modals share.
 
    The modal card itself, its header/body/footer, buttons, inputs, alerts,
-   steps, key-value lists and tags all come from canopy-components.css. Only
+   steps, key-value lists and tags all come from canopod-components.css. Only
    what the dialogs add lives here.
 
    The card floats, so it gets radius and shadow — but its INTERIOR is flat:

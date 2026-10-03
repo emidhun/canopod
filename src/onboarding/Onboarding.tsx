@@ -1,5 +1,5 @@
 // First run — one adaptive screen, not five steps. Ported from the redesign
-// handoff (Canopy Onboarding.html / cxo-onboard.jsx, revised).
+// handoff (Canopod Onboarding.html / cxo-onboard.jsx, revised).
 //
 // The shipped wizard walked Repository → Stack → Services → Commands → Review.
 // Two of those didn't earn a screen: "Stack" asked you to confirm something
@@ -194,7 +194,7 @@ function StackChip({ value, detected, onPick }: { value: string; detected?: stri
 /* ── A · empty state — the ask on the left, the case for worktrees on the right ── */
 const HILITES: [typeof Fork, string, string][] = [
   [Fork, "Leave work where it stands", "Each branch keeps its own checkout, so a review never costs you the thing you were halfway through."],
-  [Server, "Ports that don't fight", "Canopy assigns each worktree its own ports and database, so branches run side by side."],
+  [Server, "Ports that don't fight", "Canopod assigns each worktree its own ports and database, so branches run side by side."],
   [Bolt, "Ready when you get there", "Checkout, install, migrate and run happen together, so you come back to a working app."],
 ];
 
@@ -202,9 +202,9 @@ function EmptyState({ onAdd }: { onAdd: () => void }) {
   return (
     <div className="hero">
       <div className="heroL">
-        <div className="heromark"><span className="fk"><Fork size={19} /></span>Canopy</div>
+        <div className="heromark"><span className="fk"><Fork size={19} /></span>Canopod</div>
         <h1>No repositories yet</h1>
-        <p>Canopy runs each branch as its own worktree — separate checkout, separate services, separate database. Point it at a repo and it reads your scripts to work out what to run.</p>
+        <p>Canopod runs each branch as its own worktree — separate checkout, separate services, separate database. Point it at a repo and it reads your scripts to work out what to run.</p>
         <div className="emptyacts">
           <button className="btn pri lg" onClick={onAdd}><Plus size={13} />Add a repository</button>
         </div>
@@ -215,14 +215,14 @@ function EmptyState({ onAdd }: { onAdd: () => void }) {
         <div className="cmp">
           <div className="cmp-card was">
             <div className="cmp-h"><b>git checkout</b><span>one working copy</span></div>
-            <div className="cmp-row live"><span className="fd"><Folder size={12} /></span><span className="bd"><span className="b">main</span><span className="p">~/canopy</span></span><span className="s">:3000</span></div>
+            <div className="cmp-row live"><span className="fd"><Folder size={12} /></span><span className="bd"><span className="b">main</span><span className="p">~/canopod</span></span><span className="s">:3000</span></div>
             <div className="cmp-row off"><span className="fd" /><span className="bd"><span className="b">feat/wt-components-v2</span><span className="p">no checkout</span></span><span className="s">stashed</span></div>
             <div className="cmp-row off"><span className="fd" /><span className="bd"><span className="b">fix/deduplicate-queries</span><span className="p">no checkout</span></span><span className="s">waiting</span></div>
             <p className="cmp-n">Switching means stashing, checking out, reinstalling, restarting.</p>
           </div>
           <div className="cmp-card is">
             <div className="cmp-h"><b>git worktree</b><span>three, at once</span></div>
-            <div className="cmp-row live"><span className="fd"><Folder size={12} /></span><span className="bd"><span className="b">main</span><span className="p">~/canopy</span></span><span className="s">:3000</span></div>
+            <div className="cmp-row live"><span className="fd"><Folder size={12} /></span><span className="bd"><span className="b">main</span><span className="p">~/canopod</span></span><span className="s">:3000</span></div>
             <div className="cmp-row live"><span className="fd"><Folder size={12} /></span><span className="bd"><span className="b">feat/wt-components-v2</span><span className="p">.worktrees/feat-wt-components-v2</span></span><span className="s">:3010</span></div>
             <div className="cmp-row live"><span className="fd"><Folder size={12} /></span><span className="bd"><span className="b">fix/deduplicate-queries</span><span className="p">.worktrees/fix-deduplicate-queries</span></span><span className="s">:3020</span></div>
             <p className="cmp-n">Every branch stays checked out, installed and running. Switching is switching windows.</p>
@@ -337,7 +337,7 @@ function AddScreen({
         <div className="obinner">
           <div className="ohead">
             <h1>Add a repository</h1>
-            <p>Canopy verifies the repo, reads its scripts, and proposes what to run per worktree. Everything here is editable later in Settings.</p>
+            <p>Canopod verifies the repo, reads its scripts, and proposes what to run per worktree. Everything here is editable later in Settings.</p>
           </div>
 
           {/* the drop target doubles as the path field */}
@@ -397,7 +397,7 @@ function AddScreen({
                 <>
                   <div className="dsec">
                     <div className="slab">
-                      Services Canopy will run
+                      Services Canopod will run
                       <span className="n">{on.length} of {services.length} on</span>
                       <span className="ln" />
                       <button
@@ -680,7 +680,7 @@ function Provisioning({ name, steps, onDone, onError, onCancel }: { name: string
 }
 
 /* ── D · ready — ends on the next action, not a dead end ──────────── */
-function Ready({ det, services, cfg, onCreate, onGoToCanopy, onRestart, onConnect }: { det: RepoDetection; services: WizSvc[]; cfg: Cfg; onCreate: () => void; onGoToCanopy: () => void; onRestart: () => void; onConnect: () => void }) {
+function Ready({ det, services, cfg, onCreate, onGoToCanopod, onRestart, onConnect }: { det: RepoDetection; services: WizSvc[]; cfg: Cfg; onCreate: () => void; onGoToCanopod: () => void; onRestart: () => void; onConnect: () => void }) {
   const on = services.filter((s) => s.on);
   const svcSummary = on.map((s) => (s.port ? `${s.name} :${s.port}` : s.name)).join(" · ") || "none";
   const envOn = cfg.env.filter((e) => e.on).length;
@@ -690,11 +690,11 @@ function Ready({ det, services, cfg, onCreate, onGoToCanopy, onRestart, onConnec
       <div className="emptycard">
         <div className="donering"><Check size={26} /></div>
         <h1>{det.name} is ready</h1>
-        <p>Canopy is watching this repo. Create a worktree to check out a branch with its own services, ports and database.</p>
+        <p>Canopod is watching this repo. Create a worktree to check out a branch with its own services, ports and database.</p>
         <div className="doneacts">
           <button className="btn pri lg" onClick={onCreate}><Plus size={13} />Create first worktree<span className="k">⌘N</span></button>
           <button className="btn lg" onClick={onConnect}>Connect to agent</button>
-          <button className="btn lg" onClick={onGoToCanopy}>Go to Canopy</button>
+          <button className="btn lg" onClick={onGoToCanopod}>Go to Canopod</button>
         </div>
         <div className="donefacts">
           <div className="df"><div className="l">Services</div><div className="v">{svcSummary}</div></div>
@@ -971,7 +971,7 @@ export default function Onboarding({
     setView("run");
   }
 
-  function goToCanopy() {
+  function goToCanopod() {
     if (det) select(det.top);
     onClose();
   }
@@ -1008,7 +1008,7 @@ export default function Onboarding({
     return () => document.removeEventListener("keydown", k);
   });
 
-  const title = view === "empty" || view === "done" ? "Canopy" : "Canopy — Add repository";
+  const title = view === "empty" || view === "done" ? "Canopod" : "Canopod — Add repository";
 
   return (
     <div className="ob-root">
@@ -1061,7 +1061,7 @@ export default function Onboarding({
       )}
       {view === "connect" && <><div className="mcp-onboarding"><div className="mcp-onboarding-inner">
         <h1>Connect to agent</h1>
-        <p>Give your coding agent access to Canopy. This step is optional and can be changed later in Settings → MCP.</p>
+        <p>Give your coding agent access to Canopod. This step is optional and can be changed later in Settings → MCP.</p>
         <McpPage preferredRepoPath={det?.top} />
         </div></div>
         <div className="mcp-onboarding-footer"><button className="btn" onClick={() => setView("done")}>Skip for now</button><button className="btn pri" onClick={() => setView("done")}>Continue</button></div>
@@ -1075,7 +1075,7 @@ export default function Onboarding({
             onClose();
             onCreateWorktree();
           }}
-          onGoToCanopy={goToCanopy}
+          onGoToCanopod={goToCanopod}
           onRestart={restart}
           onConnect={() => setView("connect")}
         />

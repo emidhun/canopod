@@ -34,7 +34,7 @@ export default function SecurityPage({ settings, patch, markDirty }: PageProps) 
           <input aria-label="Credential helper" className="inp mono" value={sec.credentialHelper} placeholder="git's own default" onChange={(e) => set({ credentialHelper: e.target.value })} />
         </div>
         <p className="hint">
-          Applied per git invocation — Canopy never edits your repo or global git config.
+          Applied per git invocation — Canopod never edits your repo or global git config.
           A chosen SSH key is used with <span className="mono">IdentitiesOnly</span>, so ssh-agent can't offer a different one first.
         </p>
       </div>

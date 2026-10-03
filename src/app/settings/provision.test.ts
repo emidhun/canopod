@@ -86,7 +86,7 @@ describe("toCards / fromCards", () => {
 describe("buildConfig", () => {
   it("stamps the schema url and filters blank setup tasks", () => {
     const cfg = buildConfig([], [task("npm ci"), task("   "), task("npm run build")], [], []);
-    expect(cfg.$schema).toBe("canopy://worktree-manager/v1");
+    expect(cfg.$schema).toBe("canopod://worktree-manager/v1");
     expect(cfg.setup).toEqual(["npm ci", "npm run build"]);
   });
 
@@ -168,7 +168,7 @@ describe("hlLine", () => {
     const out = hlLine('"port": 3000');
     expect(out).toContain('<span class="jk">"port"</span>');
     expect(out).toContain('<span class="jn">3000</span>');
-    expect(hlLine('"name": "canopy"')).toContain('<span class="jv">"canopy"</span>');
+    expect(hlLine('"name": "canopod"')).toContain('<span class="jv">"canopod"</span>');
   });
 });
 

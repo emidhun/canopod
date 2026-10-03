@@ -10,7 +10,7 @@ import { errText, hasBackend, ipc, type Branches } from "../ipc";
 import { useStore } from "../store";
 import type { RepoNode, WorktreeNode } from "../types";
 import { Alert, Fork, Plus, Search, Spinner, Swap } from "../icons";
-import Modal, { Hint, Spacer } from "./canopy/Modal";
+import Modal, { Hint, Spacer } from "./canopod/Modal";
 
 export default function SwitchBranchModal({
   repo,

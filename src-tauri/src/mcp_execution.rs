@@ -469,7 +469,7 @@ async fn run(
                         } else {
                             code
                         },
-                        message: "Worktree operation did not complete; check Canopy for details"
+                        message: "Worktree operation did not complete; check Canopod for details"
                             .into(),
                     }),
                     ..Default::default()

@@ -1,11 +1,11 @@
 ---
 title: The next action
-description: Canopy picks the one thing worth doing next in each worktree. Here's how it decides, and where it tells you.
+description: Canopod picks the one thing worth doing next in each worktree. Here's how it decides, and where it tells you.
 ---
 
 # The next action
 
-Canopy answers one question per worktree: what would you do next here? It then offers that one thing
+Canopod answers one question per worktree: what would you do next here? It then offers that one thing
 as a button, with the reason sitting in front of it. Four surfaces render the same answer, so they
 can't drift apart:
 

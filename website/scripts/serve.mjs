@@ -47,5 +47,5 @@ createServer(async (req, res) => {
   }
 }).listen(PORT, () => {
   rebuild();
-  console.log(`Canopy docs on http://localhost:${PORT}/`);
+  console.log(`Canopod docs on http://localhost:${PORT}/`);
 });

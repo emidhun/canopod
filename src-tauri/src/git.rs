@@ -82,7 +82,7 @@ pub struct WorktreeInfo {
     pub branch: String,
     pub is_main: bool,
     /// git flags this when the worktree's directory is gone (deleted outside
-    /// Canopy). Such an entry is dead weight until `git worktree prune`.
+    /// Canopod). Such an entry is dead weight until `git worktree prune`.
     pub prunable: bool,
 }
 
@@ -154,7 +154,7 @@ fn parse_worktree_list(porcelain: &str) -> Vec<WorktreeInfo> {
 }
 
 /// Prunable worktrees for a repo — entries whose directory was deleted outside
-/// Canopy. Drives the Sync-prune prompt.
+/// Canopod. Drives the Sync-prune prompt.
 pub async fn list_prunable(repo_path: &str) -> Result<Vec<WorktreeInfo>, String> {
     Ok(list_worktrees(repo_path).await?.into_iter().filter(|w| w.prunable).collect())
 }
@@ -915,7 +915,7 @@ mod tests {
     // separators.
 
     fn unique_dir(tag: &str) -> std::path::PathBuf {
-        std::env::temp_dir().join(format!("canopy-git-{tag}-{}", std::process::id()))
+        std::env::temp_dir().join(format!("canopod-git-{tag}-{}", std::process::id()))
     }
 
     async fn init_repo(dir: &std::path::Path) {
@@ -923,8 +923,8 @@ mod tests {
         let d = dir.to_str().unwrap();
         run_git(d, &["init"]).await.unwrap();
         // CI runners have no global identity; commits fail without one
-        run_git(d, &["config", "user.email", "canopy-test@localhost"]).await.unwrap();
-        run_git(d, &["config", "user.name", "canopy-test"]).await.unwrap();
+        run_git(d, &["config", "user.email", "canopod-test@localhost"]).await.unwrap();
+        run_git(d, &["config", "user.name", "canopod-test"]).await.unwrap();
         run_git(d, &["config", "commit.gpgsign", "false"]).await.unwrap();
         // Windows git defaults to core.autocrlf=true, which rewrites LF→CRLF on
         // checkout/restore and breaks exact-content assertions. Pin it so the
@@ -983,7 +983,7 @@ mod tests {
         let _ = std::fs::remove_dir_all(&repo);
     }
 
-    /// Sync-prune path: a worktree whose folder is deleted outside Canopy shows
+    /// Sync-prune path: a worktree whose folder is deleted outside Canopod shows
     /// up as prunable, and `prune_worktrees` clears it (+ its branch on request).
     #[tokio::test]
     async fn detects_and_prunes_a_deleted_worktree() {

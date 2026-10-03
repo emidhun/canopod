@@ -1,4 +1,4 @@
-// canopy-logos.jsx — Canopy logo exploration
+// canopod-logos.jsx — Canopod logo exploration
 const ACCENT = "#58c2c8";
 const GREEN = "#3fb950";
 
@@ -7,7 +7,7 @@ function base(size, color, sw) {
     stroke: color, strokeWidth: sw, strokeLinecap: "round", strokeLinejoin: "round" };
 }
 
-/* A — Dome: trunk forks to two nodes under a canopy arc */
+/* A — Dome: trunk forks to two nodes under a canopod arc */
 function MarkDome({ size = 48, color = "currentColor", nodes, sw = 1.8 }) {
   return (
     <svg {...base(size, color, sw)}>
@@ -21,7 +21,7 @@ function MarkDome({ size = 48, color = "currentColor", nodes, sw = 1.8 }) {
   );
 }
 
-/* B — Graph: root node fans out to three canopy nodes */
+/* B — Graph: root node fans out to three canopod nodes */
 function MarkGraph({ size = 48, color = "currentColor", nodes, sw = 1.8 }) {
   return (
     <svg {...base(size, color, sw)}>
@@ -70,9 +70,9 @@ function MarkCrown({ size = 48, color = "currentColor", crown, sw = 1.8 }) {
 }
 
 const MARKS = [
-  { id: "dome", name: "A · Dome", C: MarkDome, note: "Canopy arc sheltering a fork — branch tips are commit nodes." },
-  { id: "graph", name: "B · Graph", C: MarkGraph, note: "A git graph growing upward; three nodes form the canopy." },
-  { id: "mono", name: "C · Monogram", C: MarkMono, note: "“C” for Canopy with a branch growing inside it." },
+  { id: "dome", name: "A · Dome", C: MarkDome, note: "Canopod arc sheltering a fork — branch tips are commit nodes." },
+  { id: "graph", name: "B · Graph", C: MarkGraph, note: "A git graph growing upward; three nodes form the canopod." },
+  { id: "mono", name: "C · Monogram", C: MarkMono, note: "“C” for Canopod with a branch growing inside it." },
   { id: "crown", name: "D · Crown", C: MarkCrown, note: "Solid leafy crown over a forking trunk — most literal tree." },
 ];
 
@@ -118,11 +118,11 @@ function Lockup({ C, dark, accentNodes }) {
     <div className={"board " + (dark ? "dark" : "light")}>
       <div className="lockup">
         <C size={44} color={dark ? "#e8e8ea" : "#23262c"} nodes={accentNodes ? ACCENT : undefined} crown={accentNodes ? ACCENT : undefined} sw={1.7} />
-        <span className="wordmark">canopy</span>
+        <span className="wordmark">canopod</span>
       </div>
       <div className="lockup-sm">
         <C size={20} color={dark ? "#9a9ba0" : "#5b606b"} sw={2} />
-        <span className="wordmark-sm" style={{ color: dark ? "#9a9ba0" : "#5b606b" }}>canopy</span>
+        <span className="wordmark-sm" style={{ color: dark ? "#9a9ba0" : "#5b606b" }}>canopod</span>
       </div>
     </div>
   );
@@ -145,7 +145,7 @@ function ContextBoards({ C }) {
         <div className="board dark">
           <div className="titlebar-demo">
             <span className="lights"><i style={{ background: "#ff5f57" }} /><i style={{ background: "#febc2e" }} /><i style={{ background: "#28c840" }} /></span>
-            <span className="tb-lock"><C size={16} color={ACCENT} sw={2} />Canopy</span>
+            <span className="tb-lock"><C size={16} color={ACCENT} sw={2} />Canopod</span>
           </div>
         </div>
       </DCArtboard>
@@ -174,7 +174,7 @@ function ContextBoards({ C }) {
 function App() {
   const Lead = MarkDome;
   return (
-    <DesignCanvas title="Canopy — Logo">
+    <DesignCanvas title="Canopod — Logo">
       <DCSection id="marks" title="Marks" subtitle="Four directions — every one keeps the branching structure">
         {MARKS.map((m) => (
           <DCArtboard key={m.id} id={"mark-" + m.id} label={m.name} width={340} height={300}>

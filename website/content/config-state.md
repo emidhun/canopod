@@ -1,11 +1,11 @@
 ---
 title: settings.json & state.json
-description: What's in Canopy's two machine-local files, field by field, and which one you must never hand-edit.
+description: What's in Canopod's two machine-local files, field by field, and which one you must never hand-edit.
 ---
 
 # `settings.json` & `state.json`
 
-Both live in the platform app-config directory under `com.midhunkumare.canopy`. See
+Both live in the platform app-config directory under `com.midhunkumare.canopod`. See
 [Where settings live](settings-storage.html) for the path on each platform.
 
 ## `settings.json`
@@ -67,7 +67,7 @@ lives in `localStorage`).
 |---|---|
 | `version` | Schema version. Missing fields fall back to defaults on read, so an older file still loads. |
 | `editor.command` | Defaults to `code`. |
-| `terminal` | Empty means Canopy detects a sensible terminal for the platform. |
+| `terminal` | Empty means Canopod detects a sensible terminal for the platform. |
 | `showSwitchBranch` | Defaults to `true`. `false` removes the action and the shortcut. |
 | `repos[].id` | Used in service keys (`<worktree path>::<service id>`) and as the database-name prefix. Don't rename it casually; port indices are keyed by it. |
 | `repos[].worktreeDir` | Relative paths resolve against the repo root. |
@@ -79,7 +79,7 @@ lives in `localStorage`).
 Entries with an empty id or command (services), an empty label or command (custom commands), or a
 missing id, name or command (agents) are dropped when Settings saves.
 
-Edit it by hand while Canopy is closed. While it's running, the backend holds the authoritative copy in
+Edit it by hand while Canopod is closed. While it's running, the backend holds the authoritative copy in
 memory and rewrites the file on save.
 
 ## `state.json`
@@ -108,12 +108,12 @@ Runtime bookkeeping. Not configuration, and not for hand-editing.
 |---|---|
 | `portIndices` | The stable per-worktree index behind `basePort + index × 10`. Index spaces are per repository, and a freed slot is reclaimed by the next worktree. |
 | `portOverrides` | Explicit per-service overrides, keyed by service key, set from the service-detail dialog. |
-| `orphans` | Process groups Canopy spawned, with their start time, so a crashed run's leftovers can be swept on the next launch without killing an unrelated process that reused the pid. |
+| `orphans` | Process groups Canopod spawned, with their start time, so a crashed run's leftovers can be swept on the next launch without killing an unrelated process that reused the pid. |
 
 There's also a terminal-orphan list on Unix for PTY sessions, maintained the same way.
 
 :::danger Do not hand-edit `state.json`
-Rewriting `portIndices` silently changes every derived port. If you have to reset it, quit Canopy,
+Rewriting `portIndices` silently changes every derived port. If you have to reset it, quit Canopod,
 delete the file, and expect new indices on the next launch, which means new ports and possibly new
 database names.
 :::
@@ -122,8 +122,8 @@ database names.
 
 | Setting | Actually stored in |
 |---|---|
-| Theme, density, accent, text zoom | `localStorage` → `canopy.appearance` |
-| Per-worktree agent context | `localStorage` → `canopy.ctx.<worktree path>` |
+| Theme, density, accent, text zoom | `localStorage` → `canopod.appearance` |
+| Per-worktree agent context | `localStorage` → `canopod.ctx.<worktree path>` |
 | Pinned worktrees, multi-selection | `localStorage` |
 | Provisioned files, setup, migrate, teardown | `<repo>/.worktreemanager.json` |
 | Which layout you last used, sidebar visibility | Not persisted; they reset with the window |

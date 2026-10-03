@@ -1,16 +1,16 @@
 ---
 title: Security
-description: Canopy's trust boundaries, dependency checks, update policy and private vulnerability reporting process.
+description: Canopod's trust boundaries, dependency checks, update policy and private vulnerability reporting process.
 ---
 
 # Security
 
-Canopy is a local developer tool with intentionally powerful access: it creates worktrees, launches
+Canopod is a local developer tool with intentionally powerful access: it creates worktrees, launches
 shell commands, manages process trees, reads project configuration and can connect to local
 databases. Treat a repository's `.worktreemanager.json` the way you treat its `Makefile` or package
 scripts: review it before running setup or teardown from an untrusted repository.
 
-## What Canopy protects
+## What Canopod protects
 
 - Application and MCP credentials are stored separately and are not included in ordinary command
   output or exported configuration.
@@ -34,7 +34,7 @@ contains the fix.
 ## Reporting a vulnerability
 
 Do not open a public issue for a suspected vulnerability. Use
-[GitHub private vulnerability reporting](https://github.com/emidhun/canopy/security/advisories/new),
+[GitHub private vulnerability reporting](https://github.com/emidhun/canopod/security/advisories/new),
 or email `idhutest@gmail.com` with the affected version, reproduction steps and impact.
 
 Reports about command execution explicitly requested by a trusted repository configuration are

@@ -22,22 +22,22 @@ $uninstallRoots = @(
   "HKLM:\Software\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall\*"
 )
 $entry = Get-ItemProperty $uninstallRoots -ErrorAction SilentlyContinue |
-  Where-Object { $_.DisplayName -eq "Canopy" } |
+  Where-Object { $_.DisplayName -eq "Canopod" } |
   Select-Object -First 1
 $candidates = @(
   $entry.InstallLocation,
-  "$env:LOCALAPPDATA\Canopy",
-  "$env:LOCALAPPDATA\Programs\Canopy",
-  "$env:ProgramFiles\Canopy"
+  "$env:LOCALAPPDATA\Canopod",
+  "$env:LOCALAPPDATA\Programs\Canopod",
+  "$env:ProgramFiles\Canopod"
 ) | Where-Object { $_ -and (Test-Path $_) }
-$app = Get-ChildItem $candidates -Recurse -File -Filter "Canopy.exe" -ErrorAction SilentlyContinue | Select-Object -First 1
-$backend = Get-ChildItem $candidates -Recurse -File -Filter "canopy-backend.exe" -ErrorAction SilentlyContinue | Select-Object -First 1
-if (-not $app -or -not $backend) { throw "Installed Canopy executables were not found" }
+$app = Get-ChildItem $candidates -Recurse -File -Filter "Canopod.exe" -ErrorAction SilentlyContinue | Select-Object -First 1
+$backend = Get-ChildItem $candidates -Recurse -File -Filter "canopod-backend.exe" -ErrorAction SilentlyContinue | Select-Object -First 1
+if (-not $app -or -not $backend) { throw "Installed Canopod executables were not found" }
 
 $version = & $backend.FullName --version
-if ($version -ne "canopy-backend $ExpectedVersion") { throw "Unexpected backend version: $version" }
+if ($version -ne "canopod-backend $ExpectedVersion") { throw "Unexpected backend version: $version" }
 
-$mcpRoot = Join-Path $env:TEMP "canopy-mcp-release-smoke-$PID"
+$mcpRoot = Join-Path $env:TEMP "canopod-mcp-release-smoke-$PID"
 $configDir = Join-Path $mcpRoot "config"
 $dataDir = Join-Path $mcpRoot "data"
 $logDir = Join-Path $mcpRoot "logs"
@@ -72,5 +72,5 @@ try {
 
 $launched = Start-Process -FilePath $app.FullName -PassThru
 Start-Sleep -Seconds 8
-if ($launched.HasExited) { throw "Installed Canopy exited during launch probe with $($launched.ExitCode)" }
+if ($launched.HasExited) { throw "Installed Canopod exited during launch probe with $($launched.ExitCode)" }
 Stop-Process -Id $launched.Id -Force

@@ -10,7 +10,7 @@ import { errText, hasBackend, ipc, type StatusEntry } from "../ipc";
 import { useStore } from "../store";
 import type { WorktreeNode } from "../types";
 import { Alert, Check, Folder, Git, Info, Search, Spinner, Trash } from "../icons";
-import Modal, { Hint, Spacer } from "./canopy/Modal";
+import Modal, { Hint, Spacer } from "./canopod/Modal";
 
 type Mode = "commit" | "stash" | "discard";
 
@@ -569,7 +569,7 @@ export default function UncommittedChangesModal({ wt, onClose }: { wt: WorktreeN
             onChange={(e) => setStashName(e.target.value)}
           />
           <div className="cxm-fhint">
-            Restore it later with <span className="mono">git stash pop</span>. Canopy has no stash list yet, so name it if you plan to
+            Restore it later with <span className="mono">git stash pop</span>. Canopod has no stash list yet, so name it if you plan to
             keep more than one.
           </div>
           {untracked > 0 && (

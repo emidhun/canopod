@@ -2018,7 +2018,7 @@ select.set-input {
 
 /* ══════════════════════════════════════════════════════════════════
    Settings redesign — repo-nav + tabbed repo-detail + Files-to-provision
-   (design: "Canopy New Features"). Reuses palette tokens; adds --field.
+   (design: "Canopod New Features"). Reuses palette tokens; adds --field.
    ══════════════════════════════════════════════════════════════════ */
 :root {
   --field: var(--panel-2);

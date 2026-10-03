@@ -97,7 +97,7 @@ pub fn gather(app: &RuntimeContext) -> Diagnostics {
 /// The same thing as markdown, ready to paste into an issue.
 pub fn as_markdown(d: &Diagnostics) -> String {
     format!(
-        "**Canopy {}** · {} {}\n\n\
+        "**Canopod {}** · {} {}\n\n\
          | | |\n|---|---|\n\
          | Repositories | {} |\n\
          | Worktrees | {} |\n\
@@ -120,7 +120,7 @@ pub struct ClearedCaches {
     pub bytes: u64,
 }
 
-/// Delete Canopy's rotated per-service logs.
+/// Delete Canopod's rotated per-service logs.
 ///
 /// Scoped by construction — it only ever walks `<app-log-dir>/services`. It
 /// cannot touch a worktree, a database, a repository or a settings file,
@@ -154,7 +154,7 @@ pub fn clear_caches(app: &RuntimeContext) -> ClearedCaches {
 ///
 /// Wiping the repo list would mean re-adding every repository by hand — a
 /// disproportionate outcome for someone who wanted their editor command and
-/// toggles back. Repositories are *what Canopy manages*, not a preference, so
+/// toggles back. Repositories are *what Canopod manages*, not a preference, so
 /// they survive; everything else returns to defaults.
 pub fn reset_settings(app: &RuntimeContext) -> Result<(), String> {
     let (fresh, ()) = crate::settings_store::mutate(app, None, |s| {

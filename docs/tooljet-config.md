@@ -40,7 +40,7 @@ inherit it per-branch.
 - **teardown:** `npm run db:drop` runs on worktree delete when "Drop database" is checked.
 
 ## ToolJet-specific facts baked into this
-- Server requires **Node 22.15.1** (engine-strict). Canopy supplies it via the pinned-Node prepend.
+- Server requires **Node 22.15.1** (engine-strict). Canopod supplies it via the pinned-Node prepend.
 - Reset DB command (app Settings `resetDb`) for ToolJet = `npm run db:reset` (= `db:drop && db:setup`).
 - Service base ports in Settings: frontend `8082`, server `3000`. Frontend command should be
   `npm start -- --port $PORT` so its own port is per-worktree; the server honors `$PORT` via env.

@@ -15,7 +15,7 @@ One shell, five fixed regions. Nothing floats except dialogs and popovers.
 
 | Element | What it does |
 |---|---|
-| Brand | The Canopy mark and name. The bar is also the window's drag region. |
+| Brand | The Canopod mark and name. The bar is also the window's drag region. |
 | Breadcrumb | `repository › branch` for the selected worktree. Hidden in the overview. |
 | **⌘K** button | Opens the [command palette](palette-overview.html). |
 | `N running` chip | Total running services across every worktree. Click it for the overview. |
@@ -31,8 +31,8 @@ More than a refresh:
 1. `refresh` has the backend rediscover worktrees, git metadata and services.
 2. Open views are told to re-read each repo's `.worktreemanager.json`, so edits made outside the app
    show up in Settings under Setup, Files and Migrate.
-3. It lists **prunable** worktrees, meaning ones whose folders were deleted outside Canopy, and opens
-   the prune dialog if it finds any. Canopy snapshots the tree before refreshing, because a vanished
+3. It lists **prunable** worktrees, meaning ones whose folders were deleted outside Canopod, and opens
+   the prune dialog if it finds any. Canopod snapshots the tree before refreshing, because a vanished
    worktree's database name lived in its now-deleted `.env` and that snapshot is the last place it
    exists.
 
@@ -143,7 +143,7 @@ Every region has one, and each ends on a next step instead of an apology:
 ## Text zoom
 
 `⌘+` and `⌘-` move the app's whole type ramp in 10% steps between 80% and 160%. `⌘0` resets it. It
-applies live in every Canopy window and it persists.
+applies live in every Canopod window and it persists.
 
 !shot zoom | The main window at 130% text zoom.
 

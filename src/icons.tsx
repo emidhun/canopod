@@ -16,7 +16,7 @@ function isvg(size: number, sw?: number): SVGProps<SVGSVGElement> {
 
 type P = { size?: number };
 
-// Canopy brandmark — refined git fork (two parents → one child), 24u grid.
+// Canopod brandmark — refined git fork (two parents → one child), 24u grid.
 // `nodeColor` optionally tints the three nodes (the signature teal-node look);
 // `solid` fills the nodes for small sizes (< ~20px).
 export const Fork = ({ size = 14, nodeColor, solid }: P & { nodeColor?: string; solid?: boolean }) => (

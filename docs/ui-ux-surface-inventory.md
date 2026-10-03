@@ -1,4 +1,4 @@
-# Canopy UI/UX surface and content inventory
+# Canopod UI/UX surface and content inventory
 
 Audit date: 2026-10-02. Companion to [the findings and revamp plan](ui-ux-audit.md).
 
@@ -65,7 +65,7 @@ Shared modal behavior also reviewed: title/subtitle/icon, initial focus, focus t
 | Small menus/popovers | RefPick; AnchoredMenu; Worktree More; service/command overflow; agent/session choice; log level; InsertVar; Settings repo/More/search; pull/submodule menus | Source; some opened live. Arrow/focus/viewport containment needs runtime coverage. |
 | Tray popover | Repository picker; attention/running/idle worktrees; row actions; service counts; next action; keyboard selection; manager/settings/add/new/quit entry actions | Source entry point reviewed; native tray interaction pending. |
 | Detached terminal | Session identity/status; terminal; ended/restart; reattach/close/window lifecycle | Source entry point reviewed; native lifecycle pending. |
-| Native surfaces | Startup failure dialog; Open Canopy/Quit tray menu; folder chooser; provision/source picker; config export save dialog/import file input; database export save/restore file chooser; OS notifications; window close/hide/quit; updater prompts | Source/API call review; OS-specific paths pending. |
+| Native surfaces | Startup failure dialog; Open Canopod/Quit tray menu; folder chooser; provision/source picker; config export save dialog/import file input; database export save/restore file chooser; OS notifications; window close/hide/quit; updater prompts | Source/API call review; OS-specific paths pending. |
 | Transient/global feedback | Toasts; persistent job notices; busy spinners; version mismatch/update feedback; loading/empty/error and retry paths | Source and sampled live; full failure/timing matrix pending. |
 
 ## Coverage reconciliation and release checklist

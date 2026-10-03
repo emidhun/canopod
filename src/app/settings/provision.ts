@@ -106,7 +106,7 @@ export function parseSetup(raw: unknown): SetupTask[] {
 
 export function buildConfig(cards: FileCardT[], setup: SetupTask[], teardown: string[], migrate: string[], policy?: SetupPolicy, mask = false) {
   const cfg: Record<string, unknown> = {
-    $schema: "canopy://worktree-manager/v1",
+    $schema: "canopod://worktree-manager/v1",
     provision: cards.filter((c) => c.path.trim()).map((c) => {
       const o: Record<string, unknown> = { path: c.path.trim(), format: c.format };
       if (c.from.trim()) o.from = c.from.trim();

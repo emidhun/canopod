@@ -97,8 +97,8 @@ function LaneIdle({ agents, onAgent, onShell }: { agents: AgentCfg[]; onAgent: (
   );
 }
 
-const COLLAPSE_KEY = "canopy.lane.collapsed";
-const WIDTH_KEY = "canopy.lane.width";
+const COLLAPSE_KEY = "canopod.lane.collapsed";
+const WIDTH_KEY = "canopod.lane.width";
 
 // layout constants (match terminal.css): sidebar, main-pane floor, focus rail.
 const SIDE = 264;
@@ -337,7 +337,7 @@ export default function AgentLane({ repo, wt }: { repo: RepoNode; wt: WorktreeNo
   // Start a coding agent as its OWN PTY session (the terminal *is* the chat).
   // Running it as the session's command means the session ends — and the tab
   // flips to "ended" — exactly when the agent exits. The context is written to
-  // .canopy/context.md first so the agent can read the full handoff.
+  // .canopod/context.md first so the agent can read the full handoff.
   const startAgent = async (profile: AgentCfg) => {
     setCtxOpen(false);
     setAddOpen(false);
@@ -354,7 +354,7 @@ export default function AgentLane({ repo, wt }: { repo: RepoNode; wt: WorktreeNo
       await ipc.writeWorktreeContext(wt.path, composeContextMd(ctx, runtime));
       const prompt = composeAgentPrompt(ctx, runtime);
       // A profile can opt out for CLIs that do not accept an initial positional
-      // prompt; those still receive CANOPY_CONTEXT_FILE via the context file.
+      // prompt; those still receive CANOPOD_CONTEXT_FILE via the context file.
       const command = profile.promptOnLaunch ? `${profile.command} ${shellQuote(prompt)}` : profile.command;
       openSession({ id, wtKey: wt.wtKey, kind: "agent", title, agentId: profile.id, command });
       showToast(`${title} started — ${repo.name} · ${wt.branch}`);

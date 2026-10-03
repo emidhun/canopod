@@ -8,7 +8,7 @@ shipped bug.
 ## Layering
 
 ```
-commands.rs      the IPC boundary: 47 #[tauri::command]s, all Result<T, CanopyError>
+commands.rs      the IPC boundary: 47 #[tauri::command]s, all Result<T, CanopodError>
   error.rs       { code, message } — the frontend branches on `code`, never on text
   state.rs       tree model, port allocation, OpLease, tree-query API
   services.rs    dev-service process table + log rings + on-disk log sink
@@ -80,7 +80,7 @@ OS process, and `services.rs` only consumes its five-function API
 
 - introduce a `Runner` trait with the same five verbs plus `spawn`, implement
   `LocalProcessRunner` (today's proc.rs) and `ContainerRunner`
-  (`docker run --rm --label canopy.svc=<key>`, teardown =
+  (`docker run --rm --label canopod.svc=<key>`, teardown =
   `docker rm -f $(docker ps -q --filter label=…)`);
 - the orphan sweep maps to label-filtered container cleanup — simpler and more
   reliable than pgids, since the daemon owns lifecycle;

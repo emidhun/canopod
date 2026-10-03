@@ -18,7 +18,7 @@ export const MOCK: Settings = {
     // a second repo, freshly added and not configured yet — it gives the repo
     // picker something to switch between, and it is what the per-repo scoping
     // of refused rows is tested against
-    id: "canopy", name: "Canopy", path: "~/code/canopy", worktreeDir: ".worktrees", resetDb: "", migrateDb: "", defaultBase: "main", worktreeDefaults: DEFAULT_WT_DEFAULTS, agentContext: DEFAULT_AGENT_CONTEXT, maxParallelAgents: 0, agentIdleTimeoutMin: 0,
+    id: "canopod", name: "Canopod", path: "~/code/canopod", worktreeDir: ".worktrees", resetDb: "", migrateDb: "", defaultBase: "main", worktreeDefaults: DEFAULT_WT_DEFAULTS, agentContext: DEFAULT_AGENT_CONTEXT, maxParallelAgents: 0, agentIdleTimeoutMin: 0,
     services: [],
     customCommands: [],
     agentCommand: "claude",

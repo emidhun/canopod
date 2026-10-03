@@ -1,6 +1,6 @@
-# Headless Canopy and MCP delivery
+# Headless Canopod and MCP delivery
 
-Tracking epic: [#145](https://github.com/emidhun/canopy/issues/145).
+Tracking epic: [#145](https://github.com/emidhun/canopod/issues/145).
 Implementation base: `release/0.5.0` at `d294dc3`.
 
 Claude planning was obtained through Claude MCP on 2026-09-19 using the fetched
@@ -107,7 +107,7 @@ snapshot; a cursor alone cannot recover dropped history.
 ## Foreground backend lifecycle
 
 Build with `cargo build --manifest-path src-tauri/Cargo.toml --no-default-features
---bin canopy-backend`. Run `src-tauri/target/debug/canopy-backend serve` under a
+--bin canopod-backend`. Run `src-tauri/target/debug/canopod-backend serve` under a
 process supervisor. Directory defaults match Tauri's platform paths and bundle
 identifier. `--config-dir`, `--data-dir`, and `--log-dir` accept existing directories
 for isolated installations; invalid paths and duplicate flags fail explicitly.
@@ -115,7 +115,7 @@ The authenticated control listener is described below; MCP and browser
 management are not implemented yet. The desktop still hosts its own runtime and must be closed first.
 
 Startup acquires the data-directory lock before reading state. It also refuses
-startup if a known legacy Canopy desktop process is visible. This conservative
+startup if a known legacy Canopod desktop process is visible. This conservative
 name check can reject a desktop using another directory; it is not a proof of
 process identity or protection against launching an old incompatible binary
 later. Unlike one suggestion in Claude's plan, detecting a legacy owner refuses
@@ -183,17 +183,17 @@ revocation and session invalidation belong to its later transport layer.
 
 ## Authenticated application control API
 
-`canopy-backend serve` now listens at `http://127.0.0.1:47831` by default.
+`canopod-backend serve` now listens at `http://127.0.0.1:47831` by default.
 `serve --port <nonzero-port>` selects and persists an explicit port in
 `backend.json` in the config directory. A bind failure never chooses another
 port. The application token is loaded or created in private storage after
 binding succeeds; it is never printed. MCP defaults to disabled; its route returns 404 until explicitly enabled.
 This application listener is independent of future MCP enablement.
 
-`canopy-backend status` and `canopy-backend stop` read the existing private
+`canopod-backend status` and `canopod-backend stop` read the existing private
 application credential and attach without creating state or launching a GUI.
 They disable proxy use and redirects and bound connect/request/response sizes.
-The API requires the application bearer plus `X-Canopy-Api-Version: 1`; unknown
+The API requires the application bearer plus `X-Canopod-Api-Version: 1`; unknown
 versions fail explicitly. Host must match the exact IPv4 endpoint, and any Origin
 must match its origin. Native clients without Origin still require the bearer.
 MCP credentials are rejected on application routes. No wildcard CORS is enabled.
@@ -231,7 +231,7 @@ later slices. MCP transport is implemented below.
 ## Opt-in MCP transport and cached probe
 
 Both the desktop app and independent backend mount official `rmcp = 3.4.0` Streamable HTTP at `/mcp`
-on the same IPv4 listener. The SDK requires Rust 1.88; Canopy's owner locking
+on the same IPv4 listener. The SDK requires Rust 1.88; Canopod's owner locking
 already requires a newer standard library. Protocol negotiation and metadata
 validation belong to the SDK. Tests exercise legacy `2025-03-26` and current
 `2026-07-28` calls. Stateless JSON responses retain zero sessions. Each bounded
@@ -241,12 +241,12 @@ unknown tool names, so a process-long service would otherwise grow that cache.
 The desktop app starts this listener against its existing runtime, so GUI and
 MCP clients see the same registered repositories and cached state. Closing the
 main window hides it to the tray and keeps MCP available. Quitting the app drains
-the listener and stops child processes; `canopy-backend stop` also quits the
+the listener and stops child processes; `canopod-backend stop` also quits the
 running desktop app. Desktop and headless hosts use the same default directories,
 endpoint, credentials and policy; run only one host for those directories.
 
-To use MCP with the headed build, launch Canopy, then run the controls below
-without starting `canopy-backend serve`. The CLI attaches to either host. MCP is
+To use MCP with the headed build, launch Canopod, then run the controls below
+without starting `canopod-backend serve`. The CLI attaches to either host. MCP is
 still disabled until explicitly enabled. A saved enabled policy is restored when
 switching between headed and headless mode. Desktop reads the port from
 `backend.json` (default 47831); configuration or bind failures fail startup rather
@@ -256,20 +256,20 @@ Native controls (also available under the application-authenticated
 `/api/v1/mcp/` routes):
 
 ```sh
-canopy-backend repo add /path/to/repository
-canopy-backend mcp status
-canopy-backend mcp enable --repo <registered-repo-id>
-canopy-backend mcp rotate-token
-canopy-backend mcp disable
-canopy-backend mcp enable
-canopy-backend mcp smoke --repo <registered-repo-id>
+canopod-backend repo add /path/to/repository
+canopod-backend mcp status
+canopod-backend mcp enable --repo <registered-repo-id>
+canopod-backend mcp rotate-token
+canopod-backend mcp disable
+canopod-backend mcp enable
+canopod-backend mcp smoke --repo <registered-repo-id>
 ```
 
 `repo add` is the headless bootstrap path. It calls the same canonicalizing,
 revisioned registration operation as the desktop and requires the private
 application credential. `mcp smoke` reads the private MCP credential without
 printing it, negotiates the protocol, discovers tools and the
-`canopy_worktree_delivery` prompt, performs 25 cached status calls, reports
+`canopod_worktree_delivery` prompt, performs 25 cached status calls, reports
 p50/p95/p99, and fails when warm p95 exceeds 50 ms.
 
 Repeating `enable` with `--repo` replaces the allowlist; omitting it preserves the
@@ -301,11 +301,11 @@ typed `structuredContent` plus a compact JSON text fallback for clients that
 render only text. Read tools cover allowlisted repository discovery, cached
 status, worktree listings and detailed Git/setup state, durable jobs and output,
 configured services and bounded redacted logs, and public revisioned repository configuration. Mutating tools are listed
-only when their explicit capability is enabled. `canopy_status` still requires
+only when their explicit capability is enabled. `canopod_status` still requires
 `repoId`, launches no subprocesses, and never claims readiness from process
 state alone.
 
-The discoverable `canopy_worktree_delivery` prompt requires an allowed
+The discoverable `canopod_worktree_delivery` prompt requires an allowed
 repository ID and user task. Branch is never invented; omitted branch input is
 sent back to the user. Omitted base uses the repository's configured default or
 requires clarification. The workflow polls durable jobs, preserves retry keys,
@@ -318,15 +318,15 @@ share live MCP controls. Select registered repositories, enable or disable acces
 refresh status, or rotate the token. These changes apply immediately and remain
 separate from the Settings save button. Ordinary page loads never export a token.
 
-Connect Claude Code / Connect Codex merges a user-level `canopy` entry into
+Connect Claude Code / Connect Codex merges a user-level `canopod` entry into
 `~/.claude.json` or `$CODEX_HOME/config.toml` (default `~/.codex/config.toml`). The
 UI shows the resolved target before writing. Malformed files and unrelated
-servers already named `canopy` are refused; other settings are preserved. Custom
+servers already named `canopod` are refused; other settings are preserved. Custom
 `CLAUDE_CONFIG_DIR` setups use the manual fields. No agent is launched and no
 successful remote connection is claimed: restart/reconnect the agent afterward.
 The configuration uses [Claude Code's `headersHelper`](https://code.claude.com/docs/en/mcp#use-dynamic-headers-for-custom-authentication)
 and [Codex's `http_headers_helper`](https://developers.openai.com/codex/mcp/)
-to read Canopy's private token on reconnect. This requires current clients and
+to read Canopod's private token on reconnect. This requires current clients and
 avoids storing another token copy in agent configuration. Configuration replacement
 uses a private temporary file and refuses a detected concurrent edit.
 
@@ -334,10 +334,10 @@ Manual setup exposes individually copyable endpoint, transport, bearer token and
 Authorization value fields. Complete Claude JSON / Codex TOML snippets are also
 available; only deliberate Copy actions retrieve secrets. Claude and generic
 snippets contain a static token that must be refreshed after rotation. Codex TOML
-instead references `CANOPY_MCP_TOKEN` through `bearer_token_env_var`, and the token
+instead references `CANOPOD_MCP_TOKEN` through `bearer_token_env_var`, and the token
 is copied separately. No secret is shown in the on-screen preview. The page also
 provides a copyable read-only first task that checks status, worktrees and services.
-Reads include `canopy_status`, `canopy_worktrees`, and `canopy_job`. Worktree
+Reads include `canopod_status`, `canopod_worktrees`, and `canopod_job`. Worktree
 creation and setup require an explicit write grant.
 
 Destructive MCP tools remain intentionally unavailable in v0.5 because the
@@ -351,7 +351,7 @@ release-smoke matrix is required before publishing the draft release.
 
 `jobs::Registry` owns durable records for MCP worktree creation and setup.
 Existing UI operations retain their awaited completion behavior. An accepted MCP
-job is not yet a completed operation; clients must poll `canopy_job`.
+job is not yet a completed operation; clients must poll `canopod_job`.
 
 A registry retains at most 128 jobs, with four queued/running jobs and eight
 owned journal transactions at once. Busy responses include a 500 ms retry hint.
@@ -410,7 +410,7 @@ Targets and checkpoint paths are limited to 4 KiB of JSON-encoded bytes. Caller 
 
 The backend logs to stderr (`RUST_LOG=debug` increases detail; this CLI accepts a level, not module directives), so supervisors can capture sweep warnings. New process records include the spawning backend PID and start identity: adopted children are recoverable after that owner dies, including under Linux subreapers. Legacy records without that identity only recover automatically under a recognized init process and with a matching group birth time. Unverified live records survive subsequent service and terminal state writes.
 
-If startup names an unverifiable `state.json` record, stop Canopy, preserve a backup, inspect the named `orphans` or `terminalOrphans` entry and the running PID identity, then remove only an entry confirmed stale. Do not kill an unrelated process merely because its PID matches an old record. Library hosts and CLI hosts with both config and data explicitly isolated do not reject an unrelated default-directory desktop; shared-default CLI hosts retain the legacy-desktop exclusion check.
+If startup names an unverifiable `state.json` record, stop Canopod, preserve a backup, inspect the named `orphans` or `terminalOrphans` entry and the running PID identity, then remove only an entry confirmed stale. Do not kill an unrelated process merely because its PID matches an old record. Library hosts and CLI hosts with both config and data explicitly isolated do not reject an unrelated default-directory desktop; shared-default CLI hosts retain the legacy-desktop exclusion check.
 
 Credential rotation requires the matching `RuntimeOwner` and serializes across all stores using that guard. Read-only opens never clean files. A writer validates and removes private crash leftovers under the ownership guard; new rotations use one fixed temporary name per credential kind, bounding crash debris. Unsafe leftovers are preserved.
 The declared Rust minimum is 1.95, matching the locked `sysinfo` dependency; the ownership APIs alone require 1.89.
@@ -432,8 +432,8 @@ and setup** for the selected repository allowlist. Existing policies default to
 read-only. Headless administrators can use:
 
 ```sh
-canopy-backend mcp enable --repo REPO_ID --allow-worktree-write
-canopy-backend mcp enable --read-only
+canopod-backend mcp enable --repo REPO_ID --allow-worktree-write
+canopod-backend mcp enable --read-only
 ```
 
 Omitting a permission flag preserves the existing grant. The authenticated
@@ -442,11 +442,11 @@ MCP credentials cannot alter their own permissions.
 
 | Tool | Arguments | Result |
 | --- | --- | --- |
-| `canopy_status` | `repoId` | Cached repository counts |
-| `canopy_worktrees` | `repoId`, optional `cursor`, `limit` | Cached worktree keys, branch, main/setup flags, next cursor |
-| `canopy_job` | `repoId`, `jobId` | Status, timestamps, created path, safe error code |
-| `canopy_create_worktree` | `repoId`, `branch`, `requestKey`, optional `base`, `createBranch` | Durable job admission |
-| `canopy_run_setup` | `repoId`, `worktreeKey`, `requestKey`, optional `dryRun` | Durable job admission |
+| `canopod_status` | `repoId` | Cached repository counts |
+| `canopod_worktrees` | `repoId`, optional `cursor`, `limit` | Cached worktree keys, branch, main/setup flags, next cursor |
+| `canopod_job` | `repoId`, `jobId` | Status, timestamps, created path, safe error code |
+| `canopod_create_worktree` | `repoId`, `branch`, `requestKey`, optional `base`, `createBranch` | Durable job admission |
+| `canopod_run_setup` | `repoId`, `worktreeKey`, `requestKey`, optional `dryRun` | Durable job admission |
 
 The last two tools are listed only with write access. Creation uses the configured
 worktree directory and provisioning/setup/service defaults. `createBranch`
@@ -460,8 +460,8 @@ uncertain submission. Matching retained jobs are returned without rerunning;
 different arguments for the same operation/repository/target/key are rejected.
 A new intentional setup run needs a new request key. Retention is bounded as
 described above. Job status responses contain no raw setup output, commands or environment.
-Redacted subprocess output is available separately through `canopy_job_output`.
-Progress still appears through Canopy's normal operation events.
+Redacted subprocess output is available separately through `canopod_job_output`.
+Progress still appears through Canopod's normal operation events.
 
 Accepted work survives an HTTP disconnect. Permission changes prevent new work
 and jobs that have not passed their execution authorization check; already
@@ -480,14 +480,14 @@ healthy journal.
 
 ## MCP diagnostics
 
-`canopy_job_output(repoId, jobId, cursor?, limit?)` captures setup stdout/stderr
+`canopod_job_output(repoId, jobId, cursor?, limit?)` captures setup stdout/stderr
 before the renderer throttle. Omit cursor to start at the earliest retained line;
 use nextCursor afterward. An expired cursor is an error, never a silently skipped
 range. Output flushes every 250 ms and at completion; persistedSequence and
 persistencePending distinguish in-memory output from durable output. Earlier jobs
 have no recorded output. Dry runs and provisioning messages are not shell output.
 
-Secret filtering uses Canopy credentials, secret-shaped inherited variables,
+Secret filtering uses Canopod credentials, secret-shaped inherited variables,
 configured service environment values, dotenv values and provision templates.
 It happens before journal storage. Missing optional dotenv files are accepted;
 unreadable, malformed or excessive secret sources suppress capture and mark it
@@ -496,10 +496,10 @@ encoded secrets. Oversized lines are omitted, not partially exposed. Reads and
 retention are bounded; MCP output pages use a 12 KiB data budget to accommodate
 JSON-in-text encoding under the 32 KiB response limit.
 
-`canopy_services(repoId, worktreeKey, cursor?, limit?)` lists cached keys, names,
+`canopod_services(repoId, worktreeKey, cursor?, limit?)` lists cached keys, names,
 status and ports without commands/environment. Status is not a readiness probe.
 
-`canopy_service_logs(repoId, serviceKey, snapshot?, cursor?, limit?)` reads the
+`canopod_service_logs(repoId, serviceKey, snapshot?, cursor?, limit?)` reads the
 existing 160-line memory ring with redaction. It does not read arbitrary files or
 claim complete history. Repeat snapshot and nextCursor to paginate. If the ring
 changes, snapshot_changed requires a fresh first page. Logs disappear on restart;
@@ -513,8 +513,8 @@ CLI controls are `mcp enable --allow-service-control` and
 `mcp enable --no-service-control`; `--read-only` revokes both execution grants.
 The application API accepts `allowServiceControl`.
 
-`canopy_start_service`, `canopy_stop_service` and `canopy_restart_service`
-take `repoId`, `serviceKey` from `canopy_services`, and `requestKey`. They
+`canopod_start_service`, `canopod_stop_service` and `canopod_restart_service`
+take `repoId`, `serviceKey` from `canopod_services`, and `requestKey`. They
 return durable jobs with the same bounded retry rules as creation/setup.
 Only configured services in currently registered Git worktrees are accepted,
 including the main checkout. No arbitrary command or environment arguments.
@@ -527,11 +527,11 @@ spawning a new process after cancellation, then the runtime reaps services.
 
 ## MCP configuration
 
-`canopy_repository_config(repoId, cursor?, limit?)` returns an opaque settings
+`canopod_repository_config(repoId, cursor?, limit?)` returns an opaque settings
 revision, repository defaults and paged public service metadata. Command text
 and environment values are omitted.
 
-`canopy_update_configuration(repoId, revision, repository?, serviceId?, service?)`
+`canopod_update_configuration(repoId, revision, repository?, serviceId?, service?)`
 requires the separate **Allow repository and service configuration** grant.
 CLI: `mcp enable --allow-configuration` / `--no-configuration`.
 `--read-only` revokes configuration as well as both execution grants.
@@ -552,7 +552,7 @@ rejected. MCP retries after an uncertain response must read again and reconcile.
 
 The writer also compares the original file fingerprint before writing and
 immediately before replacement; detected external edits are preserved. Restart
-Canopy to adopt an external edit. A non-cooperating editor racing in the final
+Canopod to adopt an external edit. A non-cooperating editor racing in the final
 check/rename interval cannot be made transactional by this protocol. Settings
 are capped at 4 MiB. Revisions cover app settings; the repository's separate
 .worktreemanager.json editor is not exposed as a configuration write tool here.

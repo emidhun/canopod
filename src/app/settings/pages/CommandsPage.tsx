@@ -3,7 +3,7 @@ import { useState } from "react";
 import { errText, hasBackend, ipc, type CustomCmd } from "../../../ipc";
 import { ChevRight, Chevron, Copy, Play, Plus, Spinner, Trash } from "../../../icons";
 import { Rot } from "../primitives";
-import { groupNames } from "../../canopy/commandGroups";
+import { groupNames } from "../../canopod/commandGroups";
 import { missingText, rowKey } from "../incomplete";
 import type { PageProps } from "../types";
 

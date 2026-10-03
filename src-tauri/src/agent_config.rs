@@ -43,6 +43,13 @@ fn helper(token: &Path) -> Result<String, String> {
     }
 }
 
+/// The MCP server name the app registered before it was renamed.
+const LEGACY_SERVER: &str = "canopy";
+
+fn servers_own_legacy(helper: Option<&str>) -> bool {
+    helper.is_some_and(|h| h.contains(crate::legacy::LEGACY_APP_ID))
+}
+
 fn merge(client: &str, original: &str, endpoint: &str, helper: &str) -> Result<String, String> {
     if client == "claude" {
         let mut config: serde_json::Value = if original.is_empty() {
@@ -59,21 +66,26 @@ fn merge(client: &str, original: &str, endpoint: &str, helper: &str) -> Result<S
             .or_insert_with(|| serde_json::json!({}))
             .as_object_mut()
             .ok_or("Claude mcpServers must be an object")?;
-        if let Some(existing) = servers.get("canopy") {
+        if let Some(existing) = servers.get("canopod") {
             if existing["url"] != endpoint || existing.get("command").is_some() {
-                return Err("An unrelated MCP server named canopy already exists. Rename it in your agent configuration or use manual setup.".into());
+                return Err("An unrelated MCP server named canopod already exists. Rename it in your agent configuration or use manual setup.".into());
             }
         }
         let server = servers
-            .entry("canopy")
+            .entry("canopod")
             .or_insert_with(|| serde_json::json!({}))
             .as_object_mut()
-            .ok_or("Claude canopy entry must be an object")?;
+            .ok_or("Claude canopod entry must be an object")?;
         server.insert("type".into(), "http".into());
         server.insert("url".into(), endpoint.into());
         server.insert("headersHelper".into(), helper.into());
         if let Some(headers) = server.get_mut("headers").and_then(|h| h.as_object_mut()) {
             headers.retain(|name, _| !name.eq_ignore_ascii_case("authorization"));
+        }
+        // The pre-rename entry ("canopy") is ours when its helper reads a token
+        // from the old app directory; leaving it would register the app twice.
+        if servers_own_legacy(servers.get(LEGACY_SERVER).and_then(|v| v["headersHelper"].as_str())) {
+            servers.remove(LEGACY_SERVER);
         }
         serde_json::to_string_pretty(&config)
             .map(|s| s + "\n")
@@ -88,20 +100,20 @@ fn merge(client: &str, original: &str, endpoint: &str, helper: &str) -> Result<S
         let servers = config["mcp_servers"]
             .as_table_like_mut()
             .ok_or("Codex mcp_servers must be a table")?;
-        if let Some(existing) = servers.get("canopy") {
+        if let Some(existing) = servers.get("canopod") {
             if existing.get("url").and_then(|v| v.as_str()) != Some(endpoint)
                 || existing.get("command").is_some()
             {
-                return Err("An unrelated MCP server named canopy already exists. Rename it in your agent configuration or use manual setup.".into());
+                return Err("An unrelated MCP server named canopod already exists. Rename it in your agent configuration or use manual setup.".into());
             }
         } else {
-            servers.insert("canopy", toml_edit::Item::Table(toml_edit::Table::new()));
+            servers.insert("canopod", toml_edit::Item::Table(toml_edit::Table::new()));
         }
         let server = servers
-            .get_mut("canopy")
+            .get_mut("canopod")
             .unwrap()
             .as_table_like_mut()
-            .ok_or("Codex canopy entry must be a table")?;
+            .ok_or("Codex canopod entry must be a table")?;
         server.insert("url", toml_edit::value(endpoint));
         server.insert("http_headers_helper", toml_edit::value(helper));
         server.insert("enabled", toml_edit::value(true));
@@ -117,6 +129,13 @@ fn merge(client: &str, original: &str, endpoint: &str, helper: &str) -> Result<S
                     headers.remove(&name);
                 }
             }
+        }
+        let legacy = servers
+            .get(LEGACY_SERVER)
+            .and_then(|v| v.get("http_headers_helper"))
+            .and_then(|v| v.as_str());
+        if servers_own_legacy(legacy) {
+            servers.remove(LEGACY_SERVER);
         }
         Ok(config.to_string())
     } else {
@@ -227,7 +246,7 @@ pub(crate) async fn connect(
 mod tests {
     use super::*;
     #[test]
-    fn preserves_unrelated_settings_and_reconnect_updates_only_canopy() {
+    fn preserves_unrelated_settings_and_reconnect_updates_only_canopod() {
         for (client, original) in [("claude", r#"{"theme":"dark","mcpServers":{"other":{"url":"https://example.test"}}}"#),
             ("codex", "# keep comment\nmodel = 'example'\n[mcp_servers.other]\nurl = 'https://example.test'\n")] {
             let result = merge(client, original, "http://127.0.0.1:47831/mcp", "helper-one").unwrap();
@@ -246,11 +265,11 @@ mod tests {
             ("codex", "[broken"),
             (
                 "claude",
-                r#"{"mcpServers":{"canopy":{"url":"https://other.test"}}}"#,
+                r#"{"mcpServers":{"canopod":{"url":"https://other.test"}}}"#,
             ),
             (
                 "codex",
-                "[mcp_servers.canopy]\nurl = 'https://other.test'\n",
+                "[mcp_servers.canopod]\nurl = 'https://other.test'\n",
             ),
         ] {
             std::fs::write(&path, input).unwrap();

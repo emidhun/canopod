@@ -1,6 +1,6 @@
 ---
 name: design-build
-description: Implement a screen from a Canopy design handoff — token-faithful, backend-honest, and verified by measurement rather than eye. Use when asked to build, port, or revamp a screen from a design file (Canopy Redesign.html, Canopy Modals.html, Canopy Settings.html, Canopy Onboarding.html) or any design-system handoff.
+description: Implement a screen from a Canopod design handoff — token-faithful, backend-honest, and verified by measurement rather than eye. Use when asked to build, port, or revamp a screen from a design file (Canopod Redesign.html, Canopod Modals.html, Canopod Settings.html, Canopod Onboarding.html) or any design-system handoff.
 ---
 
 # Building a screen from the design handoff
@@ -71,7 +71,7 @@ history, and unshared context state were all frontend fixes in #61.
   surface widths.
 - **Never round a literal onto a scale that cannot express it.** If the design
   uses 8px and the scale has 7 and 9, do not pick 7 — *count the usage*, and
-  if it earns a place, extend the scale. In the Canopy handoff 8px was the
+  if it earns a place, extend the scale. In the Canopod handoff 8px was the
   most-used spacing value in the entire screen and was not on the scale.
   Rounding produced a dozen 1px drifts across two PRs.
 - **Add tokens by role when the index scale can't be interleaved** — the

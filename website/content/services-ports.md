@@ -6,7 +6,7 @@ description: How to define a service, and the formula that keeps five branches f
 # Services and ports
 
 A **service** is a long-running process for one worktree: a frontend dev server, an API, a worker. You
-define the command once per repository, and Canopy runs one copy per worktree on that worktree's own
+define the command once per repository, and Canopod runs one copy per worktree on that worktree's own
 port.
 
 ## Defining a service
@@ -63,7 +63,7 @@ changed the port.
 The design has a resolved-environment section here (`PORT`, `DATABASE_URL`, `TOOLJET_HOST`). No IPC
 exposes a service's computed environment, and guessing the values would defeat the point of the panel,
 so it's left out until `service_env` lands
-([issue #59](https://github.com/emidhun/canopy/issues/59)).
+([issue #59](https://github.com/emidhun/canopod/issues/59)).
 :::
 
 ## The port formula
@@ -129,11 +129,11 @@ On stop: `SIGTERM` to the process group, three seconds of grace, then `SIGKILL`.
 
 ## Crash recovery
 
-Spawned process-group ids are written to `state.json`. If Canopy dies without cleaning up, the next
+Spawned process-group ids are written to `state.json`. If Canopod dies without cleaning up, the next
 launch sweeps them, checking the recorded start time so an unrelated new process that reused the pid
 survives. Quitting from the tray or with `⌘Q` kills every group before exit.
 
-Only one Canopy instance runs at a time. A second launch focuses the first window and exits, because
+Only one Canopod instance runs at a time. A second launch focuses the first window and exits, because
 otherwise instance B's startup sweep would kill instance A's running services and both would race on
 `settings.json`.
 

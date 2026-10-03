@@ -19,7 +19,7 @@ Open both, then measure. The design page is authoritative for every number.
 ## 1. Geometry
 
 Extract from the **design** first — never hand-type expected values from
-reading CSS, and beware ambiguous selectors (in the Canopy handoff `.pt` is
+reading CSS, and beware ambiguous selectors (in the Canopod handoff `.pt` is
 both a pane tab *and* a service-chip port; scope to `.ptabs .pt`).
 
 ```js

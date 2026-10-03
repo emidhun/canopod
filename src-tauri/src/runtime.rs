@@ -357,7 +357,7 @@ mod tests {
     async fn real_service_execution_and_logs_work_without_tauri() {
         use crate::settings::{RepoCfg, ServiceCfg};
         use crate::state::{RepoNode, ServiceNode, SvcStatus, WorktreeNode};
-        let dir = std::env::temp_dir().join(format!("canopy-core-service-{}", std::process::id()));
+        let dir = std::env::temp_dir().join(format!("canopod-core-service-{}", std::process::id()));
         std::fs::create_dir_all(&dir).unwrap();
         let path = dir.to_string_lossy().into_owned();
         let key = format!("{path}::smoke");
@@ -369,7 +369,7 @@ mod tests {
                     services: vec![ServiceCfg {
                         id: "smoke".into(),
                         name: "Smoke".into(),
-                        command: "printf canopy-core-smoke".into(),
+                        command: "printf canopod-core-smoke".into(),
                         ..Default::default()
                     }],
                     ..Default::default()
@@ -419,7 +419,7 @@ mod tests {
                 let output = crate::operations::get_logs(app.state::<ProcTable>(), key.clone());
                 if output
                     .iter()
-                    .any(|line| line.text.contains("canopy-core-smoke"))
+                    .any(|line| line.text.contains("canopod-core-smoke"))
                     && app.state::<ProcTable>().procs.lock().is_empty()
                 {
                     break;

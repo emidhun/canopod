@@ -102,7 +102,7 @@ kind   ∈ web | server | worker
 | `terminal_resize` | `(id, cols, rows) → void` | |
 | `terminal_get_buffer` | `(id) → {buffer, seq} \| null` | Race-free rehydrate. |
 | `terminal_close` | `(id) → void` | |
-| `write_worktree_context` | `(wtPath, contents) → void` | Writes `.canopy/context.md` and a self-ignoring `.gitignore`. |
+| `write_worktree_context` | `(wtPath, contents) → void` | Writes `.canopod/context.md` and a self-ignoring `.gitignore`. |
 | `resolve_agent_command` | `(wtKey) → string` | |
 
 ### Shell-outs and windows

@@ -157,7 +157,7 @@ export default function TerminalPane({
 
     if (!hasBackend()) {
       host.innerHTML =
-        '<div style="padding:14px;font:12.5px var(--mono);color:var(--faint)">Terminal runs in the Canopy desktop app.</div>';
+        '<div style="padding:14px;font:12.5px var(--mono);color:var(--faint)">Terminal runs in the Canopod desktop app.</div>';
       return;
     }
 

@@ -24,7 +24,7 @@ main checkout lets you configure a repository before committing anything.
 
 ```jsonc
 {
-  "$schema": "canopy://worktree-manager/v1",
+  "$schema": "canopod://worktree-manager/v1",
 
   // Files seeded and templated into every new worktree, in order.
   "provision": [
@@ -32,7 +32,7 @@ main checkout lets you configure a repository before committing anything.
       "path": ".env",              // destination, relative to the worktree root
       "format": "dotenv",          // dotenv | json | yaml | text
       "from": ".env",              // source, relative to the repo; omit = same path
-      "mode": "upsert",            // written by Canopy for keyed formats
+      "mode": "upsert",            // written by Canopod for keyed formats
       "keys": {                    // add-or-replace these keys; other lines untouched
         "PG_DB": "${WT_DB_NAME}",
         "PORT": "${WT_SERVER_PORT}",

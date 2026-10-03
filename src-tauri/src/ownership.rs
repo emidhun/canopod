@@ -69,7 +69,7 @@ impl RuntimeOwner {
         }
         file.try_lock().map_err(|e| match e {
             std::fs::TryLockError::WouldBlock => format!(
-                "another Canopy backend owns {}; stop that backend before starting this one",
+                "another Canopod backend owns {}; stop that backend before starting this one",
                 data_dir.display()
             ),
             std::fs::TryLockError::Error(e) => {
@@ -105,14 +105,14 @@ pub fn refuse_legacy_desktop() -> Result<(), String> {
     }
     for (pid, process) in system.processes() {
         if *pid != own && legacy_name(&process.name().to_string_lossy()) {
-            return Err(format!("a Canopy desktop may still own runtime state (pid {pid}); quit it before starting the backend"));
+            return Err(format!("a Canopod desktop may still own runtime state (pid {pid}); quit it before starting the backend"));
         }
     }
     Ok(())
 }
 
 fn legacy_name(name: &str) -> bool {
-    name.eq_ignore_ascii_case("canopy") || name.eq_ignore_ascii_case("canopy.exe")
+    name.eq_ignore_ascii_case("canopod") || name.eq_ignore_ascii_case("canopod.exe")
 }
 
 /// Raw kernel creation identity, stable when the system clock is stepped.
@@ -246,7 +246,7 @@ mod tests {
     fn directory() -> PathBuf {
         static NEXT: AtomicU64 = AtomicU64::new(0);
         let path = std::env::temp_dir().join(format!(
-            "canopy-owner-{}-{}",
+            "canopod-owner-{}-{}",
             std::process::id(),
             NEXT.fetch_add(1, Ordering::Relaxed)
         ));
@@ -260,7 +260,7 @@ mod tests {
         for path in ["/usr/lib/systemd/systemd", "/lib/systemd/systemd", "/sbin/init", "/sbin/tini", "/usr/bin/tini", "/usr/bin/dumb-init"] {
             assert!(super::legacy_reaper(Path::new(path)), "{path}");
         }
-        for path in ["/tmp/systemd", "/usr/bin/canopy", "/usr/bin/canopy-backend", "/tmp/tini", "/sbin/init-extra"] {
+        for path in ["/tmp/systemd", "/usr/bin/canopod", "/usr/bin/canopod-backend", "/tmp/tini", "/sbin/init-extra"] {
             assert!(!super::legacy_reaper(Path::new(path)), "{path}");
         }
     }
@@ -282,7 +282,7 @@ mod tests {
         assert!(RuntimeOwner::acquire(&dir)
             .err()
             .unwrap()
-            .contains("another Canopy backend"));
+            .contains("another Canopod backend"));
         drop(first);
         // Windows enforces byte-range locks on reads as well as writes.
         assert_eq!(
@@ -312,7 +312,7 @@ mod tests {
     // lock release without Rust destructors, as in a backend crash.
     #[test]
     fn child_owner() {
-        let Some(dir) = std::env::var_os("CANOPY_TEST_OWNER_DIR") else {
+        let Some(dir) = std::env::var_os("CANOPOD_TEST_OWNER_DIR") else {
             return;
         };
         let _owner = RuntimeOwner::acquire(Path::new(&dir)).unwrap();
@@ -331,7 +331,7 @@ mod tests {
         let dir = directory();
         let mut child = Command::new(std::env::current_exe().unwrap())
             .args(["--exact", "ownership::tests::child_owner", "--nocapture"])
-            .env("CANOPY_TEST_OWNER_DIR", &dir)
+            .env("CANOPOD_TEST_OWNER_DIR", &dir)
             .stdout(Stdio::piped())
             .spawn()
             .unwrap();

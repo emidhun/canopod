@@ -1,4 +1,4 @@
-/* The Canopy workspace shell.
+/* The Canopod workspace shell.
 
    Owns the view (worktree vs overview), layout presets, keyboard bindings, and
    the one runner that turns a NextAction into work. Everything that offers
@@ -11,19 +11,19 @@ import type { RepoNode, WorktreeNode } from "../types";
 import { Plus } from "../icons";
 import { attentionItems, nextAction, type AttnItem, type NextAction } from "./nextAction";
 import { actionFor, resolveBindings } from "./keys";
-import { TopBar, AttentionPop } from "./canopy/TopBar";
-import SidebarNav from "./canopy/SidebarNav";
-import WorktreeView from "./canopy/WorktreeView";
-import Overview from "./canopy/Overview";
-import Palette from "./canopy/Palette";
-import StatusBar from "./canopy/StatusBar";
-import { LAYOUT_ORDER, panesOf, type LayoutId, type PaneKind } from "./canopy/WorkSurface";
-import { useLaneLaunch } from "./canopy/laneLaunch";
-import DatabaseModal from "./canopy/DatabaseModal";
-import NoticeModal from "./canopy/NoticeModal";
-import SetupRunnerModal from "./canopy/SetupRunnerModal";
-import ServiceDetailModal from "./canopy/ServiceDetailModal";
-import ContextModal from "./canopy/ContextModal";
+import { TopBar, AttentionPop } from "./canopod/TopBar";
+import SidebarNav from "./canopod/SidebarNav";
+import WorktreeView from "./canopod/WorktreeView";
+import Overview from "./canopod/Overview";
+import Palette from "./canopod/Palette";
+import StatusBar from "./canopod/StatusBar";
+import { LAYOUT_ORDER, panesOf, type LayoutId, type PaneKind } from "./canopod/WorkSurface";
+import { useLaneLaunch } from "./canopod/laneLaunch";
+import DatabaseModal from "./canopod/DatabaseModal";
+import NoticeModal from "./canopod/NoticeModal";
+import SetupRunnerModal from "./canopod/SetupRunnerModal";
+import ServiceDetailModal from "./canopod/ServiceDetailModal";
+import ContextModal from "./canopod/ContextModal";
 import SettingsView from "./settings/SettingsView";
 import NewWorktreeModal from "./NewWorktreeModal";
 import RemoveWorktreeModal from "./RemoveWorktreeModal";
@@ -421,7 +421,7 @@ export default function App() {
                 <Plus size={17} />
               </span>
               <span className="et">No repositories yet</span>
-              <span className="es">Add a repository and Canopy will track every worktree in it.</span>
+              <span className="es">Add a repository and Canopod will track every worktree in it.</span>
               <button className="cx-next" onClick={() => setShowOnboarding(true)} style={{ marginTop: 3 }}>
                 <Plus size={12} />
                 Add your first repository

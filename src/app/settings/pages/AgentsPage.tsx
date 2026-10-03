@@ -55,11 +55,11 @@ export default function AgentsPage({ repo, patchRepo, markDirty, flash, invalid 
                     />
                   </div>
                   <div className="hint">
-                    One phrase per line. Canopy already recognises the common prompt shapes —
+                    One phrase per line. Canopod already recognises the common prompt shapes —
                     add a line only when this CLI asks in a way it misses.
                   </div>
                   <div className="tglrow" style={{ borderTop: 0 }}>
-                    <span className="tt"><b>Prompt on launch</b><span>Append Canopy's structured handoff as the first prompt.</span></span>
+                    <span className="tt"><b>Prompt on launch</b><span>Append Canopod's structured handoff as the first prompt.</span></span>
                     <Toggle label={`Prompt on launch for ${a.name}`} on={a.promptOnLaunch} onClick={() => patch(a.id, { promptOnLaunch: !a.promptOnLaunch })} />
                   </div>
                 </div>

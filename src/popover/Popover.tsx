@@ -1,4 +1,4 @@
-// Menu-bar tray — ported from the design system's "Canopy Tray.html".
+// Menu-bar tray — ported from the design system's "Canopod Tray.html".
 // A per-repo, status-grouped worktree list with search, keyboard nav, hover
 // actions, a footer menu and a health status bar. State comes from the shared
 // store; gaps the tray can't own (creating worktrees, settings, the updater)
@@ -423,7 +423,7 @@ export default function Popover() {
             Open Manager
           </button>
           <span className="vr" />
-          <button className="mi" title="Quit Canopy ⌘Q" onClick={quit}>
+          <button className="mi" title="Quit Canopod ⌘Q" onClick={quit}>
             <Power size={13} />
             Quit
           </button>
@@ -436,7 +436,7 @@ export default function Popover() {
             {errCount > 0
               ? `${errCount} service${errCount > 1 ? "s" : ""} stopped unexpectedly`
               : anyRunning
-                ? "Canopy is running smoothly"
+                ? "Canopod is running smoothly"
                 : "No services running"}
           </span>
           {ver && <span className="ver">v{ver}</span>}

@@ -51,7 +51,7 @@ status ∈ stopped | starting | running | stopping | error
   Cmd-Q / Quit kills every group before exit.
 
 ## Tray + popover mechanics (`src-tauri/src/tray.rs`)
-- Tray icon is a runtime-drawn template image (the Canopy fork mark, solid nodes).
+- Tray icon is a runtime-drawn template image (the Canopod fork mark, solid nodes).
 - On left-click: position the popover **manually** from the tray icon's rect — centered under it,
   hanging below the menu bar with a small gap (the positioner's `TrayCenter` pinned tall popovers to
   the top, so we compute the position ourselves), then `panel.show_and_make_key()`.

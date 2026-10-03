@@ -1,3 +1,4 @@
+import "./legacyStorage";
 import React from "react";
 import ReactDOM from "react-dom/client";
 import App from "./app/App";
@@ -12,10 +13,10 @@ import "./styles/terminal.css";
 // The redesigned shell loads last so its rules win where a class name is
 // shared with the older screens (Settings, the modals, onboarding) that
 // app.css still owns.
-import "./styles/canopy-components.css";
-import "./styles/canopy-shell.css";
-import "./styles/canopy-modals.css";
-import "./styles/canopy-settings.css";
+import "./styles/canopod-components.css";
+import "./styles/canopod-shell.css";
+import "./styles/canopod-modals.css";
+import "./styles/canopod-settings.css";
 
 applyPlatformClass();
 initAppearance();
@@ -25,7 +26,7 @@ initAppearance();
 // a demo — onboarding then worktrees appearing in the sidebar — against seeded
 // state. hasBackend() is true in the packaged app, so this never runs there.
 if (!hasBackend()) {
-  (window as unknown as { __canopyStore?: typeof useStore }).__canopyStore = useStore;
+  (window as unknown as { __canopodStore?: typeof useStore }).__canopodStore = useStore;
 }
 
 ReactDOM.createRoot(document.getElementById("root") as HTMLElement).render(

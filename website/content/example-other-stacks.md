@@ -5,7 +5,7 @@ description: Rails, Django, Go, Rust and Docker Compose. What works out of the b
 
 # Other stacks
 
-Canopy's *detection* is Node-centric: it reads `package.json` scripts to propose services and database
+Canopod's *detection* is Node-centric: it reads `package.json` scripts to propose services and database
 commands. Its *execution* isn't. Every command runs through your login shell, so any stack that works
 in a terminal works here. For a non-Node repository, detection identifies the stack and you configure
 the services and commands yourself.
@@ -134,11 +134,11 @@ share the same containers.
 ```
 
 Service: `web` · `web` · `docker compose up` · basePort 8000, and map the host ports from `${WEB_PORT}`
-and `${DB_PORT}` in your compose file. Canopy's stop sends `SIGTERM` to the process group, which
+and `${DB_PORT}` in your compose file. Canopod's stop sends `SIGTERM` to the process group, which
 `docker compose up` handles by stopping the stack. A `docker compose down` custom command makes a good
 companion.
 
-Canopy's database tools talk to a Postgres server directly over `PG_*` settings. With the database
+Canopod's database tools talk to a Postgres server directly over `PG_*` settings. With the database
 inside Compose, point `PG_HOST` and `PG_PORT` at the published port and they work. Otherwise treat the
 database as part of the service and skip those actions.
 
@@ -156,5 +156,5 @@ Nothing requires one. Leave `PG_DB` out and the database tools and dialog simply
 ## Polyglot repositories
 
 A repository can mix all of these. A Go API, a Vite frontend and a Python worker are three services with
-three commands and three base ports. Canopy doesn't care what language a service is written in, only
+three commands and three base ports. Canopod doesn't care what language a service is written in, only
 what command starts it and which port it should get.

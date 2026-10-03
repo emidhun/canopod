@@ -21,8 +21,8 @@ export default function GeneralPage({ settings, patch, markDirty }: PageProps) {
   const change = (p: Partial<{ theme: Theme; density: Density; accent: Accent }>) => setAppr(setAppearance(p));
   useEffect(() => {
     const h = () => setAppr(getAppearance());
-    window.addEventListener("canopy:appearance", h);
-    return () => window.removeEventListener("canopy:appearance", h);
+    window.addEventListener("canopod:appearance", h);
+    return () => window.removeEventListener("canopod:appearance", h);
   }, []);
   return (
     <>
@@ -117,13 +117,13 @@ function UpdatesSection({ settings, patch, markDirty }: Pick<PageProps, "setting
       />
       <TRow
         title="Install updates automatically"
-        hint="Downloads a signed update, verifies it, installs it, and restarts Canopy. Services are stopped cleanly first."
+        hint="Downloads a signed update, verifies it, installs it, and restarts Canopod. Services are stopped cleanly first."
         on={settings.updates?.autoInstall === true}
         onToggle={() => { patch({ updates: { ...settings.updates, autoCheck: true, autoInstall: !(settings.updates?.autoInstall === true) } }); markDirty("general"); }}
       />
       <TRow
         title="Daily GitHub star reminder"
-        hint="Shows at most one reminder per day. Turn it off whenever you've starred Canopy or prefer not to."
+        hint="Shows at most one reminder per day. Turn it off whenever you've starred Canopod or prefer not to."
         on={settings.updates?.starReminder !== false}
         onToggle={() => { patch({ updates: { ...settings.updates, starReminder: !(settings.updates?.starReminder !== false) } }); markDirty("general"); }}
       />
@@ -150,7 +150,7 @@ function UpdatesSection({ settings, patch, markDirty }: Pick<PageProps, "setting
             </button>
           </>
         )}
-        <button className="btn" onClick={() => openUrl("https://github.com/emidhun/canopy").catch(() => {})}>
+        <button className="btn" onClick={() => openUrl("https://github.com/emidhun/canopod").catch(() => {})}>
           Star on GitHub
         </button>
       </div>
@@ -158,7 +158,7 @@ function UpdatesSection({ settings, patch, markDirty }: Pick<PageProps, "setting
       <div style={{ marginTop: 14 }}>
         <TRow
           title="Record crash reports"
-          hint="Writes a stack trace to the log folder if Canopy crashes. Stack traces only, and nothing is sent anywhere."
+          hint="Writes a stack trace to the log folder if Canopod crashes. Stack traces only, and nothing is sent anywhere."
           on={!!settings.crashReports?.enabled}
           onToggle={() => { patch({ crashReports: { enabled: !settings.crashReports?.enabled } }); markDirty("general"); }}
         />

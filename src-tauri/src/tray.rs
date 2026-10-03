@@ -123,7 +123,7 @@ pub fn init(app: &AppHandle) -> Result<(), Box<dyn std::error::Error>> {
         .icon(fork_template_icon())
         .icon_as_template(true)
         .show_menu_on_left_click(false)
-        .tooltip("Canopy")
+        .tooltip("Canopod")
         .on_tray_icon_event(move |_tray, event| {
             if let TrayIconEvent::Click {
                 button: MouseButton::Left,
@@ -145,8 +145,8 @@ pub fn init(app: &AppHandle) -> Result<(), Box<dyn std::error::Error>> {
     #[cfg(not(target_os = "macos"))]
     let builder = {
         use tauri::menu::{MenuBuilder, MenuItemBuilder};
-        let open = MenuItemBuilder::with_id("open", "Open Canopy").build(app)?;
-        let quit = MenuItemBuilder::with_id("quit", "Quit Canopy").build(app)?;
+        let open = MenuItemBuilder::with_id("open", "Open Canopod").build(app)?;
+        let quit = MenuItemBuilder::with_id("quit", "Quit Canopod").build(app)?;
         let menu = MenuBuilder::new(app).item(&open).separator().item(&quit).build()?;
         builder.menu(&menu).show_menu_on_left_click(true).on_menu_event(|app, event| match event.id().as_ref() {
             "open" => {
@@ -222,7 +222,7 @@ fn fork_template_icon() -> Image<'static> {
     let scale = S as f32 / 24.0; // glyph designed on the 24×24 Tabler grid
     let mut rgba = vec![0u8; S * S * 4];
 
-    // Canopy mark (canopy-brand.jsx): two parents (7,6)(17,6) → child (12,18),
+    // Canopod mark (canopod-brand.jsx): two parents (7,6)(17,6) → child (12,18),
     // joined by a rounded bar + stem. Solid nodes for the small tray size.
     let nodes = [(7.0, 6.0, 2.05f32), (17.0, 6.0, 2.05), (12.0, 18.0, 2.05)];
     // connector approximated as segments (the bar's rounded path + center stem)

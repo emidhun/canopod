@@ -1,9 +1,9 @@
-// Record the landing-page demo from the REAL Canopy UI: onboard a repository,
+// Record the landing-page demo from the REAL Canopod UI: onboard a repository,
 // then add several worktrees and watch them appear in the sidebar.
 //
 // Prerequisites: the app's Vite dev server is running (npm run dev in the repo
 // root, port 1420). In a plain browser hasBackend() is false, so main.tsx
-// exposes the store as window.__canopyStore; this script drives the real UI
+// exposes the store as window.__canopodStore; this script drives the real UI
 // (open onboarding, open + fill the New-worktree modal, click Create) and lets
 // a mock-only override of createWorktree append the row, so the capture shows
 // the genuine interface reacting — not a hand-drawn mock.
@@ -17,8 +17,8 @@ import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
-const APP = process.env.CANOPY_REPO || resolve(ROOT, "..");
-const BASE = process.env.CANOPY_URL || "http://localhost:1420";
+const APP = process.env.CANOPOD_REPO || resolve(ROOT, "..");
+const BASE = process.env.CANOPOD_URL || "http://localhost:1420";
 const THEME = process.env.THEME === "dark" ? "dark" : "light";
 const OUT = join(ROOT, "assets", "demo", THEME);
 const VIEW = { width: 1280, height: 800 };
@@ -58,7 +58,7 @@ const ADDS = [
 async function main() {
   const pwPath = join(APP, "node_modules", "playwright", "index.js");
   if (!existsSync(pwPath)) {
-    console.error(`Playwright not found at ${pwPath}\nSet CANOPY_REPO to the Canopy checkout.`);
+    console.error(`Playwright not found at ${pwPath}\nSet CANOPOD_REPO to the Canopod checkout.`);
     process.exit(1);
   }
   const pw = await import(`file://${pwPath}`);
@@ -75,7 +75,7 @@ async function main() {
   });
   const page = await ctx.newPage();
   const appr = JSON.stringify({ theme: THEME, density: "comfortable", accent: "teal", fontScale: 1 });
-  await page.addInitScript(`try { localStorage.setItem("canopy.appearance", ${JSON.stringify(appr)}); } catch (e) {}`);
+  await page.addInitScript(`try { localStorage.setItem("canopod.appearance", ${JSON.stringify(appr)}); } catch (e) {}`);
   await page.goto(`${BASE}/index.html`, { waitUntil: "load" });
   await page.waitForSelector(".cxs-shell");
 
@@ -104,8 +104,8 @@ async function main() {
   // Seed the demo world and make worktree-create work in the mock: append a
   // realistic row instead of the "needs the desktop app" refusal.
   await page.evaluate(() => {
-    const store = window.__canopyStore;
-    if (!store) throw new Error("window.__canopyStore missing — is main.tsx's dev hook present?");
+    const store = window.__canopodStore;
+    if (!store) throw new Error("window.__canopodStore missing — is main.tsx's dev hook present?");
     store.setState({ tree: [] });
     store.setState({
       createWorktree: async (a) => {
@@ -153,7 +153,7 @@ async function main() {
   // "adding" the repo: the mock has no folder picker, so seed the tree and
   // dismiss onboarding — the main window fills in with the repo and its main.
   await page.evaluate((repo) => {
-    const store = window.__canopyStore;
+    const store = window.__canopodStore;
     store.setState({ tree: [repo], selKey: repo.worktrees[0].wtKey });
     store.getState().closeAddRepo?.();
   }, SEED_REPO);

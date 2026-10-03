@@ -1,9 +1,9 @@
-// canopy-logos-v2.jsx — Canopy logo, round 2: bold, filled, geometric
+// canopod-logos-v2.jsx — Canopod logo, round 2: bold, filled, geometric
 const ACCENT = "#58c2c8";
 const GREEN = "#3fb950";
 const INK = "#1e1f22";
 
-/* A — Frond: solid canopy dome whose veins ARE the branches, trunk grows into them */
+/* A — Frond: solid canopod dome whose veins ARE the branches, trunk grows into them */
 function MarkFrond({ size = 48, color = "currentColor", alt, bg = INK }) {
   const veinW = size <= 20 ? 2.8 : size <= 32 ? 2.2 : 1.9;
   return (
@@ -35,7 +35,7 @@ function MarkTree({ size = 48, color = "currentColor", alt }) {
   );
 }
 
-/* C — Ring: fork inscribed in a canopy ring */
+/* C — Ring: fork inscribed in a canopod ring */
 function MarkRing({ size = 48, color = "currentColor", alt }) {
   const n = alt || color;
   return (
@@ -52,7 +52,7 @@ function MarkRing({ size = 48, color = "currentColor", alt }) {
   );
 }
 
-/* D — Shelter: bold Y with a floating canopy arc */
+/* D — Shelter: bold Y with a floating canopod arc */
 function MarkShelter({ size = 48, color = "currentColor", alt }) {
   const n = alt || color;
   return (
@@ -69,8 +69,8 @@ function MarkShelter({ size = 48, color = "currentColor", alt }) {
 }
 
 const MARKS = [
-  { id: "frond", name: "A · Frond", C: MarkFrond, note: "The canopy is made of branches — veins radiate from the trunk. Solid silhouette, ownable." },
-  { id: "shelter", name: "B · Shelter", C: MarkShelter, note: "A fork sheltered by a floating canopy arc. Calm, architectural." },
+  { id: "frond", name: "A · Frond", C: MarkFrond, note: "The canopod is made of branches — veins radiate from the trunk. Solid silhouette, ownable." },
+  { id: "shelter", name: "B · Shelter", C: MarkShelter, note: "A fork sheltered by a floating canopod arc. Calm, architectural." },
   { id: "tree", name: "C · Tree", C: MarkTree, note: "A git graph grown upward; commits become foliage." },
   { id: "ring", name: "D · Ring", C: MarkRing, note: "The fork inscribed in a ring — badge-ready, reads at any size." },
 ];
@@ -116,11 +116,11 @@ function Lockup({ C, dark, alt }) {
     <div className={"board " + (dark ? "dark" : "light")}>
       <div className="lockup">
         <C size={46} color={dark ? "#e8e8ea" : "#23262c"} alt={alt} bg={dark ? INK : "#f4f5f7"} />
-        <span className="wordmark">canopy</span>
+        <span className="wordmark">canopod</span>
       </div>
       <div className="lockup-sm">
         <C size={20} color={dark ? "#9a9ba0" : "#5b606b"} bg={dark ? INK : "#f4f5f7"} />
-        <span className="wordmark-sm" style={{ color: dark ? "#9a9ba0" : "#5b606b" }}>canopy</span>
+        <span className="wordmark-sm" style={{ color: dark ? "#9a9ba0" : "#5b606b" }}>canopod</span>
       </div>
     </div>
   );
@@ -128,7 +128,7 @@ function Lockup({ C, dark, alt }) {
 
 function App() {
   return (
-    <DesignCanvas title="Canopy — Logo v2">
+    <DesignCanvas title="Canopod — Logo v2">
       <DCSection id="marks" title="Marks — round 2" subtitle="Bolder, filled, geometric. Branch structure in every one.">
         {MARKS.map((m) => (
           <DCArtboard key={m.id} id={"mark-" + m.id} label={m.name} width={340} height={310}>
@@ -172,7 +172,7 @@ function App() {
           <div className="board dark">
             <div className="titlebar-demo">
               <span className="lights"><i style={{ background: "#ff5f57" }} /><i style={{ background: "#febc2e" }} /><i style={{ background: "#28c840" }} /></span>
-              <span className="tb-lock"><MarkFrond size={17} color={ACCENT} bg="#25272b" />Canopy</span>
+              <span className="tb-lock"><MarkFrond size={17} color={ACCENT} bg="#25272b" />Canopod</span>
             </div>
           </div>
         </DCArtboard>
