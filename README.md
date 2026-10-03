@@ -30,7 +30,7 @@ Every branch checked out, provisioned, and running — side by side.</p>
   <a href="https://github.com/emidhun/canopod/releases/download/v0.5.0/Canopod_0.5.0_amd64.deb"><img src="https://img.shields.io/badge/Linux-.deb-9a9ba0?style=flat-square&logo=debian&logoColor=white&labelColor=1e1f22" alt="Download .deb" /></a>
   <a href="https://github.com/emidhun/canopod/releases/download/v0.5.0/Canopod-0.5.0-1.x86_64.rpm"><img src="https://img.shields.io/badge/Linux-.rpm-9a9ba0?style=flat-square&logo=fedora&logoColor=white&labelColor=1e1f22" alt="Download .rpm" /></a>
   <a href="https://github.com/emidhun/canopod/releases/download/v0.5.0/Canopod_0.5.0_amd64.AppImage"><img src="https://img.shields.io/badge/Linux-.AppImage-9a9ba0?style=flat-square&logo=linux&logoColor=white&labelColor=1e1f22" alt="Download AppImage" /></a>
-  <a href="https://github.com/emidhun/canopod/releases/latest"><img src="https://img.shields.io/badge/Windows-.exe-9a9ba0?style=flat-square&logo=windows&logoColor=white&labelColor=1e1f22" alt="Download Windows installer" /></a>
+  <a href="https://github.com/emidhun/canopod/releases/download/v0.5.0/Canopod_0.5.0_x64-setup.exe"><img src="https://img.shields.io/badge/Windows-.exe-9a9ba0?style=flat-square&logo=windows&logoColor=white&labelColor=1e1f22" alt="Download Windows installer" /></a>
   <a href="https://github.com/emidhun/canopod/releases"><img src="https://img.shields.io/github/v/release/emidhun/canopod?style=flat-square&label=all%20releases&color=58c2c8&labelColor=1e1f22" alt="All releases" /></a>
   <br/>
   <sub>Linux &amp; Windows builds are experimental — <a href="https://github.com/emidhun/canopod/issues">feedback welcome</a>. See <a href="#install">Install</a> for the one-line quarantine fix on macOS.</sub>
