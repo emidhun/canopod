@@ -48,3 +48,25 @@ it('offers no clear action when there are no notifications', () => {
  expect(screen.queryByRole('button',{name:'Clear notifications'})).not.toBeInTheDocument();
  expect(screen.getByText(/Nothing needs you/)).toBeInTheDocument();
 });
+it('offers individual and bulk dismissal for setup reminders', async () => {
+ const user=userEvent.setup(),dismiss=vi.fn();
+ const reminder:AttnItem={id:'setup',sev:2,kind:'todo',wtKey:wt.wtKey,wt:'checkout',title:'Setup never run',act:'Run setup'};
+ render(<AttentionPop items={[reminder]} onDismiss={dismiss} onPick={vi.fn()} onClose={vi.fn()}/>);
+ await user.click(screen.getByRole('button',{name:'Dismiss Setup never run'}));
+ expect(dismiss).toHaveBeenLastCalledWith(reminder);
+ dismiss.mockClear();
+ await user.click(screen.getByRole('button',{name:'Clear notifications'}));
+ expect(dismiss).toHaveBeenCalledExactlyOnceWith(reminder);
+});
+it('hides dismissed setup reminders without changing setup and resurfaces a changed outcome', async () => {
+ const {attentionItems}=await import('../nextAction');
+ const pending={...wt,setupConfigured:true,setup:null};
+ const tree=[{...repo,worktrees:[pending]}];
+ const reminder=attentionItems(tree,{}).find(a=>a.kind==='todo')!;
+ expect(reminder).toBeDefined();
+ const dismissed={[reminder.id]:reminder.title};
+ expect(attentionItems(tree,{},[],dismissed).some(a=>a.kind==='todo')).toBe(false);
+ expect(pending.setup).toBeNull();
+ const failed=[{...repo,worktrees:[{...pending,setup:{ok:false,ranAt:1,source:"marker" as const}}]}];
+ expect(attentionItems(failed,{},[],dismissed).find(a=>a.kind==='todo')?.title).toBe('Setup failed');
+});

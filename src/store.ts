@@ -167,6 +167,8 @@ interface State {
   notices: Notice[];
   notify: (n: Omit<Notice, "id" | "ts">) => void;
   dismissNotice: (id: string) => void;
+  dismissedReminders: Record<string, string>;
+  dismissReminder: (id: string, title: string) => void;
 
   /** worktrees being created right now, keyed by their destination path */
   creating: Record<string, PendingCreate>;
@@ -397,6 +399,8 @@ export const useStore = create<State>((set, get) => {
     toast: null,
     flash: null,
     notices: [],
+    dismissedReminders: {},
+    dismissReminder: (id, title) => set((st) => ({ dismissedReminders: { ...st.dismissedReminders, [id]: title } })),
     creating: {},
     removing: {},
     showSwitchBranch: true,

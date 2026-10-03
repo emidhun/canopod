@@ -229,6 +229,7 @@ export function attentionItems(
   tree: RepoNode[],
   sessions: Record<string, LaneSession[]>,
   notices: Notice[] = [],
+  dismissedReminders: Record<string, string> = {},
 ): AttnItem[] {
   const out: AttnItem[] = [];
   /* A backgrounded op that FAILED ranks with a crash — it is the same kind of
@@ -286,7 +287,7 @@ export function attentionItems(
         });
     }
   }
-  return out.sort((a, b) => a.sev - b.sev);
+  return out.filter((a) => a.kind !== "todo" || dismissedReminders[a.id] !== a.title).sort((a, b) => a.sev - b.sev);
 }
 
 /* ── shared derivations ── */

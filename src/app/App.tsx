@@ -54,6 +54,8 @@ export default function App() {
   const setActiveTerm = useStore((s) => s.setActiveTerm);
   const notices = useStore((s) => s.notices);
   const dismissNotice = useStore((s) => s.dismissNotice);
+  const dismissedReminders = useStore((s) => s.dismissedReminders);
+  const dismissReminder = useStore((s) => s.dismissReminder);
   const syncSubmodules = useStore((s) => s.syncSubmodules);
   const bumpSettings = useStore((s) => s.bumpSettings);
   const switchBranchEnabled = useStore((s) => s.showSwitchBranch);
@@ -106,7 +108,7 @@ export default function App() {
     if (sel) primeLogs(sel.wt.wtKey);
   }, [sel?.wt.wtKey, primeLogs]);
 
-  const attn = useMemo<AttnItem[]>(() => attentionItems(tree, sessions, notices), [tree, sessions, notices]);
+  const attn = useMemo<AttnItem[]>(() => attentionItems(tree, sessions, notices, dismissedReminders), [tree, sessions, notices, dismissedReminders]);
   const notice = useMemo(() => notices.find((n) => n.id === noticeId) ?? null, [notices, noticeId]);
   const na = useMemo<NextAction | null>(
     () => (sel ? nextAction(sel.wt, sessions[sel.wt.wtKey] ?? []) : null),
@@ -466,7 +468,7 @@ export default function App() {
           anchor={attnRef}
           items={attn}
           onClose={() => setAttnOpen(false)}
-          onDismiss={(a) => a.noticeId && dismissNotice(a.noticeId)}
+          onDismiss={(a) => a.noticeId ? dismissNotice(a.noticeId) : dismissReminder(a.id, a.title)}
           onPick={(a) => {
             setAttnOpen(false);
             // A failure notice is the detail, not a destination — the worktree

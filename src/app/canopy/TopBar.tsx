@@ -113,7 +113,7 @@ export function AttentionPop({
 }: {
   items: AttnItem[];
   onPick: (a: AttnItem) => void;
-  /** clear a notice row without acting on it (crashes have no dismiss — they
+  /** clear a notice or setup reminder without acting on it (crashes have no dismiss — they
       leave the queue by being fixed) */
   onDismiss: (a: AttnItem) => void;
   onClose: () => void;
@@ -139,7 +139,7 @@ export function AttentionPop({
         <Bell size={11} />
         Needs you
         <span className="cxs-pop__count">{items.length}</span>
-        {items.some((a) => a.noticeId) && <button className="cx-btn cx-btn--ghost cx-btn--sm cxs-attn-clear" onClick={() => items.filter((a) => a.noticeId).forEach(onDismiss)}>Clear notifications</button>}
+        {items.some((a) => a.noticeId || a.kind === "todo") && <button className="cx-btn cx-btn--ghost cx-btn--sm cxs-attn-clear" onClick={() => items.filter((a) => a.noticeId || a.kind === "todo").forEach((a) => onDismiss(a))}>Clear notifications</button>}
       </div>
       {items.length === 0 ? (
         <div className="cxs-pop-empty">
@@ -176,7 +176,7 @@ export function AttentionPop({
                 </span>
               )}
             </button>
-            {a.noticeId && (
+            {(a.noticeId || a.kind === "todo") && (
               <button className="cxs-attn-x" title="Dismiss" aria-label={`Dismiss ${a.title}`} onClick={() => onDismiss(a)}>
                 <X size={10} />
               </button>
