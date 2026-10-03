@@ -2631,7 +2631,8 @@
 .cxs-sessionclose { width: 20px; height: 22px; flex-shrink: 0; }
 .cxs-sessionadd { width: 24px; height: 24px; flex-shrink: 0; border: 1px solid var(--divider); background: var(--surface-well); }
 .cxs-sessionpop { height: 24px; min-height: 24px; flex-shrink: 0; }
-.cxs-emptyactions { display: flex; justify-content: center; gap: 8px; flex-wrap: wrap; }
+.cxs-emptyactions { display: flex; align-items: center; justify-content: center; gap: 8px; flex-wrap: wrap; }
+.cxs-attn-clear { margin-left: auto; text-transform: none; letter-spacing: normal; }
 .cxs-logpause { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 6px var(--gutter); background: var(--surface-app); border-bottom: 1px solid var(--divider); color: var(--text-secondary); font-size: var(--fs-small); flex-shrink: 0; flex-wrap: wrap; }
 .cxs-logpause .cx-btn { min-height: 24px; height: 24px; }
 @container (max-width: 700px) {

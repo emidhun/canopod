@@ -139,6 +139,7 @@ export function AttentionPop({
         <Bell size={11} />
         Needs you
         <span className="cxs-pop__count">{items.length}</span>
+        {items.some((a) => a.noticeId) && <button className="cx-btn cx-btn--ghost cx-btn--sm cxs-attn-clear" onClick={() => items.filter((a) => a.noticeId).forEach(onDismiss)}>Clear notifications</button>}
       </div>
       {items.length === 0 ? (
         <div className="cxs-pop-empty">

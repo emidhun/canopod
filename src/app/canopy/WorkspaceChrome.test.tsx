@@ -3,7 +3,8 @@ import userEvent from '@testing-library/user-event';
 import {beforeEach,expect,it,vi} from 'vitest';
 import WorktreeView from './WorktreeView';
 import SidebarNav from './SidebarNav';
-import {TopBar} from './TopBar';
+import {TopBar,AttentionPop} from './TopBar';
+import type {AttnItem} from '../nextAction';
 import {useStore} from '../../store';
 import {Play} from '../../icons';
 import type {RepoNode,WorktreeNode} from '../../types';
@@ -24,4 +25,26 @@ it('keeps sidebar status about services rather than duplicating Git dirty state'
 it('labels global counters and routes each action to its intended workspace action',async()=>{
  const user=userEvent.setup(),overview=vi.fn(),settings=vi.fn(),palette=vi.fn();render(<TopBar repo={repo} wt={wt} attn={[]} running={6} agents={1} onPalette={palette} onAttn={vi.fn()} onOverview={overview} onRefresh={vi.fn()} onSettings={settings}/>);
  await user.click(screen.getByRole('button',{name:/6\s*services running/}));expect(overview).toHaveBeenCalledTimes(1);expect(screen.getByRole('button',{name:/1\s*agent/})).toBeInTheDocument();await user.click(screen.getByRole('button',{name:'Settings'}));expect(settings).toHaveBeenCalledTimes(1);await user.click(screen.getByRole('button',{name:/Search or run command/}));expect(palette).toHaveBeenCalledTimes(1);
+});
+
+it('clears saved notifications while retaining live attention items', async () => {
+ const user=userEvent.setup(),dismiss=vi.fn(),pick=vi.fn();
+ const notice:AttnItem={id:'notice',noticeId:'saved-notice',sev:0,kind:'error',wtKey:wt.wtKey,wt:'checkout',title:'Restore failed',act:'Details'};
+ const completed:AttnItem={...notice,id:'complete',noticeId:'saved-complete',kind:'info',title:'Setup completed'};
+ const crash:AttnItem={id:'crash',sev:0,kind:'crash',wtKey:wt.wtKey,wt:'checkout',title:'Server crashed',act:'Restart',svcKey:'server'};
+ const wait:AttnItem={...crash,id:'wait',kind:'wait',title:'Agent waiting',act:'Answer'};
+ const props={onDismiss:dismiss,onPick:pick,onClose:vi.fn()};
+ const {rerender}=render(<AttentionPop {...props} items={[notice,completed,crash,wait]}/>);
+ await user.click(screen.getByRole('button',{name:'Clear notifications'}));
+ expect(dismiss.mock.calls.map(([item])=>item.id)).toEqual(['notice','complete']);
+ expect(pick).not.toHaveBeenCalled();
+ rerender(<AttentionPop {...props} items={[crash,wait]}/>);
+ expect(screen.queryByRole('button',{name:'Clear notifications'})).not.toBeInTheDocument();
+ expect(screen.getByText('Server crashed')).toBeInTheDocument();
+ expect(screen.getByText('Agent waiting')).toBeInTheDocument();
+});
+it('offers no clear action when there are no notifications', () => {
+ render(<AttentionPop items={[]} onDismiss={vi.fn()} onPick={vi.fn()} onClose={vi.fn()}/>);
+ expect(screen.queryByRole('button',{name:'Clear notifications'})).not.toBeInTheDocument();
+ expect(screen.getByText(/Nothing needs you/)).toBeInTheDocument();
 });

@@ -8,7 +8,7 @@ import type { ServiceNode, WorktreeNode } from "../../types";
 import TerminalPane from "../TerminalPane";
 import LogsPane from "./LogsPane";
 import AnchoredMenu from "./AnchoredMenu";
-import { agentState, nextClass, type NextAction } from "../nextAction";
+import { agentState, type NextAction } from "../nextAction";
 import { useWtContext } from "../WorktreeContext";
 import { Chevron } from "../../icons";
 import type { LaneLaunch } from "./laneLaunch";
@@ -252,7 +252,7 @@ function Pane({ wt, hidden, launch, onEditContext }: {
         <span className="et">Start working in this terminal</span>
         <span className="es">Start an agent with this worktree’s context, or open a shell in its directory.</span>
         <div className="cxs-emptyactions">
-          <StartAgent agents={launch.agents} onPick={startAgent} render={(open, ref) => <button ref={ref} className={nextClass("primary")} onClick={open}><Sparkle size={12} />Start agent{launch.agents.length > 1 && <Chevron size={10} />}</button>} />
+          <StartAgent agents={launch.agents} onPick={startAgent} render={(open, ref) => <button ref={ref} className="cx-btn cx-btn--primary cx-btn--sm" onClick={open}><Sparkle size={12} />Start agent{launch.agents.length > 1 && <Chevron size={10} />}</button>} />
           <button className="cx-btn cx-btn--sm" onClick={() => launch.startShell()}><TerminalIcon size={12} />Open terminal</button>
         </div>
       </div> : (
