@@ -3,6 +3,7 @@ set -euo pipefail
 
 kind=${1:?package kind is required}
 packages=${2:?package directory is required}
+packages=$(cd "$packages" && pwd)
 expected=${3:?expected version is required}
 work=$(mktemp -d)
 pid=
