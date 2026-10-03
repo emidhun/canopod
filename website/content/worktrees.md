@@ -121,11 +121,11 @@ parent's branch.
 
 ## Uncommitted changes
 
-The status bar's **uncommitted** chip opens one dialog with three modes. The file list is there to be
+The uncommitted-changes dot beside the branch name in the worktree bar opens one dialog with three modes. The file list is there to be
 read, not selected from: it annotates itself per mode so you can see what the chosen git invocation
 will touch, and the exact command is printed above it.
 
-!shot modal-uncommitted | The uncommitted-changes dialog with a clean working tree. The status-bar chip is not clickable in this state.
+!shot modal-uncommitted | The uncommitted-changes dialog with a clean working tree. The dot only appears when there is something to commit.
 
 | Mode | Runs | Options |
 |---|---|---|

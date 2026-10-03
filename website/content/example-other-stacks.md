@@ -144,7 +144,7 @@ database as part of the service and skip those actions.
 
 ## A stack with no database at all
 
-Nothing requires one. Leave `PG_DB` out and the database chip and dialog simply don't appear:
+Nothing requires one. Leave `PG_DB` out and the database tools and dialog simply don't appear:
 
 ```json
 {

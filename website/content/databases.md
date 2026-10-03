@@ -48,7 +48,7 @@ Connection settings come from the worktree's `.env`:
 
 ## The database dialog
 
-Open it from the rail's database chip, or ⋯ → **Database…**
+Open it from the rail's ⋯ → **Database tools**, or the worktree ⋯ menu → **Database…**
 
 !shot modal-database | The database dialog: the switcher, then snapshot, export, restore, and reset.
 
@@ -124,4 +124,4 @@ Switch, snapshot, export, restore and reset assume **Postgres**. Another databas
 service; these particular actions just don't apply to it.
 
 There's no snapshot list, because snapshots are databases on the server that you named. And the
-database chip and dialog only appear once a worktree actually has a `PG_DB` in its `.env`.
+database tools and dialog only appear once a worktree actually has a `PG_DB` in its `.env`.
