@@ -664,13 +664,7 @@
 .cxs-wtr .agp.is-wait {
   color: var(--state-attention);
 }
-.cxs-wtr .dirty {
-  width: var(--dot-sm);
-  height: var(--dot-sm);
-  border-radius: 50%;
-  background: var(--state-attention);
-  flex: none;
-}
+
 .cxs-qa {
   display: none;
   align-items: center;
@@ -854,6 +848,18 @@
 }
 .cxs-gc--dirty {
   color: var(--state-attention);
+  justify-content: center;
+}
+.cxs-gc--dirty:hover {
+  background: var(--btn-hover);
+}
+.cxs-gc-dot {
+  display: block;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--state-attention);
+  flex: none;
 }
 /* The branch name is the only elastic item; .cxs-acts never shrinks because
    its child button can't, and a shrinking .cxs-acts would just clip it. */
@@ -2528,3 +2534,111 @@
   color: var(--text-tertiary);
   flex: none;
 }
+
+/* Runtime actions are independent native controls, never nested targets. */
+.cxs-rail { height: auto; min-height: 52px; padding-block: 8px; flex-wrap: wrap; }
+.cxs-railscroll { flex-wrap: wrap; overflow: visible; mask-image: none; -webkit-mask-image: none; }
+.cxs-svc { height: var(--h-control-xs); min-height: 0; cursor: default; padding: 0 7px; }
+.cxs-svc .svc-detail { display: inline-flex; align-items: center; gap: 7px; height: calc(var(--h-control-xs) - 2px); min-height: 0; padding-block: 0; background: none; border: 0; color: var(--text-primary); font: inherit; cursor: pointer; }
+.cxs-svc .svc-status { color: var(--text-secondary); font-size: var(--fs-small); }
+.cxs-svc .svc-port { background: none; border: 0; height: calc(var(--h-control-xs) - 2px); min-height: 0; padding-block: 0; cursor: pointer; }
+.cxs-svc .svc-port:disabled { cursor: default; }
+.cxs-svc .act { display: inline-flex; gap: 5px; width: auto; height: calc(var(--h-control-xs) - 2px); padding: 0 8px; font: var(--fs-small) var(--sans); }
+.cxs-svc--db { cursor: pointer; max-width: 320px; }
+.cxs-svc--db .st { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* Compact worktree chrome: one pane/log toolbar and grouped runtime actions. */
+.cxs-rail { min-height: 44px; padding-block: 5px; }
+.cxs-svc { border-color: var(--divider); background: var(--surface-well); gap: 6px; padding: 0 7px; }
+.cxs-svc .svc-status { font-size: var(--fs-small); }
+.cxs-svc .act { border-left: 1px solid var(--divider); border-radius: 0; padding-left: 9px; }
+.cxs-svc--db { background: transparent; }
+.cxs-ltool { min-height: 40px; height: auto; padding-block: 5px; flex-wrap: wrap; gap: 8px; }
+.cxs-pane-navigation { display: flex; align-items: center; flex: none; gap: 2px; padding-right: 10px; border-right: 1px solid var(--divider); }
+.cxs-log-source { min-width: 100px; max-width: 160px; height: 28px; border: 1px solid var(--divider); border-radius: var(--r-md); background: var(--surface-well); color: var(--text-secondary); font: var(--fs-small) var(--sans); padding: 0 6px; }
+.cxs-ltool .cxs-lsearch { margin-left: auto; flex: 1 1 130px; max-width: 260px; min-width: 100px; }
+.cxs-svc:not(.cxs-svc--db) .st { display: none; }
+.cxs-runtime-more { flex: none; gap: 5px; width: auto; height: var(--h-control-xs); min-height: 0; padding: 0 8px; border: 1px solid var(--divider); background: var(--surface-well); border-radius: var(--r-md); }
+.cxs-runtime-more span { font: var(--fs-small) var(--sans); }
+.cxs-runtime-pop { display: grid; gap: 4px; padding: 4px; max-height: 360px; overflow-y: auto; }
+.cxs-runtime-pop .cxs-svc { justify-content: space-between; min-width: 0; }
+.cxs-runtime-pop .svc-detail { min-width: 0; }
+.cxs-runtime-pop .nm { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 130px; }
+.cxs-runtime-db { display: flex; align-items: center; gap: 10px; background: none; border: 0; padding: 8px 10px; border-radius: var(--r-md); text-align: left; color: var(--text-primary); font: var(--fs-body) var(--sans); cursor: pointer; }
+.cxs-runtime-db span { min-width: 0; }
+.cxs-runtime-db b, .cxs-runtime-db small { display: block; }
+.cxs-runtime-db b { font-size: var(--fs-body); font-weight: var(--fw-medium); }
+.cxs-runtime-db:hover { background: var(--btn-hover); }
+.cxs-runtime-db.has-services { border-top: 1px solid var(--divider); border-radius: 0; margin-top: 4px; padding-top: 12px; }
+.cxs-runtime-db small { color: var(--text-secondary); font: var(--fs-small) var(--mono); overflow-wrap: anywhere; margin-top: 4px; }
+
+/* One shared outer height for runtime and custom-command quick actions. */
+.cxs-rail .cxs-cmdb { height: var(--h-control-xs); padding-block: 0; }
+
+.cxs-viewwrap { position: relative; flex: none; }
+.cxs-viewpick { min-width: 92px; justify-content: space-between; }
+.cxs-viewpick.is-on { background: var(--btn); color: var(--text-secondary); }
+.cxs-viewpop { position: absolute; bottom: calc(100% + 6px); right: 0; z-index: 62; width: 190px; padding: 4px; background: var(--surface-float); border: var(--border-w) solid var(--border); border-radius: var(--r-pop); box-shadow: var(--shadow-pop); }
+.cxs-viewheading { padding: 6px 8px; color: var(--text-tertiary); font-size: var(--fs-micro); }
+.cxs-viewoption { display: flex; align-items: center; justify-content: space-between; width: 100%; padding: 7px 8px; border: 0; border-radius: var(--r-xs); background: none; color: var(--text-secondary); font: var(--fs-small) var(--sans); cursor: pointer; }
+.cxs-viewoption:hover, .cxs-viewoption:focus-visible { background: var(--btn-hover); }
+.cxs-viewoption[aria-pressed="true"] { color: var(--action-primary); background: var(--btn); }
+
+/* One sizing system for pane navigation and log controls. */
+.cxs-ltool { height: auto; min-height: 38px; padding-block: 6px; gap: 8px; flex-wrap: wrap; }
+.cxs-ltool .cx-tab, .cxs-ltool .cxs-fchip, .cxs-ltool .cxs-log-source, .cxs-ltool .cxs-lsearch, .cxs-ltool > .cx-ib { height: var(--h-control-xs); min-height: 0; border-radius: var(--r-md); box-sizing: border-box; font-size: var(--fs-small); }
+.cxs-ltool .cx-tab, .cxs-ltool .cxs-fchip { padding: 0 8px; }
+.cxs-ltool .cx-tab.is-on, .cxs-ltool .cxs-fchip.is-on { background: var(--btn-hover); color: var(--text-primary); }
+.cxs-ltool .cxs-log-source, .cxs-ltool .cxs-lsearch, .cxs-ltool .cxs-fltwrap > .cxs-fchip { border: var(--border-w) solid var(--divider); background: var(--surface-well); }
+.cxs-ltool .cxs-fltwrap > .cxs-fchip.is-on { border-color: var(--action-primary); }
+.cxs-ltool .cxs-lsearch { max-width: 240px; }
+.cxs-ltool .cxs-lsearch:focus-within { border-color: var(--action-primary); }
+.cxs-ltool > .cx-ib { width: var(--h-control-xs); padding: 0; }
+.cxs-ltool .cxs-pane-navigation { padding-right: 8px; gap: 2px; }
+.cxs-fltpop { top: calc(100% + 4px); border-radius: var(--r-pop); }
+.cxs-ltool button:focus-visible, .cxs-ltool select:focus-visible { outline: 2px solid var(--action-primary); outline-offset: 2px; }
+
+.cxs-service-filter { min-width: 100px; max-width: 160px; justify-content: space-between; }
+.cxs-service-filter > span, .cxs-fltlabel { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cxs-fltpop { max-height: min(320px, 60vh); overflow-y: auto; }
+
+/* Wrapped toolbars keep search usable instead of leaving an inert icon. */
+.cxs-ltool .cxs-lsearch { display: flex; width: auto; padding: 0 var(--sp-3); justify-content: flex-start; }
+.cxs-ltool .cxs-lsearch input { display: block; }
+@container pane (max-width: 430px) {
+  .cxs-gitchips { display: flex; }
+  .cxs-gitchips .cxs-gc--up, .cxs-gitchips .cxs-gc--down { display: none; }
+}
+
+/* Unified Terminal workspace: stable navigation, one session strip. */
+.cxs-work--unified { flex-direction: column; }
+.cxs-worknav { flex-shrink: 0; gap: 4px; }
+.cxs-alongside { margin-left: auto; height: 24px; min-height: 24px; }
+.cxs-alongside[aria-pressed="true"] { background: var(--btn-hover); color: var(--text-primary); }
+.cxs-workbody { display: flex; flex: 1; min-height: 0; min-width: 0; }
+.cxs-workslot { display: flex; min-width: 0; min-height: 0; }
+.cxs-workslot[hidden] { display: none; }
+.cxs-workbody > .cxs-vdiv { width: 5px; background: transparent; border-inline: 1px solid var(--divider); }
+.cxs-workbody > .cxs-vdiv:hover, .cxs-workbody > .cxs-vdiv:focus-visible, .cxs-workbody > .cxs-vdiv.is-on { background: var(--action-primary); outline: none; }
+.cxs-sessionbar { display: flex; align-items: center; gap: 6px; padding: 6px var(--gutter); min-height: 36px; border-bottom: 1px solid var(--divider); background: var(--surface-app); flex-shrink: 0; }
+.cxs-sessionlist { flex: 1; min-width: 0; display: flex; align-items: center; gap: 4px; overflow-x: auto; scrollbar-width: thin; }
+.cxs-sessionchip { display: inline-flex; align-items: center; flex-shrink: 0; height: 24px; border: 1px solid var(--divider); border-radius: var(--r-sm); background: var(--surface-well); }
+.cxs-sessionchip.is-on { border-color: var(--action-primary); background: var(--btn-hover); }
+.cxs-sessionchip .cxs-sc { height: 22px; padding: 0 6px; gap: 6px; font-family: var(--sans); color: var(--text-secondary); }
+.cxs-sessionchip.is-on .cxs-sc { color: var(--text-primary); }
+.cxs-sessionchip .d.run { background: var(--state-running); }
+.cxs-sessionstate { font-size: var(--fs-micro); color: var(--text-tertiary); }
+.cxs-sessionclose { width: 20px; height: 22px; flex-shrink: 0; }
+.cxs-sessionadd { width: 24px; height: 24px; flex-shrink: 0; border: 1px solid var(--divider); background: var(--surface-well); }
+.cxs-sessionpop { height: 24px; min-height: 24px; flex-shrink: 0; }
+.cxs-emptyactions { display: flex; justify-content: center; gap: 8px; flex-wrap: wrap; }
+.cxs-logpause { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 6px var(--gutter); background: var(--surface-app); border-bottom: 1px solid var(--divider); color: var(--text-secondary); font-size: var(--fs-small); flex-shrink: 0; flex-wrap: wrap; }
+.cxs-logpause .cx-btn { min-height: 24px; height: 24px; }
+@container (max-width: 700px) {
+  .cxs-workbody.is-split { flex-direction: column; overflow-y: auto; }
+  .cxs-workbody.is-split > .cxs-workslot { flex: 1 0 260px !important; }
+  .cxs-workbody.is-split > .cxs-workslot--logs { border-top: 1px solid var(--divider); }
+  .cxs-workbody > .cxs-vdiv { display: none; }
+}
+
+.cxs-worknav .cx-tab { height: 24px; min-height: 24px; }

@@ -4,13 +4,13 @@
    text plus one welded control: the word "Pull" pulls everything, the ▾ opens
    per-submodule control. Anchored to the control that opened it, not centred. */
 import { useEffect, useRef, useState } from "react";
-import { Bell, Chevron, Fork, Info, Pull, Refresh, Search, Single, Sparkle, Split, Spinner } from "../../icons";
+import { Bell, Chevron, Fork, Info, Pull, Refresh, Search, Sparkle, Spinner } from "../../icons";
 import { errText, hasBackend, ipc, type Branches } from "../../ipc";
 import { useStore, type LaneSession } from "../../store";
 import type { SubmoduleStatus, WorktreeNode } from "../../types";
 import { fmtRelTime } from "../../types";
 import { agentState, type AttnItem } from "../nextAction";
-import { layoutLabel, type PaneKind } from "./WorkSurface";
+import { LAYOUTS, LAYOUT_ORDER, layoutLabel, type LayoutId, type PaneKind } from "./WorkSurface";
 
 const EMPTY: LaneSession[] = [];
 
@@ -19,10 +19,9 @@ export default function StatusBar({
   view,
   attn,
   panes,
-  onCycleLayout,
+  onLayout,
   onAttn,
   onSwitchBranch,
-  onDirty,
   worktreeCount,
   repoCount,
 }: {
@@ -30,12 +29,11 @@ export default function StatusBar({
   view: "wt" | "overview";
   attn: AttnItem[];
   panes: PaneKind[];
-  onCycleLayout: () => void;
+  onLayout: (layout: LayoutId) => void;
   onAttn: () => void;
   /** absent when Settings has turned the Switch-branch action off — the branch
       still shows, it just stops being a way in */
   onSwitchBranch?: () => void;
-  onDirty: () => void;
   worktreeCount: number;
   repoCount: number;
 }) {
@@ -43,6 +41,29 @@ export default function StatusBar({
   const gitPull = useStore((s) => s.gitPull);
   const [pullOpen, setPullOpen] = useState(false);
   const caretRef = useRef<HTMLButtonElement>(null);
+  const [layoutOpen, setLayoutOpen] = useState(false);
+  const layoutRef = useRef<HTMLDivElement>(null);
+  const layoutTrigger = useRef<HTMLButtonElement>(null);
+
+  useEffect(() => {
+    if (!layoutOpen) return;
+    layoutRef.current?.querySelector<HTMLButtonElement>('[aria-pressed="true"]')?.focus();
+    const down = (e: MouseEvent) => {
+      if (!layoutRef.current?.contains(e.target as Node)) setLayoutOpen(false);
+    };
+    const key = (e: KeyboardEvent) => {
+      if (e.key === "Escape") {
+        setLayoutOpen(false);
+        layoutTrigger.current?.focus();
+      }
+    };
+    document.addEventListener("mousedown", down);
+    document.addEventListener("keydown", key);
+    return () => {
+      document.removeEventListener("mousedown", down);
+      document.removeEventListener("keydown", key);
+    };
+  }, [layoutOpen]);
 
   if (view === "overview" || !wt) {
     return (
@@ -64,7 +85,6 @@ export default function StatusBar({
   const agents = sessions.filter((s) => s.kind === "agent" && s.running);
   const waiting = agents.some((s) => agentState(s) === "waiting");
   // two panes reads as a split whatever the pair happens to be
-  const LayoutIcon = panes.length > 1 ? Split : Single;
 
   return (
     <div className="cxs-statusbar">
@@ -78,21 +98,6 @@ export default function StatusBar({
           <Fork size={11} />
           {wt.branch}
         </span>
-      )}
-
-      {g && (g.ahead > 0 || g.behind > 0) && (
-        <span className="cxs-sb cxs-sb--mono" title={`${g.ahead} ahead, ${g.behind} behind origin`}>
-          {g.ahead > 0 && `↑${g.ahead}`}
-          {g.ahead > 0 && g.behind > 0 && " "}
-          {g.behind > 0 && `↓${g.behind}`}
-        </span>
-      )}
-
-      {g?.dirty && (
-        <button className="cxs-sb cxs-sb--dirty" title="Review uncommitted changes — commit, stash or discard" onClick={onDirty}>
-          <span className="d" />
-          uncommitted
-        </button>
       )}
 
       <span className="cxs-sdiv" />
@@ -131,10 +136,17 @@ export default function StatusBar({
       )}
 
       <span className="cxs-sdiv" />
-      <button className="cxs-sb" onClick={onCycleLayout} title="Cycle layout  (⌘1–⌘5)">
-        <LayoutIcon size={11} />
-        {layoutLabel(panes)}
-      </button>
+      <div className="cxs-viewwrap" ref={layoutRef}>
+        <button className={"cxs-sb cxs-viewpick" + (layoutOpen ? " is-on" : "")} ref={layoutTrigger} aria-label={`Workspace layout: ${layoutLabel(panes)}`} aria-haspopup="dialog" aria-expanded={layoutOpen} onClick={() => setLayoutOpen((v) => !v)}>
+          {layoutLabel(panes)}<Chevron size={9} />
+        </button>
+        {layoutOpen && <div className="cxs-viewpop" role="dialog" aria-label="Workspace layout">
+          <div className="cxs-viewheading">Workspace layout</div>
+          {LAYOUT_ORDER.map((l) => <button key={l} className="cxs-viewoption" aria-pressed={LAYOUTS[l].panes.join() === panes.join()} onClick={() => { onLayout(l); setLayoutOpen(false); layoutTrigger.current?.focus(); }}>
+            {LAYOUTS[l].label}<span aria-hidden="true">{LAYOUTS[l].panes.join() === panes.join() ? "✓" : ""}</span>
+          </button>)}
+        </div>}
+      </div>
       <button className="cxs-sb" onClick={onAttn} title="Needs you">
         <Bell size={11} />
         {attn.length}

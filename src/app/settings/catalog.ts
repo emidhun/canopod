@@ -16,11 +16,13 @@ export type PageId =
 export type PageMeta = { id: PageId; ic: string; label: string; desc: string; title: string; blurb: string };
 
 export const PLATFORM: PageMeta[] = [
+
   { id: "general", ic: "sliders", label: "General", desc: "Appearance and behaviour", title: "General", blurb: "How Canopy looks and what it does on launch." },
   { id: "mcp", ic: "sparkle", label: "MCP", desc: "Connect to agents", title: "MCP", blurb: "Connect agents to Canopy and choose which repositories they can access." },
   { id: "terminal", ic: "terminal", label: "Terminal", desc: "Shell, font, env", title: "Terminal", blurb: "The shell Canopy opens inside a worktree, and what it inherits." },
   { id: "notifications", ic: "bell", label: "Notifications", desc: "What interrupts you", title: "Notifications", blurb: "Canopy only interrupts you for things that need a decision." },
   { id: "shortcuts", ic: "keyboard", label: "Shortcuts", desc: "Keyboard map", title: "Keyboard shortcuts", blurb: "Every command is reachable from the keyboard." },
+  { id: "security", ic: "shield", label: "Security", desc: "Secrets, SSH", title: "Security", blurb: "How secrets are handled in provisioned files and exports." },
   { id: "advanced", ic: "cube", label: "Advanced", desc: "Diagnostics, experiments", title: "Advanced", blurb: "Diagnostics, experiments and reset." },
 ];
 export const REPOPAGES: PageMeta[] = [
@@ -30,7 +32,6 @@ export const REPOPAGES: PageMeta[] = [
   { id: "commands", ic: "code", label: "Commands", desc: "One-off scripts", title: "Custom commands", blurb: "Named scripts you can launch in any worktree from the + menu." },
   { id: "files", ic: "doc", label: "Files", desc: "Provisioned config", title: "Provisioned files", blurb: "Files seeded or templated into every new worktree — any path, any format." },
   { id: "setup", ic: "cube", label: "Setup", desc: "Tasks on create", title: "Setup", blurb: "Commands run in order the first time a worktree is created." },
-  { id: "security", ic: "shield", label: "Security", desc: "Secrets, SSH", title: "Security", blurb: "How secrets are handled in provisioned files and exports." },
 ];
 export const ALLPAGES = [...PLATFORM, ...REPOPAGES];
 export const pageOf = (id: PageId): PageMeta => ALLPAGES.find((p) => p.id === id) || ALLPAGES[0];

@@ -45,6 +45,7 @@ import NotificationsPage from "./pages/NotificationsPage";
 import ShortcutsPage from "./pages/ShortcutsPage";
 import AdvancedPage from "./pages/AdvancedPage";
 import SecurityPage from "./pages/SecurityPage";
+import Modal from "../canopy/Modal";
 import { invalidateTermCfg } from "../TerminalPane";
 
 /** a page whose repo has no refused rows gets this rather than a fresh Map */
@@ -60,7 +61,12 @@ export default function SettingsView({ onClose }: { onClose: () => void }) {
 
   const [settings, setSettings] = useState<Settings | null>(null);
   const [saving, setSaving] = useState(false);
-  const [page, setPage] = useState<PageId>("general");
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const [confirmClose, setConfirmClose] = useState(false);
+  const [page, setPage] = useState<PageId>(() => {
+    const requested = import.meta.env.DEV && !hasBackend() ? new URLSearchParams(window.location.search).get("page") : null;
+    return ALLPAGES.find(p => p.id === requested)?.id ?? "general";
+  });
   const [repoId, setRepoId] = useState<string>("");
   const [repoMenu, setRepoMenu] = useState(false);
   const [search, setSearch] = useState(false);
@@ -97,6 +103,7 @@ export default function SettingsView({ onClose }: { onClose: () => void }) {
   };
 
   function load() {
+    setLoadError(null);
     clearInvalid();
     setLoadedRepos(new Set());
     if (!hasBackend()) {
@@ -123,7 +130,7 @@ export default function SettingsView({ onClose }: { onClose: () => void }) {
           setExtrasByRepo((m) => ({ ...m, [r.id]: { teardown: c.teardown || [], migrate: c.migrate || [] } }));
         }).catch(() => {});
       });
-    }).catch((e) => showToast(`Failed to load settings: ${e}`));
+    }).catch((e) => { setLoadError(errText(e)); showToast(`Failed to load settings: ${errText(e)}`); });
   }
   useEffect(load, []);
 
@@ -166,8 +173,18 @@ export default function SettingsView({ onClose }: { onClose: () => void }) {
 
   useEffect(() => {
     if (!repoMenu) return;
+    repoMenuRef.current?.querySelector<HTMLElement>("[role='dialog'] button")?.focus();
     const d = (e: MouseEvent) => { if (repoMenuRef.current && !repoMenuRef.current.contains(e.target as Node)) setRepoMenu(false); };
-    const k = (e: KeyboardEvent) => { if (e.key === "Escape") setRepoMenu(false); };
+    const k = (e: KeyboardEvent) => {
+      if (e.key === "Escape") { setRepoMenu(false); repoMenuRef.current?.querySelector<HTMLButtonElement>("button")?.focus(); }
+      if (e.key === "Tab") {
+        const items = Array.from(repoMenuRef.current?.querySelectorAll<HTMLButtonElement>("[role='dialog'] button") ?? []);
+        const current = items.indexOf(document.activeElement as HTMLButtonElement);
+        if (items.length && (current < 0 || (e.shiftKey ? current === 0 : current === items.length - 1))) {
+          e.preventDefault(); items[e.shiftKey ? items.length - 1 : 0].focus();
+        }
+      }
+    };
     document.addEventListener("mousedown", d);
     document.addEventListener("keydown", k);
     return () => { document.removeEventListener("mousedown", d); document.removeEventListener("keydown", k); };
@@ -176,13 +193,17 @@ export default function SettingsView({ onClose }: { onClose: () => void }) {
   useEffect(() => {
     if (!moreMenu) return;
     const d = (e: MouseEvent) => { if (moreRef.current && !moreRef.current.contains(e.target as Node)) setMoreMenu(false); };
-    const k = (e: KeyboardEvent) => { if (e.key === "Escape") setMoreMenu(false); };
+    const k = (e: KeyboardEvent) => { if (e.key === "Escape") { setMoreMenu(false); moreRef.current?.querySelector<HTMLButtonElement>("button")?.focus(); } };
     document.addEventListener("mousedown", d);
     document.addEventListener("keydown", k);
     return () => { document.removeEventListener("mousedown", d); document.removeEventListener("keydown", k); };
   }, [moreMenu]);
 
-  if (!settings) return <div className="cxset-root" />;
+  if (!settings) return <div className="cxset-root"><div className="empty settings-load" role={loadError ? "alert" : "status"}>
+    <h2>{loadError ? "Could not load settings" : "Loading settings…"}</h2>
+    {loadError ? <><p>{loadError}</p><button className="btn" onClick={load}>Retry</button></> : <Spinner size={16} />}
+    <button className="btn gh" onClick={onClose}>Back to workspace</button>
+  </div></div>;
 
   const repo = settings.repos.find((r) => r.id === repoId) || null;
   const repoIndex = settings.repos.findIndex((r) => r.id === repoId);
@@ -200,7 +221,9 @@ export default function SettingsView({ onClose }: { onClose: () => void }) {
   const isRepoPage = REPO_PAGE_IDS.has(page);
   const p = pageOf(page);
 
-  async function save() {
+  const requestClose = () => { if (dirty.size) setConfirmClose(true); else onClose(); };
+
+  async function save(closeAfter = false) {
     if (!settings || saving) return;
     const revision = editRevision.current;
     const repoRevisions = new Map(repoEditRevision.current);
@@ -259,7 +282,10 @@ export default function SettingsView({ onClose }: { onClose: () => void }) {
       invalidateTermCfg();
       bumpSettings();
       const n = dirty.size;
-      if (editRevision.current === revision) setDirty(new Set());
+      if (editRevision.current === revision) {
+        setDirty(new Set());
+        if (closeAfter) onClose();
+      }
       showToast(editRevision.current !== revision ? "Saved — newer edits are still unsaved" : n <= 1 ? "Settings saved" : `Saved ${n} sections`);
     } catch (e) {
       showToast(`Save failed: ${e}`);
@@ -439,7 +465,7 @@ export default function SettingsView({ onClose }: { onClose: () => void }) {
         {/* The JSON preview belongs to a REPOSITORY's config, so it is offered
             on the repo pages that have one (below) — not from the title bar,
             where it sat over platform pages it has nothing to do with. */}
-        <button className="ib" onClick={onClose} title="Close settings"><X size={14} /></button>
+        <button className="btn gh" onClick={requestClose} disabled={saving} title="Close settings">Back to workspace</button>
       </div>
 
       <div className="body">
@@ -447,14 +473,14 @@ export default function SettingsView({ onClose }: { onClose: () => void }) {
           <div className="navsearch">
             <Search size={12} />
             <input placeholder="Filter pages…" value={navQ} onChange={(e) => setNavQ(e.target.value)} />
-            {navQ && <button className="ib" style={{ height: 18, minWidth: 18 }} onClick={() => setNavQ("")}><X size={11} /></button>}
+            {navQ && <button className="ib" aria-label="Clear page filter" style={{ height: 18, minWidth: 18 }} onClick={() => setNavQ("")}><X size={11} /></button>}
           </div>
           <div className="navlist">
-            <div className="navgrp">Canopy</div>
+            <div className="navgrp">Application</div>
             {PLATFORM.map(navRow)}
             <div style={{ position: "relative" }} ref={repoMenuRef}>
               {repo && (
-                <button className="repopick" onClick={() => setRepoMenu((m) => !m)} title="Switch repository">
+                <button className="repopick" aria-haspopup="dialog" aria-expanded={repoMenu} onClick={() => setRepoMenu((m) => !m)} title="Switch repository">
                   <span className="ic"><Fork size={12} /></span>
                   <span className="rn">{repo.name}</span>
                   <span className="rc">{wtCount(repo.id)} wt</span>
@@ -462,7 +488,7 @@ export default function SettingsView({ onClose }: { onClose: () => void }) {
                 </button>
               )}
               {repoMenu && (
-                <div className="varmenu" style={{ left: 6, right: "auto", top: 30, width: 204 }}>
+                <div className="varmenu" role="dialog" aria-label="Choose repository" style={{ left: 6, right: "auto", top: 30, width: 204 }}>
                   <div className="vh">Repository</div>
                   {settings.repos.map((r) => (
                     <button className="vitem" key={r.id} onClick={() => { setRepoId(r.id); setRepoMenu(false); }} style={{ color: r.id === repoId ? "var(--action-primary)" : "var(--text-primary)" }}>
@@ -483,11 +509,12 @@ export default function SettingsView({ onClose }: { onClose: () => void }) {
         <div className="page">
           <div className="phead">
             <div className="pt">
+              <div className="scope-label">{isRepoPage ? `Repository · ${repo?.name ?? "None selected"}` : "Application · This machine"}</div>
               <h2>{p.title}
                 {isRepoPage && repo && <span className="sub">{repo.name}</span>}
                 {dirty.has(page) && <span className="dot" style={{ width: 5, height: 5, borderRadius: "50%", background: "var(--action-primary)" }} title="Unsaved changes" />}
               </h2>
-              <p>{p.blurb} {isRepoPage && <a role="button" tabIndex={0} onClick={() => flash("Documentation isn't wired yet")} onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); flash("Documentation isn't wired yet"); } }}>Learn more</a>}</p>
+              <p>{p.blurb}</p>
             </div>
             <div className="pa">
               {isRepoPage && repo && (
@@ -526,8 +553,8 @@ export default function SettingsView({ onClose }: { onClose: () => void }) {
           <span className="dd" />
           <span className="dt"><b>Unsaved changes</b> in <span className="sect">{dirtyNames.join(", ")}</span></span>
           <span style={{ flex: 1 }} />
-          <button className="btn gh" disabled={saving} onClick={load}>Discard</button>
-          <button className="btn pri" disabled={saving} onClick={save}>{saving ? <Spinner size={11} /> : <Check size={11} />}Save changes<span className="k">⌘S</span></button>
+          <button className="btn gh" disabled={saving} onClick={load}>Discard all changes</button>
+          <button className="btn pri" disabled={saving} onClick={() => save()}>{saving ? <Spinner size={11} /> : <Check size={11} />}Save all changes<span className="k">⌘S</span></button>
         </div>
       ) : (
         <div className="statusline">
@@ -541,6 +568,11 @@ export default function SettingsView({ onClose }: { onClose: () => void }) {
       )}
 
       <input ref={fileRef} type="file" accept=".json,application/json" style={{ display: "none" }} onChange={importJson} />
+      {confirmClose && <Modal title="Save your changes?" sub="Application and repository configuration" busy={saving} onClose={() => setConfirmClose(false)} foot={<>
+        <button className="cx-btn cx-btn--ghost" onClick={() => setConfirmClose(false)}>Keep editing</button>
+        <button className="cx-btn" disabled={saving} onClick={onClose}>Discard changes</button>
+        <button className="cx-btn cx-btn--primary" disabled={saving} onClick={() => save(true)}>{saving ? "Saving…" : "Save and leave"}</button>
+      </>}><p>Your edits in {dirtyNames.join(", ")} have not been saved. Appearance changes already applied to this machine are kept.</p></Modal>}
       {search && <SearchOverlay onClose={() => setSearch(false)} onGo={goTo} />}
     </div>
   );

@@ -4,7 +4,9 @@
    opens Service detail — the port override, metrics and failure live there.
    Log filtering is the log toolbar's own chip row, so one click never has to
    mean two things. */
-import { Database, Play, Restart, Spinner, Stop } from "../../icons";
+import { useEffect, useRef, useState } from "react";
+import AnchoredMenu from "./AnchoredMenu";
+import { Database, More, Play, Restart, Spinner, Stop } from "../../icons";
 import { useStore } from "../../store";
 import type { ServiceNode, WorktreeNode } from "../../types";
 import { isLive } from "../../types";
@@ -20,7 +22,17 @@ export default function ServiceRail({
   onOpenService: (s: ServiceNode) => void;
   onDatabase: () => void;
 }) {
-  const stats = useStore((s) => s.stats);
+  const [open, setOpen] = useState(false);
+  const [visibleCount, setVisibleCount] = useState(2);
+  const rail = useRef<HTMLDivElement>(null);
+  const trigger = useRef<HTMLButtonElement>(null);
+  useEffect(() => { setOpen(false); }, [wt.wtKey]);
+  useEffect(() => {
+    if (!rail.current) return;
+    const observer = new ResizeObserver(([entry]) => setVisibleCount(entry.contentRect.width < 480 ? 1 : 2));
+    observer.observe(rail.current);
+    return () => observer.disconnect();
+  }, []);
   const startService = useStore((s) => s.startService);
   const stopService = useStore((s) => s.stopService);
   const restartService = useStore((s) => s.restartService);
@@ -35,12 +47,7 @@ export default function ServiceRail({
     return null;
   };
 
-  return (
-    <div className="cxs-rail">
-      <div className="cxs-railscroll">
-        {empty && <span className="cxs-railempty">No services configured for this worktree.</span>}
-        {wt.services.map((s) => {
-        const st = stats[s.svcKey];
+  const service = (s: ServiceNode) => {
         const live = s.status === "running";
         const act = action(s);
         return (
@@ -51,41 +58,10 @@ export default function ServiceRail({
               (live ? "" : " cxs-svc--off") +
               (s.status === "error" ? " cxs-svc--error" : "")
             }
-            onClick={() => onOpenService(s)}
-            role="button"
-            tabIndex={0}
-            title={`${s.name} — ${s.status}`}
-            onKeyDown={(e) => {
-              // only when the CHIP itself has focus — this also receives keys
-              // bubbling from the nested start/stop button, and preventDefault
-              // there would suppress that button's own activation
-              if (e.target !== e.currentTarget) return;
-              if (e.key === "Enter" || e.key === " ") {
-                e.preventDefault();
-                onOpenService(s);
-              }
-            }}
           >
-            <span className={svcDotClass(s)} />
-            <span className="nm">{s.name}</span>
+            <button className="svc-detail" onClick={() => onOpenService(s)} title={`${s.name} — ${s.status}`} aria-label={`${s.name} details — ${s.status}`}><span className={svcDotClass(s)} /><span className="nm">{s.name}</span></button>
             {s.port != null && (
-              <span
-                className="pt"
-                title={live ? `Open http://localhost:${s.port}` : `port ${s.port}`}
-                onClick={(e) => {
-                  if (!live) return;
-                  e.stopPropagation();
-                  openPort(s.port as number);
-                }}
-              >
-                :{s.port}
-              </span>
-            )}
-            {live && st && (
-              <>
-                <span className="st">{st.cpu.toFixed(0)}%</span>
-                <span className="st">{Math.round(st.memMb)}mb</span>
-              </>
+              <button className="pt svc-port" disabled={!live} onClick={() => openPort(s.port as number)} aria-label={`Open ${s.name} on port ${s.port}`}>:{s.port}</button>
             )}
             {s.status === "starting" || s.status === "stopping" ? (
               <span className="act">
@@ -101,24 +77,28 @@ export default function ServiceRail({
                     act.run();
                   }}
                 >
-                  {act.icon}
+                  {act.icon}<span>{act.title.split(" ")[0]}</span>
                 </button>
               )
             )}
           </div>
         );
-      })}
-
-        {wt.dbName && (
-          <div className="cxs-svc cxs-svc--off cxs-svc--db" onClick={onDatabase} role="button" tabIndex={0} title="Database tools">
-            <Database size={11} />
-            <span className="nm">{wt.dbName}</span>
+  };
+  const overflow = wt.services.slice(visibleCount);
+  return (
+    <div className="cxs-rail">
+      <div className="cxs-railscroll" ref={rail}>
+        {empty && <span className="cxs-railempty">No services configured for this worktree.</span>}
+        {wt.services.slice(0, visibleCount).map(service)}
+        {(overflow.length > 0 || wt.dbName) && <button ref={trigger} className="cx-ib cxs-runtime-more" title="More services and database" aria-label={`More services and database${overflow.length ? ` — ${overflow.length} more services` : ""}`} aria-haspopup="dialog" aria-expanded={open} onClick={() => setOpen((o) => !o)}><More size={15} />{overflow.length > 0 && <span>+{overflow.length}</span>}</button>}
+        {open && <AnchoredMenu anchor={trigger} align="left" width={overflow.length ? 320 : 240} role="dialog" label="Services and database" onClose={() => { setOpen(false); trigger.current?.focus(); }}>
+          <div className="cxs-runtime-pop">
+            {overflow.length > 0 && <div className="cx-pop__label">More services</div>}
+            {overflow.map(service)}
+            {wt.dbName && <button className={"cxs-runtime-db" + (overflow.length ? " has-services" : "")} onClick={() => { setOpen(false); onDatabase(); }} title={wt.dbName}><Database size={13} /><span><b>Database tools</b><small>{wt.dbName}</small></span></button>}
           </div>
-        )}
+        </AnchoredMenu>}
       </div>
-
-      {/* custom commands sit beside the runtime they operate on; the rail is
-          overflow-visible so this menu can escape it, unlike the scroll area */}
       <CommandButtons wt={wt} />
     </div>
   );

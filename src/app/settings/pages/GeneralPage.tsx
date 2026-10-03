@@ -30,7 +30,7 @@ export default function GeneralPage({ settings, patch, markDirty }: PageProps) {
         <div className="slab">Editor</div>
         <div className="fgrid">
           <span className="lb">Command</span>
-          <div className="row"><input className="inp mono gr" value={settings.editor.command} placeholder="code" onChange={(e) => { patch({ editor: { command: e.target.value } }); markDirty("general"); }} />
+          <div className="row"><input aria-label="Editor command" className="inp mono gr" value={settings.editor.command} placeholder="code" onChange={(e) => { patch({ editor: { command: e.target.value } }); markDirty("general"); }} />
             <span className="hint" style={{ marginTop: 0 }}>Used for “Open in editor”.</span></div>
         </div>
       </div>
@@ -42,13 +42,13 @@ export default function GeneralPage({ settings, patch, markDirty }: PageProps) {
         <div className="slab">Appearance<span className="n">applied instantly, saved on this machine</span></div>
         <div className="fgrid">
           <span className="lb">Theme</span>
-          <select className="inp" value={appr.theme} onChange={(e) => change({ theme: e.target.value as Theme })}>
+          <select aria-label="Theme" className="inp" value={appr.theme} onChange={(e) => change({ theme: e.target.value as Theme })}>
             <option value="dark">Dark</option>
             <option value="light">Light</option>
             <option value="system">Match system</option>
           </select>
           <span className="lb">Density</span>
-          <select className="inp" value={appr.density} onChange={(e) => change({ density: e.target.value as Density })}>
+          <select aria-label="Density" className="inp" value={appr.density} onChange={(e) => change({ density: e.target.value as Density })}>
             <option value="comfortable">Comfortable</option>
             <option value="compact">Compact</option>
           </select>

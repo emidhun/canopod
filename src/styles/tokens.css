@@ -116,12 +116,12 @@
   --font-scale: 1;
 
   /* size ramp — dense by design; 9.5px is legible only in caps + tracking */
-  --fs-label: calc(9.5px * var(--font-scale));
-  --fs-micro: calc(10.5px * var(--font-scale));
-  --fs-small: calc(11.5px * var(--font-scale));
-  --fs-body: calc(12.5px * var(--font-scale));
-  --fs-md: calc(13.5px * var(--font-scale));
-  --fs-lg: calc(15px * var(--font-scale));
+  --fs-label: calc(11px * var(--font-scale));
+  --fs-micro: calc(12px * var(--font-scale));
+  --fs-small: calc(12px * var(--font-scale));
+  --fs-body: calc(14px * var(--font-scale));
+  --fs-md: calc(15px * var(--font-scale));
+  --fs-lg: calc(16px * var(--font-scale));
   --fs-xl: calc(19px * var(--font-scale));
 
   --lh-tight: 1.35;

@@ -9,14 +9,14 @@ export const Rot = ({ children, deg }: { children: React.ReactNode; deg: number 
   <span style={{ display: "inline-flex", transform: `rotate(${deg}deg)` }}>{children}</span>
 );
 
-export function Toggle({ on, onClick, disabled }: { on: boolean; onClick?: () => void; disabled?: boolean }) {
-  return <button className={"tgl" + (on ? " on" : "")} role="switch" aria-checked={on} disabled={disabled} onClick={onClick}><i /></button>;
+export function Toggle({ on, onClick, disabled, label }: { on: boolean; onClick?: () => void; disabled?: boolean; label?: string }) {
+  return <button className={"tgl" + (on ? " on" : "")} role="switch" aria-label={label} aria-checked={on} disabled={disabled} onClick={onClick}><i /></button>;
 }
 export function TRow({ title, hint, on, onToggle, disabled }: { title: string; hint?: string; on: boolean; onToggle?: () => void; disabled?: boolean }) {
   return (
     <div className="tglrow">
       <span className="tt"><b>{title}</b>{hint && <span>{hint}</span>}</span>
-      <Toggle on={on} onClick={onToggle} disabled={disabled} />
+      <Toggle on={on} onClick={onToggle} disabled={disabled} label={title} />
     </div>
   );
 }
@@ -42,14 +42,16 @@ export function InsertVar({ onPick }: { onPick: (t: string) => void }) {
   useEffect(() => {
     if (!open) return;
     const d = (e: MouseEvent) => { if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false); };
+    const key = (e: KeyboardEvent) => { if (e.key === "Escape") { setOpen(false); ref.current?.querySelector<HTMLButtonElement>("button")?.focus(); } };
+    document.addEventListener("keydown", key);
     document.addEventListener("mousedown", d);
-    return () => document.removeEventListener("mousedown", d);
+    return () => { document.removeEventListener("mousedown", d); document.removeEventListener("keydown", key); };
   }, [open]);
   return (
     <span className="varwrap" ref={ref}>
-      <button className="btn sm gh" onClick={() => setOpen((o) => !o)}><Plus size={10} />Insert variable<span className="k">⌘/</span></button>
+      <button className="btn sm gh" aria-haspopup="dialog" aria-expanded={open} onClick={() => setOpen((o) => !o)}><Plus size={10} />Insert variable<span className="k">⌘/</span></button>
       {open && (
-        <div className="varmenu">
+        <div className="varmenu" role="dialog" aria-label="Template variables">
           <div className="vh">Template variables</div>
           {VARS.map((v) => (
             <button className="vitem" key={v.t} onClick={() => { onPick(v.t); setOpen(false); }}><code>{v.t}</code><span>{v.d}</span></button>

@@ -44,7 +44,7 @@ export default function AdvancedPage({ flash, settings, patch, markDirty, reload
           <span className="lb">Version</span>
           <span style={{ font: "var(--fs-small) var(--mono)", color: "var(--text-secondary)" }}>{ver}</span>
           <span className="lb">Config</span>
-          <div className="row"><input className="inp mono gr" value={configPath} readOnly />
+          <div className="row"><input aria-label="Configuration path" className="inp mono gr" value={configPath} readOnly />
             <button className="ico" title="Copy path" onClick={() => { navigator.clipboard?.writeText(configPath).then(() => flash("Path copied"), () => flash("Copy failed")); }}><Copy size={12} /></button></div>
         </div>
         <div className="row" style={{ marginTop: 10 }}>

@@ -232,3 +232,8 @@ select.cx-input{appearance:none;cursor:pointer;background-image:linear-gradient(
    otherwise win and restore `cursor: default` and a hover background */
 [data-soon],.cx-btn[data-soon]:disabled,.cx-ib[data-soon]:disabled{cursor:not-allowed}
 [data-soon]:hover,.cx-btn[data-soon]:disabled:hover,.cx-ib[data-soon]:disabled:hover{background:none}
+
+.cx-modal__foot { flex-wrap: wrap; }
+.cx-modal__hint { flex: 1 1 180px; }
+.cx-modal__hint span { white-space: normal; overflow-wrap: anywhere; }
+.cx-pop__item:focus-visible, .cx-btn:focus-visible, .cx-ib:focus-visible, .cx-tab:focus-visible { outline: 2px solid var(--action-primary); outline-offset: -2px; }

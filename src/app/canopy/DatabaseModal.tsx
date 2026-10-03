@@ -34,16 +34,24 @@ const snapDefault = (db: string) => {
 };
 
 export default function DatabaseModal({ wt, onClose }: { wt: WorktreeNode; onClose: () => void }) {
+  const demo = import.meta.env.DEV && !hasBackend() && new URLSearchParams(window.location.search).get("review") === "database";
   const showToast = useStore((s) => s.showToast);
   const resetDb = useStore((s) => s.resetDb);
   // reset is fire-and-forget over reset:status events, so its progress lives in
   // the store — the dialog reads it rather than keeping a second copy
   const resetting = useStore((s) => !!s.resetting[wt.wtKey]);
   const notify = useStore((s) => s.notify);
-  const [dbs, setDbs] = useState<string[]>([]);
-  const [current, setCurrent] = useState<string | null>(wt.dbName);
+  const [dbs, setDbs] = useState<string[]>(import.meta.env.DEV && !hasBackend() && new URLSearchParams(window.location.search).get("review") === "database" ? [wt.dbName || "checkout_dev", "checkout_snapshot"] : []);
+  const [loadingDatabases, setLoadingDatabases] = useState(hasBackend());
+  const [databaseError, setDatabaseError] = useState<string | null>(null);
+  const [loadRevision, setLoadRevision] = useState(0);
+  const [current, setCurrent] = useState<string | null>(wt.dbName ?? (demo ? "checkout_dev" : null));
   const [q, setQ] = useState("");
-  const [restoreOpen, setRestoreOpen] = useState(false);
+  const [restoreOpen, setRestoreOpen] = useState(() => import.meta.env.DEV && !hasBackend() && new URLSearchParams(window.location.search).get("review") === "restore");
+  const [confirmReset, setConfirmReset] = useState(false);
+  const [resetAcknowledged, setResetAcknowledged] = useState(false);
+  const tree = useStore((s) => s.tree);
+  const repo = tree.find((r) => r.worktrees.some((w) => w.wtKey === wt.wtKey));
   const [snap, setSnap] = useState<string | null>(null);
   const [switching, setSwitching] = useState(false);
   const [job, setJob] = useState<Job>(null);
@@ -51,9 +59,16 @@ export default function DatabaseModal({ wt, onClose }: { wt: WorktreeNode; onClo
 
   useEffect(() => {
     if (!hasBackend()) return;
-    ipc.listDatabases(wt.wtKey).then(setDbs).catch(() => {});
-    ipc.currentDatabase(wt.wtKey).then(setCurrent).catch(() => {});
-  }, [wt.wtKey]);
+    let active = true;
+    setLoadingDatabases(true);
+    setDatabaseError(null);
+    setCurrent(null);
+    Promise.all([ipc.listDatabases(wt.wtKey), ipc.currentDatabase(wt.wtKey)])
+      .then(([names, destination]) => { if (active) { setDbs(names); setCurrent(destination); } })
+      .catch((e) => { if (active) setDatabaseError(errText(e)); })
+      .finally(() => { if (active) setLoadingDatabases(false); });
+    return () => { active = false; };
+  }, [wt.wtKey, loadRevision]);
 
   const busy = switching || job !== null || resetting;
   const list = dbs.filter((d) => d.toLowerCase().includes(q.toLowerCase()));
@@ -62,7 +77,7 @@ export default function DatabaseModal({ wt, onClose }: { wt: WorktreeNode; onClo
       open until it finishes — these take seconds to minutes, and closing on
       "started" made every one of them look instantaneous. */
   const run = async (which: Exclude<Job, null>, work: () => Promise<void>, ok: string) => {
-    if (busy) return;
+    if (busy || loadingDatabases || databaseError) return;
     setJob(which);
     setError(null);
     try {
@@ -122,6 +137,44 @@ export default function DatabaseModal({ wt, onClose }: { wt: WorktreeNode; onClo
      would be a nasty surprise. */
   usePrimaryAction("enter", snap !== null && !!snap.trim() && !busy, createSnapshot);
 
+  const performReset = () => {
+    if (!resetAcknowledged || !current || busy) return;
+    run(
+              "reset",
+              async () => {
+                // reset_db awaits the drop + re-seed, so the invoke IS the
+                // progress signal.
+                if (hasBackend()) return ipc.resetDb(wt.wtKey);
+                // Browser-only: the mock reports through the same `resetting`
+                // flag, so wait for it to clear rather than claiming success
+                // the instant the call returns.
+                resetDb(wt.wtKey);
+                await new Promise<void>((resolve) => {
+                  const un = useStore.subscribe((s) => {
+                    if (!s.resetting[wt.wtKey]) {
+                      un();
+                      resolve();
+                    }
+                  });
+                });
+              },
+              "Database reset",
+            );
+  };
+
+  if (confirmReset) return <Modal danger icon={Database} title="Reset this database?" sub={wt.branch} busy={busy}
+    onClose={() => setConfirmReset(false)} foot={<>
+      <button className="cx-btn cx-btn--ghost" onClick={() => busy ? onClose() : setConfirmReset(false)}>{busy ? "Run in background" : "Cancel"}</button>
+      <Spacer />
+      <button className="cx-btn cx-btn--danger" disabled={!resetAcknowledged || !current || busy} onClick={performReset}>{busy ? "Resetting…" : "Reset database"}</button>
+    </>}>
+    <p>This runs the repository’s configured reset command. Existing data may be deleted and reseeded.</p>
+    <dl className="cxm-destination"><dt>Repository</dt><dd>{repo?.name ?? "Current repository"}</dd><dt>Worktree</dt><dd>{wt.branch}</dd><dt>Database</dt><dd>{current ?? "Unknown — reset unavailable"}</dd></dl>
+    <div className="cx-alert">Reset cannot be undone directly. Cancel and export a backup first if you need to preserve this data.</div>
+    <label className="cxm-ack"><input type="checkbox" checked={resetAcknowledged} disabled={busy || loadingDatabases || !!databaseError} onChange={(e) => setResetAcknowledged(e.target.checked)} /><span>I understand this may delete contents of <strong>{current}</strong>.</span></label>
+    {error && <div className="cx-alert cx-alert--error" role="alert">{error}</div>}
+  </Modal>;
+
   if (restoreOpen) return <RestoreDatabaseModal wt={wt} onClose={onClose} />;
 
   /* ── the snapshot name prompt is its own step, not a separate dialog ── */
@@ -162,15 +215,16 @@ export default function DatabaseModal({ wt, onClose }: { wt: WorktreeNode; onClo
         }
       >
         <div className="cxm-fld">
-          <div className="cxm-flab cxm-flab--f">Snapshot name</div>
+          <label className="cxm-flab cxm-flab--f" htmlFor="database-snapshot-name">Snapshot name</label>
           <input
             className="cx-input cx-input--mono"
+            id="database-snapshot-name"
             value={snap}
             autoFocus
             spellCheck={false}
             onChange={(e) => setSnap(e.target.value)}
           />
-          <div className="cxm-fhint">Copies {current} as it is right now. Restore it later from the actions list.</div>
+          <div className="cxm-fhint">Copies {current} as it is right now. Choose the copy in “Switch database” to use it.</div>
         </div>
       </Modal>
     );
@@ -180,13 +234,13 @@ export default function DatabaseModal({ wt, onClose }: { wt: WorktreeNode; onClo
     <Modal
       icon={Database}
       title="Database"
-      sub={current ? `${current} · isolated to this worktree` : "not configured"}
+      sub={wt.branch}
       busy={busy}
       onClose={onClose}
       foot={
         <>
           <Hint icon={Info}>
-            {busy ? "This runs in the worktree — it can take a while" : "Each worktree gets its own database"}
+            {busy ? "This runs in the worktree — it can take a while" : "Actions use this worktree’s configured database connection"}
           </Hint>
           <Spacer />
           <button className="cx-btn cx-btn--ghost" onClick={onClose}>
@@ -194,7 +248,7 @@ export default function DatabaseModal({ wt, onClose }: { wt: WorktreeNode; onClo
           </button>
           <button
             className="cx-btn cx-btn--primary"
-            disabled={busy}
+            disabled={busy || loadingDatabases || !!databaseError || !current}
             onClick={() =>
               run("migrate", async () => {
                 if (hasBackend()) await ipc.runMigration(wt.wtKey);
@@ -216,16 +270,18 @@ export default function DatabaseModal({ wt, onClose }: { wt: WorktreeNode; onClo
         </>
       }
     >
+      {demo && <div className="changes-demo">Demo data · no database commands run</div>}
+      <dl className="cxm-destination"><dt>Current database</dt><dd>{current ?? "Not configured"}</dd><dt>Worktree</dt><dd>{wt.branch}</dd></dl>
       <div className="cxm-fld">
         <div className="cxm-flab">
           <Database size={11} />
           Switch database
         </div>
         <div className="cxm-pick-f" style={{ marginBottom: "var(--sp-tight)" }}>
-          <input placeholder="Search databases…" value={q} spellCheck={false} onChange={(e) => setQ(e.target.value)} />
+          <input aria-label="Search databases" placeholder="Search databases…" value={q} spellCheck={false} onChange={(e) => setQ(e.target.value)} />
         </div>
         <div className="cxm-dbl">
-          {list.length === 0 ? (
+          {loadingDatabases ? <div className="cxm-pick-e" role="status">Loading databases…</div> : databaseError ? <div className="cx-alert cx-alert--error" role="alert">{databaseError}<button className="cx-btn" onClick={() => setLoadRevision((r) => r + 1)}>Retry</button></div> : list.length === 0 ? (
             <div className="cxm-pick-e">{dbs.length ? `No databases match “${q}”.` : "No databases found."}</div>
           ) : (
             list.map((d) => (
@@ -243,7 +299,7 @@ export default function DatabaseModal({ wt, onClose }: { wt: WorktreeNode; onClo
 
       <div className="cxm-fld">
         <div className="cxm-flab">Actions</div>
-        <button className="cxm-act" disabled={busy} onClick={() => setSnap(snapDefault(current ?? "db"))}>
+        <button className="cxm-act" disabled={busy || loadingDatabases || !!databaseError || !current} onClick={() => setSnap(snapDefault(current ?? "db"))}>
           <span className="ic">
             <Pull size={13} />
           </span>
@@ -252,7 +308,7 @@ export default function DatabaseModal({ wt, onClose }: { wt: WorktreeNode; onClo
         </button>
         <button
           className="cxm-act"
-          disabled={busy}
+          disabled={busy || loadingDatabases || !!databaseError || !current}
           onClick={async () => {
             if (!hasBackend()) return showToast("Export needs the desktop app");
             const { save } = await import("@tauri-apps/plugin-dialog");
@@ -267,9 +323,9 @@ export default function DatabaseModal({ wt, onClose }: { wt: WorktreeNode; onClo
         </button>
         <button
           className="cxm-act"
-          disabled={busy}
+          disabled={busy || loadingDatabases || !!databaseError}
           onClick={async () => {
-            if (!hasBackend()) return showToast("Restore needs the desktop app");
+            if (!hasBackend() && !demo) return showToast("Restore needs the desktop app");
             setRestoreOpen(true);
           }}
         >
@@ -279,30 +335,8 @@ export default function DatabaseModal({ wt, onClose }: { wt: WorktreeNode; onClo
         </button>
         <button
           className="cxm-act cxm-act--danger"
-          disabled={busy}
-          onClick={() =>
-            run(
-              "reset",
-              async () => {
-                // reset_db awaits the drop + re-seed, so the invoke IS the
-                // progress signal.
-                if (hasBackend()) return ipc.resetDb(wt.wtKey);
-                // Browser-only: the mock reports through the same `resetting`
-                // flag, so wait for it to clear rather than claiming success
-                // the instant the call returns.
-                resetDb(wt.wtKey);
-                await new Promise<void>((resolve) => {
-                  const un = useStore.subscribe((s) => {
-                    if (!s.resetting[wt.wtKey]) {
-                      un();
-                      resolve();
-                    }
-                  });
-                });
-              },
-              "Database reset",
-            )
-          }
+          disabled={busy || loadingDatabases || !!databaseError || !current}
+          onClick={() => { setResetAcknowledged(false); setConfirmReset(true); }}
         >
           <span className="ic">{resetting || job === "reset" ? <Spinner size={12} /> : <Restart size={12} />}</span>
           {resetting || job === "reset" ? "Resetting…" : "Reset database"}
