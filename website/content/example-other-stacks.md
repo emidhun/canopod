@@ -144,7 +144,9 @@ database as part of the service and skip those actions.
 
 ## A stack with no database at all
 
-Nothing requires one. Leave `PG_DB` out and the database tools and dialog simply don't appear:
+Nothing requires one. Leave `PG_DB` out and the rail's **Database tools** shortcut doesn't appear. The
+dialog stays in the worktree ⋯ menu → **Database…** with only **Restore from file…** enabled, in case you
+ever want to load a dump:
 
 ```json
 {

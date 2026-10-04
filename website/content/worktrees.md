@@ -125,7 +125,7 @@ The uncommitted-changes dot beside the branch name in the worktree bar opens one
 read, not selected from: it annotates itself per mode so you can see what the chosen git invocation
 will touch, and the exact command is printed above it.
 
-!shot modal-uncommitted | The uncommitted-changes dialog with a clean working tree. The dot only appears when there is something to commit.
+!shot modal-uncommitted | Commit mode with eight changed files: the four tracked changes go into the commit, and the four untracked files stay out unless you tick *Also add 4 untracked files*.
 
 | Mode | Runs | Options |
 |---|---|---|
