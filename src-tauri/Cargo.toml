@@ -52,20 +52,20 @@ tokio = { version = "1", features = ["process", "io-util", "sync", "time", "macr
 fix-path-env = { git = "https://github.com/tauri-apps/fix-path-env-rs", rev = "c4c45d503ea115a839aae718d02f79e7c7f0f673", optional = true }
 sysinfo = "0.39.3"
 # Match Tauri's platform paths without linking a desktop runtime.
-dirs = "6"
+dirs = "7"
 # OS entropy and audited constant-time bearer comparison.
 getrandom = "0.4"
 subtle = "2.6"
 zeroize = "1"
 # Stable job retry identities and bounded log secret filtering.
-sha2 = "0.10"
+sha2 = "0.11"
 regex = "1"
 aho-corasick = "1"
 # Loopback application API; protocol-specific MCP handlers remain separate.
 # Pin the reviewed HTTP middleware behavior shared with the MCP transport.
 axum = { version = "=0.8.9", default-features = false, features = ["http1", "json", "tokio"] }
 # Official MCP protocol/transport; stateless requests retain no session history.
-rmcp = { version = "=3.4.0", default-features = false, features = ["server", "transport-streamable-http-server"] }
+rmcp = { version = "=3.5.0", default-features = false, features = ["server", "transport-streamable-http-server"] }
 tokio-util = { version = "0.7", features = ["rt"] }
 hyper = { version = "1", features = ["server", "http1"] }
 hyper-util = { version = "0.1", features = ["tokio", "service"] }
