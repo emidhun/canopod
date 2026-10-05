@@ -46,6 +46,7 @@ it("disables restore until the database list loads and lets a failed load retry"
   const user = userEvent.setup(); render(<RestoreDatabaseModal wt={wt} onClose={() => {}} />);
   expect(screen.getByRole("button", { name: "Create and restore" })).toBeDisabled();
   await screen.findByText(/Connection failed/);
+  await waitFor(() => expect(screen.getByLabelText("Destination")).toHaveFocus());
   await user.click(screen.getByText("Choose dump file…"));
   await user.type(screen.getByLabelText("New database name"), "fresh_db");
   expect(screen.getByRole("button", { name: "Create and restore" })).toBeDisabled();

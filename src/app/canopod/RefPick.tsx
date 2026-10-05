@@ -5,6 +5,7 @@
    you wondering where it went; git simply won't check it out twice. */
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Chevron, Fork, Plus, Search } from "../../icons";
+import { useViewportPopover } from "./viewportPopover";
 import type { Branches } from "../../ipc";
 
 export interface RefPickProps {
@@ -34,6 +35,8 @@ export default function RefPick({
   const [q, setQ] = useState("");
   const [open, setOpen] = useState(false);
   const box = useRef<HTMLDivElement>(null);
+  const popup = useRef<HTMLDivElement>(null);
+  useViewportPopover(box, popup, open);
 
   useEffect(() => {
     const d = (e: MouseEvent) => {
@@ -105,7 +108,7 @@ export default function RefPick({
       </div>
 
       {open && (
-        <div className="cxm-pick-l">
+        <div className="cxm-pick-l" ref={popup} popover="manual">
           {!branches && <div className="cxm-pick-e">Loading refs…</div>}
 
           {canCreate && (

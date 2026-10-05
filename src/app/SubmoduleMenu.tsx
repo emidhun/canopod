@@ -1,7 +1,8 @@
 // Per-submodule pull + branch-switch menu, opened from the "⋮" welded to the
 // worktree header's "↓ Pull" link. State (subs, pulling, fetched) lives in
 // WorktreeHeader; this component is presentational + owns which row is expanded.
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState, type RefObject } from "react";
+import { useViewportPopover } from "./canopod/viewportPopover";
 import { ipc, type Branches } from "../ipc";
 import type { SubmoduleStatus } from "../types";
 import { Chevron, Fork, Pull, Refresh, Search, Spinner } from "../icons";
@@ -68,6 +69,7 @@ function SubBranchList({
 
 export default function SubmoduleMenu({
   wtKey,
+  anchor,
   subs,
   pulling,
   fetchedLabel,
@@ -77,6 +79,7 @@ export default function SubmoduleMenu({
   onRefetch,
 }: {
   wtKey: string;
+  anchor: RefObject<HTMLElement | null>;
   subs: SubmoduleStatus[];
   pulling: string | null; // sub.path | "all" | null
   fetchedLabel: string;
@@ -85,10 +88,12 @@ export default function SubmoduleMenu({
   onPickBranch: (path: string, branch: string) => void;
   onRefetch: () => void;
 }) {
+  const menu = useRef<HTMLDivElement>(null);
+  useViewportPopover(anchor, menu, true, 440, 400);
   const [openPath, setOpenPath] = useState<string | null>(null);
 
   return (
-    <div className="sm-menu" onMouseDown={(e) => e.stopPropagation()}>
+    <div className="sm-menu" ref={menu} popover="manual" onMouseDown={(e) => e.stopPropagation()}>
       <button className="sm-all" onClick={onPullAll}>
         <span className="sm-all-ic">{pulling === "all" ? <Spinner size={17} /> : <Pull size={17} />}</span>
         <span className="sm-all-tx">

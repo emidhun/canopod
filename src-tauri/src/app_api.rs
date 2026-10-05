@@ -1309,6 +1309,42 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn service_port_reset_removes_override_reprovisions_and_follows_future_defaults() {
+        let running = Running::start().await;
+        let (_, path) = running.write_fixture("echo ready").await;
+        std::fs::write(Path::new(&path).join(".worktreemanager.json"), serde_json::json!({
+            "provision": [{"path":".env", "format":"dotenv", "keys":{"PORT":"${WT_WEB_PORT}"}}]
+        }).to_string()).unwrap();
+        running.app.state::<AppState>().settings.write().repos[0].services = vec![
+            crate::settings::ServiceCfg { id:"web".into(), name:"Web".into(), base_port:Some(4000), ..Default::default() },
+            crate::settings::ServiceCfg { id:"other".into(), name:"Other".into(), base_port:Some(4010), ..Default::default() },
+        ];
+        crate::state::refresh_tree(&running.app).await.unwrap();
+        let key = running.app.state::<AppState>().tree.read()[0].worktrees[0].services[0].svc_key.clone();
+        assert!(crate::operations::set_service_port(running.app.clone(), key.clone(), Some(80)).await.is_err());
+        assert!(crate::operations::set_service_port(running.app.clone(), key.clone(), Some(4010)).await.is_err());
+        crate::operations::set_service_port(running.app.clone(), key.clone(), Some(4050)).await.unwrap();
+        assert!(std::fs::read_to_string(Path::new(&path).join(".env")).unwrap().contains("PORT=4050"));
+        assert_eq!(crate::settings::load_runtime(running.app.path()).port_overrides.get(&key), Some(&4050));
+
+        // A reset must also reject conflicts without removing the override.
+        running.app.state::<AppState>().settings.write().repos[0].services[1].base_port = Some(4000);
+        crate::state::refresh_tree(&running.app).await.unwrap();
+        assert!(crate::operations::set_service_port(running.app.clone(), key.clone(), None).await.is_err());
+        assert_eq!(running.app.state::<AppState>().runtime.read().port_overrides.get(&key), Some(&4050));
+        running.app.state::<AppState>().settings.write().repos[0].services[1].base_port = Some(4010);
+        crate::state::refresh_tree(&running.app).await.unwrap();
+        crate::operations::set_service_port(running.app.clone(), key.clone(), None).await.unwrap();
+        assert!(!running.app.state::<AppState>().runtime.read().port_overrides.contains_key(&key));
+        assert!(!crate::settings::load_runtime(running.app.path()).port_overrides.contains_key(&key));
+        assert!(std::fs::read_to_string(Path::new(&path).join(".env")).unwrap().contains("PORT=4000"));
+        running.app.state::<AppState>().settings.write().repos[0].services[0].base_port = Some(4100);
+        crate::state::refresh_tree(&running.app).await.unwrap();
+        assert_eq!(running.app.state::<AppState>().tree.read()[0].worktrees[0].services[0].port, Some(4100));
+        running.finish().await;
+    }
+
+    #[tokio::test]
     async fn mcp_failed_setup_preserves_created_worktree_and_job_checkpoint() {
         let running = Running::start().await;
         let (bearer, _) = running.write_fixture("exit 23").await;

@@ -9,6 +9,7 @@ import { errText, hasBackend, ipc, type Branches } from "../../ipc";
 import { useStore, type LaneSession } from "../../store";
 import type { SubmoduleStatus, WorktreeNode } from "../../types";
 import { fmtRelTime } from "../../types";
+import { useViewportPopover } from "./viewportPopover";
 import { agentState, type AttnItem } from "../nextAction";
 import { LAYOUTS, LAYOUT_ORDER, layoutLabel, type LayoutId, type PaneKind } from "./WorkSurface";
 
@@ -157,7 +158,7 @@ export default function StatusBar({
 
 /* ── the welded pull popover ──────────────────────────────────────── */
 
-function PullPop({ wt, onClose, anchor }: { wt: WorktreeNode; onClose: () => void; anchor?: React.RefObject<HTMLElement | null> }) {
+function PullPop({ wt, onClose, anchor }: { wt: WorktreeNode; onClose: () => void; anchor: React.RefObject<HTMLElement | null> }) {
   const showToast = useStore((s) => s.showToast);
   const syncSubmodules = useStore((s) => s.syncSubmodules);
   const syncing = useStore((s) => !!s.subSyncing[wt.wtKey]);
@@ -167,6 +168,7 @@ function PullPop({ wt, onClose, anchor }: { wt: WorktreeNode; onClose: () => voi
   const [busy, setBusy] = useState<string | null>(null);
   const [fetchedAt, setFetchedAt] = useState(0);
   const ref = useRef<HTMLDivElement>(null);
+  useViewportPopover(anchor, ref, true, 440, "content");
 
   const reload = () => {
     if (!hasBackend()) {
@@ -250,7 +252,7 @@ function PullPop({ wt, onClose, anchor }: { wt: WorktreeNode; onClose: () => voi
   }
 
   return (
-    <div className="cxs-pullpop" ref={ref}>
+    <div className="cxs-pullpop" ref={ref} popover="manual">
       <button className="cxs-pp-all" onClick={pullAll} disabled={!hasBackend()}>
         <span className="cxs-pp-ic">{busy === "all" ? <Spinner size={14} /> : <Pull size={14} />}</span>
         <span className="cxs-pp-tx">
