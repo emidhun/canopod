@@ -100,7 +100,7 @@ In the ⋯ menu, in order:
 Everything the old service cards used to say, in one 34px row.
 [Services and ports](services-ports.html) covers it in full.
 
-!shot main-rail | The service rail: running services as filled chips, then the ⋯ menu for more services and database tools, and custom commands.
+!shot main-rail | The service rail of a stopped worktree with a database: each service with its port and **Start**, the ⋯ menu holding **Database tools**, then custom commands.
 
 ## Work surface
 
