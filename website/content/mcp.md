@@ -5,6 +5,9 @@ description: Connect Claude Code, Codex or another local MCP client to Canopod w
 
 # MCP and coding agents
 
+New to the integration? [Explore Canopod MCP](canopod-mcp.html) for a product overview, examples,
+and connection steps. This page is the setup and tool reference for version 0.5.
+
 Canopod 0.5 can expose its existing backend to local coding agents through MCP Streamable HTTP. The
 agent sees the same repositories, worktrees, services, jobs and configuration as Canopod. It does not
 start a second service manager or receive a general shell tool.
@@ -18,7 +21,7 @@ enable only the capabilities it needs:
 - Start, stop or restart configured services.
 - Update explicitly supported repository and existing-service fields with revision checks.
 
-Destructive worktree, database and command operations are not exposed in 0.5. They remain disabled
+Dedicated worktree-removal and database-management tools are not exposed in 0.5. They remain disabled
 until Canopod has a human approval and audit flow.
 
 ## Connect a client
@@ -31,6 +34,36 @@ then reconnect clients.
 After connecting, clients can discover the `canopod_worktree_delivery` prompt. It requires an allowed
 repository ID and a task, never invents a branch, resolves only the configured or explicit base, polls
 durable jobs to completion and distinguishes a running process from verified readiness.
+
+## Tool reference
+
+Canopod 0.5 exposes **15 MCP tools**. Read access is limited to the repositories you allow.
+The three write capabilities are separate grants in Settings → MCP.
+
+| Tool | What it does | Permission |
+|---|---|---|
+| `canopod_repositories` | List allowed repositories | Read |
+| `canopod_status` | Read cached worktree and service counts | Read |
+| `canopod_worktrees` | List a repository's worktrees | Read |
+| `canopod_worktree` | Inspect Git, setup, and service state | Read |
+| `canopod_job` | Follow an operation's status | Read |
+| `canopod_job_output` | Read bounded job output | Read |
+| `canopod_services` | Read configured services and states | Read |
+| `canopod_service_logs` | Read recent, bounded, redacted logs | Read |
+| `canopod_repository_config` | Read supported public configuration | Read |
+| `canopod_create_worktree` | Create a worktree using repository defaults | Worktree creation and setup |
+| `canopod_run_setup` | Run configured setup in a linked (non-main) worktree | Worktree creation and setup |
+| `canopod_start_service` | Start a configured service | Service control |
+| `canopod_stop_service` | Stop a configured service | Service control |
+| `canopod_restart_service` | Restart a configured service | Service control |
+| `canopod_update_configuration` | Patch supported repository or existing-service fields with revision checks | Configuration |
+
+Configured setup and service commands run on your machine. Configuration permission can change an
+existing service command, so grant it deliberately. Patches cannot add or remove services, expose
+stored environment values, or automatically restart a running service. There is no general shell tool.
+
+Read tools may use cached state. A running process is not proof that the service is ready; check
+readiness separately. Connected AI clients follow their own data handling settings.
 
 ## Headless setup
 

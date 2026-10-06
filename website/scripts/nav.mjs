@@ -8,7 +8,7 @@ export const NAV = [
   {
     group: "Getting started",
     items: [
-      ["index", "Home"],
+      ["getting-started", "Documentation home"],
       ["overview", "What Canopod is"],
       ["install-macos", "Install on macOS"],
       ["install-windows", "Install on Windows"],

@@ -1,8 +1,9 @@
-# Documentation site — build website/ and publish it to GitHub Pages.
+# Build both domains and publish the product website to this repository's Pages.
+# Documentation is published by emidhun/canopod-docs; see website/DEPLOYMENT.md.
 #
 # The site has no dependencies: content is Markdown and the generator is plain
 # Node, so there is nothing to install and no lockfile to keep in step.
-name: docs
+name: website
 
 on:
   push:
@@ -13,6 +14,7 @@ on:
   pull_request:
     paths:
       - "website/**"
+      - ".github/workflows/docs.yml"
   workflow_dispatch:
 
 permissions:
@@ -33,25 +35,34 @@ jobs:
       - uses: actions/setup-node@v7
         with:
           node-version: 22
-      - name: Build the site
-        run: node scripts/build.mjs
+      - name: Build website and documentation
+        run: node scripts/build.mjs --split
         working-directory: website
+        env:
+          CANOPOD_SITE_URL: ${{ vars.CANOPOD_SITE_URL || 'https://canopod.com/' }}
+          CANOPOD_DOCS_URL: ${{ vars.CANOPOD_DOCS_URL || 'https://docs.canopod.com/' }}
+      - name: Check navigation and search metadata
+        run: node scripts/check.mjs --split
+        working-directory: website
+        env:
+          CANOPOD_SITE_URL: ${{ vars.CANOPOD_SITE_URL || 'https://canopod.com/' }}
+          CANOPOD_DOCS_URL: ${{ vars.CANOPOD_DOCS_URL || 'https://docs.canopod.com/' }}
       # the build reports missing screenshots instead of failing, so assert here
       # that every page and every image made it into the output
       - name: Check the output
         working-directory: website
         run: |
-          pages=$(ls site/*.html | wc -l | tr -d ' ')
-          shots=$(ls site/assets/screens/light/*.png site/assets/screens/dark/*.png | wc -l | tr -d ' ')
-          echo "built $pages pages, $shots screenshots"
-          test "$pages" -ge 33
+          pages=$(ls site-web/*.html | wc -l | tr -d ' ')
+          docs=$(ls site-docs/*.html | wc -l | tr -d ' ')
+          shots=$(ls site-docs/assets/screens/light/*.png site-docs/assets/screens/dark/*.png | wc -l | tr -d ' ')
+          echo "built $pages website pages, $docs documentation/redirect pages, $shots screenshots"
+          test "$pages" -eq 39
+          test "$docs" -ge 34
           test "$shots" -ge 80
-      - name: Disable Jekyll
-        run: touch website/site/.nojekyll
       - uses: actions/upload-pages-artifact@v5
         if: github.event_name != 'pull_request'
         with:
-          path: website/site
+          path: website/site-web
 
   deploy:
     if: github.event_name != 'pull_request'

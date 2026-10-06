@@ -1,0 +1,55 @@
+# Install as .github/workflows/docs.yml in emidhun/canopod-docs.
+# The content stays in emidhun/canopod. Run this workflow after a docs update.
+name: Publish documentation
+
+on:
+  workflow_dispatch:
+    inputs:
+      source_ref:
+        description: Canopod source branch, tag, or commit to publish
+        required: true
+        default: main
+        type: string
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: documentation-pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          repository: emidhun/canopod
+          ref: ${{ inputs.source_ref }}
+          persist-credentials: false
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+      - name: Build and validate both domains
+        working-directory: website
+        env:
+          CANOPOD_SITE_URL: https://canopod.com/
+          CANOPOD_DOCS_URL: https://docs.canopod.com/
+        run: |
+          node scripts/build.mjs --split
+          node scripts/check.mjs --split
+      - uses: actions/upload-pages-artifact@v5
+        with:
+          path: website/site-docs
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v5
