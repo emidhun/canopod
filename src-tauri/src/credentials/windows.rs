@@ -143,24 +143,56 @@ fn validate_acl(file: &File, expected: &Allocation) -> io::Result<()> {
         let mut expected_owner = PSID::default();
         let mut defaulted = false.into();
         win(GetSecurityDescriptorOwner(PSECURITY_DESCRIPTOR(expected.0), &mut expected_owner, &mut defaulted))?;
+        if owner.0.is_null() || expected_owner.0.is_null()
+            || !IsValidSid(owner).as_bool() || !IsValidSid(expected_owner).as_bool() {
+            return Err(denied("invalid credential owner SID"));
+        }
         win(EqualSid(owner, expected_owner)).map_err(|_| denied("credential owner is not the current user"))?;
         let mut control = 0;
         let mut revision = 0;
         win(GetSecurityDescriptorControl(sd, &mut control, &mut revision))?;
-        if control & SE_DACL_PROTECTED.0 == 0 || acl.is_null() || (*acl).AceCount != 1 {
+        if control & SE_DACL_PROTECTED.0 == 0 || acl.is_null() || !IsValidAcl(acl).as_bool() {
             return Err(denied("credential must have a protected owner-only DACL"));
+        }
+        let mut size = ACL_SIZE_INFORMATION::default();
+        win(GetAclInformation(acl, (&mut size as *mut ACL_SIZE_INFORMATION).cast(),
+            std::mem::size_of::<ACL_SIZE_INFORMATION>() as u32, AclSizeInformation))?;
+        if size.AceCount != 1 {
+            return Err(denied("credential must have exactly one owner ACE"));
         }
         let mut ace = std::ptr::null_mut();
         win(GetAce(acl, 0, &mut ace))?;
-        let header = &*ace.cast::<ACE_HEADER>();
-        // ACCESS_ALLOWED_ACE_TYPE = 0. Reject all other, inherited, object,
-        // callback or conditional ACE types instead of interpreting their SID.
-        if header.AceType != 0 || header.AceFlags != 0 || (header.AceSize as usize) < std::mem::size_of::<ACCESS_ALLOWED_ACE>() {
+        if ace.is_null() {
+            return Err(denied("credential ACL entry is missing"));
+        }
+        // GetAce borrows the ACL allocation retained above. Bound every read
+        // within its used bytes and avoid assuming the ACE's alignment.
+        let offset = (ace as usize).checked_sub(acl as usize)
+            .filter(|offset| *offset >= std::mem::size_of::<ACL>())
+            .ok_or_else(|| denied("credential ACL entry is outside the ACL"))?;
+        let available = (size.AclBytesInUse as usize).checked_sub(offset)
+            .ok_or_else(|| denied("credential ACL entry is outside the ACL"))?;
+        if available < std::mem::size_of::<ACE_HEADER>() {
+            return Err(denied("truncated credential ACL header"));
+        }
+        let header = std::ptr::read_unaligned(ace.cast::<ACE_HEADER>());
+        // Only a plain, explicit allow ACE is valid. Object, callback and
+        // inherited ACEs must never be interpreted as ACCESS_ALLOWED_ACE.
+        let ace_size = usize::from(header.AceSize);
+        if header.AceType != 0 || header.AceFlags != 0 || ace_size > available
+            || ace_size < 16 {
             return Err(denied("unsupported credential ACL entry"));
         }
-        let allowed = &*ace.cast::<ACCESS_ALLOWED_ACE>();
+        let allowed = std::ptr::read_unaligned(ace.cast::<ACCESS_ALLOWED_ACE>());
         if allowed.Mask != FILE_ALL_ACCESS.0 { return Err(denied("unexpected credential ACL access mask")) }
-        let sid = PSID((&allowed.SidStart as *const u32).cast_mut().cast());
+        let sid_bytes = ace.cast::<u8>().add(std::mem::offset_of!(ACCESS_ALLOWED_ACE, SidStart));
+        let count = sid_bytes.add(1).read();
+        super::windows_ace_sid_length(ace_size, count)
+            .ok_or_else(|| denied("truncated credential ACL SID"))?;
+        let sid = PSID(sid_bytes.cast());
+        if !IsValidSid(sid).as_bool() {
+            return Err(denied("invalid credential ACL SID"));
+        }
         win(EqualSid(sid, expected_owner)).map_err(|_| denied("credential ACL grants another identity access"))?;
         Ok(())
     }
