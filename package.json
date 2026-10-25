@@ -13,30 +13,30 @@
     "csp:check": "node scripts/csp-check.mjs"
   },
   "dependencies": {
-    "@tauri-apps/api": "^2.11.1",
-    "@tauri-apps/plugin-dialog": "^2.7.3",
+    "@tauri-apps/api": "^2.12.4",
+    "@tauri-apps/plugin-dialog": "^2.8.3",
     "@tauri-apps/plugin-opener": "^2",
     "@xterm/addon-fit": "^0.11.0",
     "@xterm/addon-web-links": "^0.12.0",
     "@xterm/addon-webgl": "^0.19.0",
     "@xterm/xterm": "^6.0.0",
-    "react": "^19.3.0",
-    "react-dom": "^19.3.0",
-    "zustand": "^5.0.15"
+    "react": "^19.3.1",
+    "react-dom": "^19.3.1",
+    "zustand": "^5.0.16"
   },
   "devDependencies": {
     "@tauri-apps/cli": "^2",
     "@testing-library/jest-dom": "^7.0.1",
     "@testing-library/react": "^16.3.3",
-    "@testing-library/user-event": "^14.6.7",
+    "@testing-library/user-event": "^14.6.8",
     "@types/react": "^19.3.0",
     "@types/react-dom": "^19.3.0",
-    "@vitejs/plugin-react": "^6.1.1",
-    "jsdom": "^30.0.1",
-    "playwright": "^1.63.0",
+    "@vitejs/plugin-react": "^6.1.2",
+    "jsdom": "^30.1.3",
+    "playwright": "^1.64.1",
     "typescript": "~7.0.2",
-    "vite": "^8.3.0",
-    "vitest": "^5.0.1"
+    "vite": "^8.3.5",
+    "vitest": "^5.0.5"
   },
   "license": "AGPL-3.0-only"
 }
