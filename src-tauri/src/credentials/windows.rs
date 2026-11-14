@@ -160,8 +160,10 @@ fn validate_acl(file: &File, expected: &Allocation) -> io::Result<()> {
         if size.AceCount != 1 {
             return Err(denied("credential must have exactly one owner ACE"));
         }
-        let mut ace = std::ptr::null_mut();
-        win(GetAce(acl, 0, &mut ace))?;
+        // GetAce writes the out-pointer on success; it is only read after Ok.
+        let mut ace = std::mem::MaybeUninit::<*mut core::ffi::c_void>::uninit();
+        win(GetAce(acl, 0, ace.as_mut_ptr()))?;
+        let ace = ace.assume_init();
         if ace.is_null() {
             return Err(denied("credential ACL entry is missing"));
         }

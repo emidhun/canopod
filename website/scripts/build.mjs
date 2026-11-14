@@ -308,11 +308,18 @@ function build() {
 // There is no separate hidden marketing article to keep in sync.
 function htmlToMarkdown(html) {
   const codeBlocks = [];
-  const decode = value => value.replace(/&amp;/g, "&").replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&quot;/g, '"').replace(/&#39;/g, "'");
-  const text = html
-    .replace(/<(svg|script|style)\b[^>]*>[\s\S]*?<\/\1>/gi, "")
+  const entities = { amp: "&", lt: "<", gt: ">", quot: '"', "#39": "'" };
+  // Decode in one pass so "&amp;lt;" stays the literal text "&lt;".
+  const decode = value => value.replace(/&(amp|lt|gt|quot|#39);/g, (_, name) => entities[name]);
+  // Repeat until stable so removing one match cannot splice a new one together.
+  const untilStable = (value, strip) => {
+    for (let previous; previous !== value;) { previous = value; value = strip(value); }
+    return value;
+  };
+  const stripTags = value => untilStable(value, current => current.replace(/<[^>]*>/g, ""));
+  const text = untilStable(html, current => current.replace(/<(svg|script|style)\b[^>]*>[\s\S]*?<\/\1>/gi, ""))
     .replace(/<pre\b[^>]*>([\s\S]*?)<\/pre>/gi, (_, code) => {
-      codeBlocks.push(decode(code.replace(/<[^>]*>/g, "")));
+      codeBlocks.push(decode(stripTags(code)));
       return `\n\nCANOPODCODEBLOCK${codeBlocks.length - 1}END\n\n`;
     })
     .replace(/(^|>)([ \t]*)#/g, "$1$2\\#")
