@@ -382,7 +382,7 @@ mod tests {
                     use sysinfo::{
                         Pid, ProcessRefreshKind, ProcessStatus, ProcessesToUpdate, System,
                     };
-                    let mut system = System::new();
+                    let mut system = System::new().unwrap();
                     system.refresh_processes_specifics(
                         ProcessesToUpdate::Some(&[Pid::from_u32(leader as u32)]),
                         true,
@@ -405,7 +405,7 @@ mod tests {
             assert!(persisted.terminal_orphans.is_empty());
             loop {
                 use sysinfo::{Pid, ProcessRefreshKind, ProcessStatus, ProcessesToUpdate, System};
-                let mut system = System::new();
+                let mut system = System::new().unwrap();
                 system.refresh_processes_specifics(
                     ProcessesToUpdate::Some(&[Pid::from_u32(pid)]),
                     true,

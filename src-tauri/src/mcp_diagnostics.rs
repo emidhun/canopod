@@ -126,10 +126,10 @@ pub(super) async fn logs(
         let (text, truncated) = filter.text(if oversized { "[oversized output omitted]" } else { &line.text });
         serde_json::json!({"time":line.t,"level":line.lv,"text":text,"truncated":truncated || line.text.ends_with(" [line truncated]")})
     }).collect();
-    let snapshot = format!(
-        "{:x}",
-        Sha256::digest(serde_json::to_vec(&lines).map_err(|_| "encoding_failed")?)
-    );
+    let snapshot: String = Sha256::digest(serde_json::to_vec(&lines).map_err(|_| "encoding_failed")?)
+        .iter()
+        .map(|b| format!("{b:02x}"))
+        .collect();
     if args.snapshot.as_ref().is_some_and(|s| *s != snapshot) {
         return Err("snapshot_changed".into());
     }

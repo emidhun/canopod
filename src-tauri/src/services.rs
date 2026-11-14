@@ -988,7 +988,7 @@ pub(crate) fn proc_start_time_changed(pid: u32, recorded_secs: u64) -> bool {
 #[cfg(unix)]
 fn process_start_seconds(pid: u32) -> Option<u64> {
     use sysinfo::{Pid, ProcessRefreshKind, ProcessesToUpdate, System};
-    let mut sys = System::new();
+    let mut sys = System::new().ok()?;
     sys.refresh_processes_specifics(
         ProcessesToUpdate::Some(&[Pid::from_u32(pid)]),
         false,
@@ -1153,7 +1153,7 @@ mod tests {
         use std::time::{SystemTime, UNIX_EPOCH};
         let pid = std::process::id();
         use sysinfo::{Pid, ProcessRefreshKind, ProcessesToUpdate, System};
-        let mut sys = System::new();
+        let mut sys = System::new().unwrap();
         sys.refresh_processes_specifics(
             ProcessesToUpdate::Some(&[Pid::from_u32(pid)]),
             false,

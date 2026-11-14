@@ -26,7 +26,13 @@ struct StatsEvent {
 /// (the spawned zsh wrapper's children are the real node processes).
 pub fn spawn_stats_task(app: RuntimeContext) -> tokio::task::JoinHandle<()> {
     app.executor().spawn(async move {
-        let mut sys = System::new();
+        let mut sys = match System::new() {
+            Ok(sys) => sys,
+            Err(error) => {
+                log::warn!("service stats disabled: cannot read the process table: {error}");
+                return;
+            }
+        };
         loop {
             tokio::time::sleep(POLL).await;
 

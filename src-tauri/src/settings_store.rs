@@ -33,7 +33,7 @@ fn read(path: &Path) -> Result<Option<Vec<u8>>, String> {
     Ok(Some(bytes))
 }
 fn hash(bytes: &[u8]) -> String {
-    format!("{:x}", Sha256::digest(bytes))
+    Sha256::digest(bytes).iter().map(|b| format!("{b:02x}")).collect()
 }
 pub(crate) fn disk_revision(path: &Path) -> Result<Option<String>, String> {
     Ok(read(path)?.map(|b| hash(&b)))

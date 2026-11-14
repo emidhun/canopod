@@ -94,7 +94,8 @@ impl Drop for RuntimeOwner {
 pub fn refuse_legacy_desktop() -> Result<(), String> {
     use sysinfo::{Pid, ProcessRefreshKind, ProcessesToUpdate, System};
     let own = Pid::from_u32(std::process::id());
-    let mut system = System::new();
+    let mut system = System::new()
+        .map_err(|_| "cannot inspect the process table; refusing backend takeover")?;
     system.refresh_processes_specifics(
         ProcessesToUpdate::All,
         true,
@@ -157,13 +158,16 @@ pub(crate) fn orphan_owner_gone(pid: u32, owner: Option<&crate::settings::Proces
         {
             return true;
         }
-        let mut system = System::new();
-        system.refresh_processes_specifics(
-            ProcessesToUpdate::Some(&[Pid::from_u32(owner.pid)]),
-            false,
-            ProcessRefreshKind::nothing(),
-        );
-        return system.process(Pid::from_u32(owner.pid)).is_some_and(|p| p.status() == sysinfo::ProcessStatus::Zombie)
+        // An unreadable process table proves nothing; fall back to the start token.
+        let zombie = System::new().is_ok_and(|mut system| {
+            system.refresh_processes_specifics(
+                ProcessesToUpdate::Some(&[Pid::from_u32(owner.pid)]),
+                false,
+                ProcessRefreshKind::nothing(),
+            );
+            system.process(Pid::from_u32(owner.pid)).is_some_and(|p| p.status() == sysinfo::ProcessStatus::Zombie)
+        });
+        return zombie
             || process_start_token(owner.pid).is_some_and(|started| started > 0 && started != owner.started);
     }
     orphan_parent_verified(pid)
@@ -175,7 +179,9 @@ pub(crate) fn orphan_owner_gone(pid: u32, owner: Option<&crate::settings::Proces
 pub(crate) fn orphan_parent_verified(pid: u32) -> bool {
     use sysinfo::{Pid, ProcessRefreshKind, ProcessesToUpdate, System};
     let pid = Pid::from_u32(pid);
-    let mut system = System::new();
+    let Ok(mut system) = System::new() else {
+        return false;
+    };
     system.refresh_processes_specifics(
         ProcessesToUpdate::Some(&[pid]),
         false,
