@@ -430,7 +430,7 @@ fn now() -> u64 {
         .as_millis() as u64
 }
 fn hash(value: &[u8]) -> String {
-    format!("{:x}", Sha256::digest(value))
+    Sha256::digest(value).iter().map(|b| format!("{b:02x}")).collect()
 }
 fn canonical(value: &Value, depth: usize) -> Result<Value> {
     if depth > 32 {

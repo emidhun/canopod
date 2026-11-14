@@ -743,17 +743,19 @@ fn kill_session_child(pgid: &mut i32, child: &mut (dyn Child + Send + Sync)) {
     // retain its session ID, so inspect session members rather than the leader.
     if *pgid > 1 {
         use sysinfo::{System, ProcessesToUpdate, ProcessRefreshKind};
-        let mut system = System::new();
-        system.refresh_processes_specifics(ProcessesToUpdate::All, true, ProcessRefreshKind::nothing());
-        let mut groups = std::collections::HashSet::new();
-        for pid in system.processes().keys() {
-            let pid = pid.as_u32() as i32;
-            if unsafe { libc::getsid(pid) == *pgid } {
-                let group = unsafe { libc::getpgid(pid) };
-                if group > 1 { groups.insert(group); }
+        // Without a process table, only the direct child is killed below.
+        if let Ok(mut system) = System::new() {
+            system.refresh_processes_specifics(ProcessesToUpdate::All, true, ProcessRefreshKind::nothing());
+            let mut groups = std::collections::HashSet::new();
+            for pid in system.processes().keys() {
+                let pid = pid.as_u32() as i32;
+                if unsafe { libc::getsid(pid) == *pgid } {
+                    let group = unsafe { libc::getpgid(pid) };
+                    if group > 1 { groups.insert(group); }
+                }
             }
+            for group in groups { unsafe { libc::killpg(group, libc::SIGKILL); } }
         }
-        for group in groups { unsafe { libc::killpg(group, libc::SIGKILL); } }
     }
     if child.kill().is_ok() && child.wait().is_ok() { *pgid = 0; }
 }
