@@ -311,13 +311,19 @@ function htmlToMarkdown(html) {
   const entities = { amp: "&", lt: "<", gt: ">", quot: '"', "#39": "'" };
   // Decode in one pass so "&amp;lt;" stays the literal text "&lt;".
   const decode = value => value.replace(/&(amp|lt|gt|quot|#39);/g, (_, name) => entities[name]);
-  // Repeat until stable so removing one match cannot splice a new one together.
-  const untilStable = (value, strip) => {
-    for (let previous; previous !== value;) { previous = value; value = strip(value); }
-    return value;
+  // Scan rather than regex-delete, so removing one tag cannot splice another together.
+  const stripTags = value => {
+    let output = "", inTag = false;
+    for (const char of value) {
+      if (inTag) inTag = char !== ">";
+      else if (char === "<") inTag = true;
+      else output += char;
+    }
+    return output;
   };
-  const stripTags = value => untilStable(value, current => current.replace(/<[^>]*>/g, ""));
-  const text = untilStable(html, current => current.replace(/<(svg|script|style)\b[^>]*>[\s\S]*?<\/\1>/gi, ""))
+  // Replace with a space (collapsed below) so no new tag can form across the gap.
+  const text = html
+    .replace(/<(svg|script|style)\b[^>]*>[\s\S]*?<\/\1>/gi, " ")
     .replace(/<pre\b[^>]*>([\s\S]*?)<\/pre>/gi, (_, code) => {
       codeBlocks.push(decode(stripTags(code)));
       return `\n\nCANOPODCODEBLOCK${codeBlocks.length - 1}END\n\n`;
