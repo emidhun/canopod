@@ -81,7 +81,6 @@ async function main() {
     if (wanted("main-worktree")) await shot(page, "main-worktree");
     if (wanted("main-topbar")) await shot(page, "main-topbar", page.locator(".cxs-topbar"));
     if (wanted("main-sidebar")) await shot(page, "main-sidebar", page.locator(".cxs-side"));
-    if (wanted("main-rail")) await shot(page, "main-rail", page.locator(".cxs-rail"));
     if (wanted("main-statusbar")) await shot(page, "main-statusbar", page.locator(".cxs-statusbar"));
 
     // layouts: ⌘1 Logs, ⌘2 Terminal, ⌘3 Terminal + logs
@@ -185,6 +184,9 @@ async function main() {
     }
     await pause(900);
 
+    // feature/checkout has a database, so the rail shows its ⋯ overflow
+    if (wanted("main-rail")) await shot(page, "main-rail", page.locator(".cxs-rail"));
+
     if (wanted("worktree-menu")) {
       await page.locator('.cxs-acts .cx-ib[title="More"]').click();
       await page.waitForSelector(".cx-pop");
@@ -243,15 +245,6 @@ async function main() {
       await pause(300);
     }
 
-    if (wanted("modal-uncommitted")) {
-      await page.locator(".cxs-gc--dirty").click();
-      await page.waitForSelector(".cx-modal");
-      await pause(500);
-      await shot(page, "modal-uncommitted");
-      await page.keyboard.press("Escape");
-      await pause(300);
-    }
-
     if (wanted("pull-menu")) {
       await page.locator(".cxs-pullcaret").click();
       await page.waitForSelector(".cxs-pullpop");
@@ -275,6 +268,25 @@ async function main() {
       await pause(250);
     }
 
+    await ctx.close();
+  }
+
+  /* ── uncommitted changes, with the mock's demo file list seeded ──────── */
+  if (wanted("modal-uncommitted")) {
+    const { ctx, page } = await open("index.html?changes-demo=1");
+    await page.waitForSelector(".cxs-shell");
+    await pause(900);
+    // changes-demo also opens the dialog on load for the initial worktree
+    if (await page.locator(".cx-modal").count()) {
+      await page.keyboard.press("Escape");
+      await pause(300);
+    }
+    await page.locator('.cxs-wtr[title*="feature/checkout"]').first().click();
+    await pause(900);
+    await page.locator(".cxs-gc--dirty").click();
+    await page.waitForSelector(".cx-modal");
+    await pause(600);
+    await shot(page, "modal-uncommitted");
     await ctx.close();
   }
 

@@ -662,7 +662,7 @@ pub async fn switch_database(
 pub async fn set_service_port(
     app: AppHandle,
     svc_key: String,
-    port: u32,
+    port: Option<u32>,
 ) -> Result<(), CanopodError> {
     let context = runtime(&app);
     crate::operations::set_service_port(context, svc_key, port).await

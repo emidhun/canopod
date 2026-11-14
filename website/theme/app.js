@@ -24,11 +24,26 @@
   var menu = document.getElementById("menu");
   var side = document.getElementById("side");
   if (menu && side) {
+    var mobileNav = window.matchMedia("(max-width: 860px)");
+    function setMenu(open) {
+      side.classList.toggle("open", open);
+      menu.setAttribute("aria-expanded", String(open));
+      menu.setAttribute("aria-label", open ? "Close documentation navigation" : "Open documentation navigation");
+      side.inert = mobileNav.matches && !open;
+    }
+    setMenu(false);
+    mobileNav.addEventListener("change", function () { setMenu(false); });
     menu.addEventListener("click", function () {
-      side.classList.toggle("open");
+      setMenu(!side.classList.contains("open"));
     });
     side.addEventListener("click", function (e) {
-      if (e.target.tagName === "A") side.classList.remove("open");
+      if (e.target.closest("a")) setMenu(false);
+    });
+    document.addEventListener("keydown", function (e) {
+      if (e.key === "Escape" && side.classList.contains("open")) {
+        setMenu(false);
+        menu.focus();
+      }
     });
   }
 

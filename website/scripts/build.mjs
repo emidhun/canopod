@@ -2,6 +2,7 @@
 //
 //   node scripts/build.mjs            build content/*.md → site/
 //   node scripts/build.mjs --quiet    same, without the per-page log
+//   node scripts/build.mjs --split    website → site-web/, docs → site-docs/
 //
 // Every page in scripts/nav.mjs must have a matching content/<slug>.md, and
 // every !shot must have a light screenshot; missing ones are reported at the end
@@ -11,10 +12,19 @@ import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { NAV, FLAT } from "./nav.mjs";
 import { render, frontmatter, esc } from "./md.mjs";
+import { landingPage, HOME_TITLE, HOME_DESCRIPTION } from "./landing.mjs";
+import { marketingPages } from "./product-pages.mjs";
+import { productPage } from "./site-ui.mjs";
+import { metadata, writeDiscoveryFiles } from "./seo.mjs";
+import { routing } from "./urls.mjs";
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const CONTENT = join(ROOT, "content");
 const SITE = join(ROOT, "site");
+const OUTPUTS = routing.split
+  ? [{ section: "web", dir: join(ROOT, "site-web"), base: routing.webBase }, { section: "docs", dir: join(ROOT, "site-docs"), base: routing.docsBase }]
+  : [{ section: "combined", dir: SITE, base: routing.webBase }];
+const outputFor = slug => OUTPUTS.find(output => output.section === "combined" || output.section === routing.sectionFor(slug)).dir;
 const THEME = join(ROOT, "theme");
 const SHOTS = join(ROOT, "assets", "screens");
 const quiet = process.argv.includes("--quiet");
@@ -102,8 +112,7 @@ function page({ slug, title, description, bodyHtml, toc, prev, next, home }) {
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>${esc(title)} · Canopod docs</title>
-<meta name="description" content="${esc(description || "")}" />
+${metadata({slug, title: `${title} · Canopod docs`, description, version: VERSION})}
 <link rel="icon" type="image/png" sizes="32x32" href="assets/icons/favicon-32.png" />
 <link rel="icon" type="image/png" sizes="128x128" href="assets/icons/favicon-128.png" />
 <link rel="apple-touch-icon" href="assets/icons/apple-touch-icon.png" />
@@ -119,11 +128,12 @@ function page({ slug, title, description, bodyHtml, toc, prev, next, home }) {
 <body>
 <a class="skip" href="#main">Skip to content</a>
 <header class="hd">
-  <a class="brand" href="index.html">
+  <a class="brand" href="getting-started.html" aria-label="Canopod documentation home">
     ${BRANDMARK}
     <span>Canopod<span class="brand__d">docs</span></span>
   </a>
   <span class="ver">v${VERSION}</span>
+  <nav class="docs-product-nav" aria-label="Product navigation"><a href="features.html">Product</a><a href="canopod-mcp.html">MCP</a><a href="download.html">Download</a></nav>
   <div class="search">
     <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.5-3.5"/></svg>
     <input id="q" type="search" placeholder="Search documentation" autocomplete="off" aria-label="Search the documentation" />
@@ -133,12 +143,13 @@ function page({ slug, title, description, bodyHtml, toc, prev, next, home }) {
     <svg class="ic-sun" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="4.2"/><path d="M12 2.6v2M12 19.4v2M2.6 12h2M19.4 12h2M5.4 5.4l1.4 1.4M17.2 17.2l1.4 1.4M18.6 5.4l-1.4 1.4M6.8 17.2l-1.4 1.4"/></svg>
     <svg class="ic-moon" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M20 14.5A8.2 8.2 0 0 1 9.5 4a8.4 8.4 0 1 0 10.5 10.5Z"/></svg>
   </button>
-  <button id="menu" class="ib ib--menu" type="button" aria-label="Menu"><svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M4 7h16M4 12h16M4 17h16"/></svg></button>
+  <button id="menu" class="ib ib--menu" type="button" aria-label="Open documentation navigation" aria-controls="side" aria-expanded="false"><svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M4 7h16M4 12h16M4 17h16"/></svg></button>
 </header>
 <div class="shell">
-  <aside class="side" id="side">${sidebar(slug)}</aside>
+  <aside class="side" id="side"><nav class="docs-mobile-product-nav" aria-label="Product navigation"><a href="features.html">Product</a><a href="canopod-mcp.html">MCP</a><a href="download.html">Download</a></nav><nav aria-label="Documentation navigation">${sidebar(slug)}</nav></aside>
   <main class="main" id="main">
     <article class="doc${home ? " doc--home" : ""}">
+      <nav class="doc-breadcrumb" aria-label="Breadcrumb"><a href="index.html">Canopod</a><span aria-hidden="true">/</span><span aria-current="page">${esc(title)}</span></nav>
 ${bodyHtml}
       <div class="pnrow">${prevLink}${nextLink}</div>
       <footer class="foot">
@@ -171,11 +182,25 @@ function copyDir(from, to) {
   return n;
 }
 
+function redirectPage({ title, canonical, target = canonical }) {
+  const destination = JSON.stringify(target).replace(/</g, "\\u003c");
+  return `<!doctype html>
+<html lang="en" data-canopod-redirect><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>${esc(title)}</title><meta name="robots" content="noindex,follow">
+<link rel="canonical" href="${esc(canonical)}">
+<meta http-equiv="refresh" content="0;url=${esc(target)}">
+<script>location.replace(${destination} + location.search + location.hash);</script></head>
+<body><h1>${esc(title)}</h1><p><a href="${esc(target)}">Continue to the documentation.</a></p></body></html>\n`;
+}
+
 function build() {
-  rmSync(SITE, { recursive: true, force: true });
-  mkdirSync(SITE, { recursive: true });
+  for (const output of OUTPUTS) {
+    rmSync(output.dir, { recursive: true, force: true });
+    mkdirSync(output.dir, { recursive: true });
+  }
 
   const index = [];
+  const discoveryPages = [];
   for (let n = 0; n < FLAT.length; n++) {
     const { slug, label } = FLAT[n];
     const file = join(CONTENT, `${slug}.md`);
@@ -198,9 +223,10 @@ function build() {
       // a document you read down
       home: meta.layout === "home",
     });
-    writeFileSync(join(SITE, `${slug}.html`), out);
+    writeFileSync(join(outputFor(slug), routing.pagePath(slug)), routing.rewriteHtml(out, slug));
+    discoveryPages.push({slug, title: pageTitle, description: meta.description, markdown: body});
     index.push({
-      slug,
+      slug: routing.outputSlug(slug),
       title: pageTitle,
       group: FLAT[n].group,
       description: meta.description || "",
@@ -211,10 +237,33 @@ function build() {
         .replace(/\s+/g, " ")
         .slice(0, 1800),
     });
-    if (!quiet) console.log(`  ${slug}.html  (${toc.length} sections)`);
+    if (!quiet) console.log(`  ${routing.pagePath(slug)}  (${toc.length} sections)`);
   }
 
-  writeFileSync(join(SITE, "search-index.json"), JSON.stringify(index));
+  writeFileSync(join(outputFor("getting-started"), "search-index.json"), JSON.stringify(index));
+  const home = landingPage(VERSION);
+  writeFileSync(join(outputFor("index"), "index.html"), routing.rewriteHtml(home, "index"));
+  discoveryPages.unshift({slug: "index", title: HOME_TITLE, description: HOME_DESCRIPTION, markdown: htmlToMarkdown(home.match(/<main[^>]*>([\s\S]*?)<\/main>/)[1])});
+  const productPages = marketingPages(VERSION);
+  for (const entry of productPages) {
+    writeFileSync(join(outputFor(entry.slug), routing.pagePath(entry.slug)), routing.rewriteHtml(productPage({...entry, version: VERSION}), entry.slug));
+    discoveryPages.push({...entry, markdown: htmlToMarkdown(entry.body)});
+  }
+  if (routing.split) {
+    // Retain the original docs-home path for existing bookmarks. It is excluded
+    // from discovery files, while canonical metadata points to the docs root.
+    writeFileSync(join(outputFor("getting-started"), "getting-started.html"), redirectPage({
+      title: "Canopod documentation has moved", canonical: routing.pageUrl("getting-started"), target: "index.html",
+    }));
+    // GitHub Pages redirects the old repository URL onto its custom domain.
+    // Keep former /canopod/<doc>.html bookmarks working through that hop, then
+    // send readers to the documentation domain without indexing duplicate pages.
+    for (const { slug, title } of discoveryPages.filter(entry => routing.sectionFor(entry.slug) === "docs")) {
+      writeFileSync(join(outputFor("index"), `${slug}.html`), redirectPage({
+        title: `${title} — Canopod documentation`, canonical: routing.pageUrl(slug),
+      }));
+    }
+  }
 
   // Stylesheet = the base layout plus a skin appended after it, so a skin only
   // has to restate the tokens (and the few rules) it changes.
@@ -230,18 +279,54 @@ function build() {
     }
     css += `\n\n/* ── skin: ${skin} ─────────────────────────────────── */\n` + readFileSync(skinFile, "utf8");
   }
-  writeFileSync(join(SITE, "styles.css"), css);
-  copyFileSync(join(THEME, "app.js"), join(SITE, "app.js"));
-
-  const fonts = copyDir(join(ROOT, "assets", "fonts"), join(SITE, "assets", "fonts"));
-  copyDir(join(ROOT, "assets", "icons"), join(SITE, "assets", "icons"));
-  const shots = copyDir(SHOTS, join(SITE, "assets", "screens"));
-  if (!quiet && fonts) console.log(`  ${fonts} font files, skin "${skin}"`);
-
-  console.log(`\nBuilt ${index.length} pages, ${shots} screenshot files → site/`);
+  for (const output of OUTPUTS) {
+    const pages = discoveryPages.filter(entry => output.section === "combined" || routing.sectionFor(entry.slug) === output.section);
+    const discovery = writeDiscoveryFiles({siteDir: output.dir, pages, version: VERSION, section: output.section});
+    writeFileSync(join(output.dir, ".nojekyll"), "");
+    if (routing.split) writeFileSync(join(output.dir, "CNAME"), `${new URL(output.base).hostname}\n`);
+    if (output.section !== "docs") {
+      copyFileSync(join(THEME, "landing.css"), join(output.dir, "landing.css"));
+      copyFileSync(join(THEME, "landing.js"), join(output.dir, "landing.js"));
+    }
+    if (output.section !== "web") {
+      writeFileSync(join(output.dir, "styles.css"), css);
+      copyFileSync(join(THEME, "app.js"), join(output.dir, "app.js"));
+    }
+    const fonts = copyDir(join(ROOT, "assets", "fonts"), join(output.dir, "assets", "fonts"));
+    copyDir(join(ROOT, "assets", "icons"), join(output.dir, "assets", "icons"));
+    const shots = copyDir(SHOTS, join(output.dir, "assets", "screens"));
+    if (!quiet && fonts) console.log(`  ${fonts} font files, skin "${skin}"`);
+    console.log(`Built ${pages.length} pages, ${shots} screenshot files → ${output.dir.slice(ROOT.length + 1)}/`);
+    console.log(`Discovery: ${discovery.pages} canonical URLs at ${discovery.siteUrl}, sitemap, Markdown copies and llms files.`);
+  }
   if (missingShots.size) console.log(`Missing light screenshots (${missingShots.size}): ${[...missingShots].join(", ")}`);
   if (missingDark.size) console.log(`Missing dark screenshots (${missingDark.size}): ${[...missingDark].join(", ")}`);
   if (!missingShots.size && !missingDark.size) console.log("Every screenshot resolves in both themes.");
+}
+
+// Derive machine-readable product copy from the same HTML visitors see.
+// There is no separate hidden marketing article to keep in sync.
+function htmlToMarkdown(html) {
+  const codeBlocks = [];
+  const decode = value => value.replace(/&amp;/g, "&").replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&quot;/g, '"').replace(/&#39;/g, "'");
+  const text = html
+    .replace(/<(svg|script|style)\b[^>]*>[\s\S]*?<\/\1>/gi, "")
+    .replace(/<pre\b[^>]*>([\s\S]*?)<\/pre>/gi, (_, code) => {
+      codeBlocks.push(decode(code.replace(/<[^>]*>/g, "")));
+      return `\n\nCANOPODCODEBLOCK${codeBlocks.length - 1}END\n\n`;
+    })
+    .replace(/(^|>)([ \t]*)#/g, "$1$2\\#")
+    .replace(/<a\b[^>]*href="([^"]+)"[^>]*>([\s\S]*?)<\/a>/gi, (_, href, label) => ` [${label.replace(/<[^>]*>/g, " ").replace(/\s+/g, " ").trim()}](${href}) `)
+    .replace(/<h([1-6])\b[^>]*>([\s\S]*?)<\/h\1>/gi, (_, level, heading) => `\n\n${"#".repeat(Number(level))} ${heading}\n\n`)
+    .replace(/<img\b[^>]*alt="([^"]*)"[^>]*>/gi, (_, alt) => `\n${alt}\n`)
+    .replace(/<code\b[^>]*>([\s\S]*?)<\/code>/gi, "`$1`")
+    .replace(/<li\b[^>]*>/gi, "\n- ")
+    .replace(/<br\s*\/?\s*>/gi, " ")
+    .replace(/<\/(?:p|div|section|article|figure|li|dt|dd|ol|ul|summary)>/gi, "\n\n")
+    .replace(/<[^>]+>/g, " ");
+  return decode(text).split("\n").map(line => line.replace(/[ \t]+/g, " ").trim()).join("\n")
+    .replace(/\n{3,}/g, "\n\n").trim()
+    .replace(/CANOPODCODEBLOCK(\d+)END/g, (_, number) => "```\n" + codeBlocks[Number(number)].trim() + "\n```");
 }
 
 build();

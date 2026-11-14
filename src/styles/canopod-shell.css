@@ -1907,7 +1907,8 @@
   border: var(--border-w) solid var(--border);
   border-radius: var(--r-pop);
   box-shadow: var(--shadow-pop);
-  overflow: hidden;
+  overflow-x: hidden;
+  overflow-y: auto;
   animation: cx-pop var(--dur) var(--ease-pop);
   font-family: var(--sans);
 }

@@ -1620,15 +1620,26 @@ pub async fn switch_database(
     }
 }
 
-/// Override a service's port. Validates range + cross-worktree conflict, updates
+/// Override a service's port, or clear it with None. Validates range + cross-worktree conflict, updates
 /// the override, re-derives env (so dependent keys follow), and auto-restarts
 /// the worktree's running services so the change takes effect.
 pub async fn set_service_port(
     app: RuntimeContext,
     svc_key: String,
-    port: u32,
+    port: Option<u32>,
 ) -> Result<(), CanopodError> {
-    if !(1024..=65535).contains(&port) {
+    let (wt_key, repo_id, repo_path) = app
+        .state::<AppState>()
+        .service_context(&svc_key)
+        .ok_or_else(|| CanopodError::not_found("unknown service"))?;
+    let _lease = crate::state::try_lease(&app, &wt_key, "change service port")?;
+    let effective_port = port.or_else(|| {
+        let state = app.state::<AppState>();
+        let tree = state.tree.read();
+        tree.iter().flat_map(|r| &r.worktrees).flat_map(|w| &w.services)
+            .find(|s| s.svc_key == svc_key).and_then(|s| s.derived_port)
+    }).ok_or_else(|| CanopodError::invalid_input("Service has no derived port"))?;
+    if !(1024..=65535).contains(&effective_port) {
         return Err(CanopodError::invalid_input(
             "Port must be between 1024 and 65535",
         ));
@@ -1640,9 +1651,9 @@ pub async fn set_service_port(
         for r in tree.iter() {
             for w in r.worktrees.iter() {
                 for s in w.services.iter() {
-                    if s.svc_key != svc_key && s.port == Some(port) {
+                    if s.svc_key != svc_key && s.port == Some(effective_port) {
                         return Err(CanopodError::conflict(format!(
-                            "Port {port} is already used by {} ({})",
+                            "Port {effective_port} is already used by {} ({})",
                             s.name, w.branch
                         )));
                     }
@@ -1650,27 +1661,26 @@ pub async fn set_service_port(
             }
         }
     }
-    let (wt_key, repo_id, repo_path) = app
-        .state::<AppState>()
-        .service_context(&svc_key)
-        .ok_or_else(|| CanopodError::not_found("unknown service"))?;
-
-    // record the override + persist
+    // Persist before publishing the new override. None really removes it, so
+    // future base-port/index changes continue to derive the default.
     {
         let state = app.state::<AppState>();
-        state
-            .runtime
-            .write()
-            .port_overrides
-            .insert(svc_key.clone(), port);
-        let rt = state.runtime.read().clone();
-        let _ = settings::save_runtime(&app, &rt);
+        let mut runtime = state.runtime.write();
+        let mut next = runtime.clone();
+        if let Some(port) = port {
+            next.port_overrides.insert(svc_key.clone(), port);
+        } else {
+            next.port_overrides.remove(&svc_key);
+        }
+        settings::save_runtime(&app, &next).map_err(CanopodError::internal)?;
+        *runtime = next;
     }
 
     // re-derive .env (TOOLJET_SERVER_PORT etc.) from the declarative env block
     let vars = crate::state::worktree_vars(&app, &repo_id, &wt_key, false);
-    let _ = crate::setup::reapply_provision(&wt_key, &repo_path, &vars);
+    let provision = crate::setup::reapply_provision(&wt_key, &repo_path, &vars);
     refresh_tree(&app).await.map_err(CanopodError::internal)?;
+    provision.map_err(|e| CanopodError::internal(format!("Port saved, but environment update failed: {e}")))?;
 
     // auto-restart running services of this worktree to apply the new port(s)
     let mut errors: Vec<String> = Vec::new();

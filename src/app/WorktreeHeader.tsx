@@ -388,6 +388,7 @@ export default function WorktreeHeader({
             </div>
             {pullOpen && (
               <SubmoduleMenu
+                anchor={pullRef}
                 wtKey={wt.wtKey}
                 subs={subs}
                 pulling={pulling}

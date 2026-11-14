@@ -391,7 +391,7 @@ export const ipc = {
   exportDatabase: (wtKey: string, filePath: string) => invoke<void>("export_database", { wtKey, filePath }),
   restoreDatabase: (wtKey: string, filePath: string, options?: { target: string; mode: "replace" | "create"; activate: boolean }) => invoke<void>("restore_database", { wtKey, filePath, options: options ?? null }),
   switchDatabase: (wtKey: string, dbName: string) => invoke<void>("switch_database", { wtKey, dbName }),
-  setServicePort: (svcKey: string, port: number) => invoke<void>("set_service_port", { svcKey, port }),
+  setServicePort: (svcKey: string, port: number | null) => invoke<void>("set_service_port", { svcKey, port }),
   runMigration: (wtKey: string) => invoke<void>("run_migration", { wtKey }),
   runCustomCommand: (wtKey: string, command: string) => invoke<void>("run_custom_command", { wtKey, command }),
 

@@ -112,7 +112,7 @@ body { font-size: 15.5px; line-height: 1.7; letter-spacing: -0.006em; }
 .navgrp li a.on { background: var(--accent-dim); color: var(--accent-2); font-weight: 650; }
 
 /* headings do the work: large, tight, no rules */
-.doc h1 { font-size: 44px; line-height: 1.08; letter-spacing: -0.035em; font-weight: 720; margin-bottom: 16px; }
+.doc h1 { font-size: clamp(32px, 4vw, 44px); line-height: 1.08; letter-spacing: -0.035em; font-weight: 720; margin-bottom: 16px; }
 .doc h1 + p { font-size: 19px; line-height: 1.6; color: var(--tx-2); margin-bottom: 34px; }
 .doc h2 { font-size: 28px; letter-spacing: -0.025em; font-weight: 690; border-top: 0; padding-top: 0; margin-top: 56px; }
 .doc h3 { font-size: 19px; letter-spacing: -0.015em; font-weight: 660; margin-top: 34px; }
@@ -150,7 +150,7 @@ table { font-size: 14.5px; }
 .pn b { font-size: 15px; font-weight: 640; }
 
 /* ── landing page ─────────────────────────────────────────────────── */
-.doc--home h1 { font-size: 56px; line-height: 1.03; letter-spacing: -0.04em; font-weight: 730; }
+.doc--home h1 { font-size: clamp(32px, 4.5vw, 56px); line-height: 1.08; letter-spacing: -0.04em; font-weight: 730; }
 .doc--home h1 + p { font-size: 21px; line-height: 1.55; }
 .btn { border-radius: 12px; padding: 12px 22px; box-shadow: var(--shadow); font-size: 15px; }
 .btn--primary { box-shadow: 0 2px 8px color-mix(in srgb, var(--accent) 35%, transparent); }

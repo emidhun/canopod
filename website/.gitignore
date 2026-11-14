@@ -2,6 +2,8 @@
 # `node scripts/build.mjs`, and rebuilt by the Pages workflow on every push.
 # Committing it would duplicate every screenshot in the history.
 site/
+site-web/
+site-docs/
 
 # Raw demo recordings + frame checkpoints from scripts/demo.mjs. The finished
 # GIFs live in docs/assets/ (committed); these webms are just their source.

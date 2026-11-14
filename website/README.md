@@ -1,6 +1,6 @@
-# Canopod documentation
+# Canopod website
 
-The documentation website for [Canopod](https://github.com/emidhun/canopod) — a menu-bar
+The product website and documentation for [Canopod](https://github.com/emidhun/canopod) — a menu-bar
 git-worktree and dev-service manager. Written from the app's own source at version **0.5.0**, so
 anything not yet wired up is documented as such rather than described as if it worked.
 
@@ -10,14 +10,31 @@ No dependencies. No `npm install`.
 
 ```sh
 node scripts/build.mjs      # content/*.md → site/
+node scripts/check.mjs      # links, metadata, structured data, discovery, controls
 node scripts/serve.mjs      # http://localhost:4180, rebuilds on every page load
+
+# Separate production domains:
+node scripts/build.mjs --split
+node scripts/check.mjs --split
 ```
+
+Production publishes the product site at `https://canopod.com/` and documentation at
+`https://docs.canopod.com/`. See [DEPLOYMENT.md](DEPLOYMENT.md) for the two GitHub Pages
+repositories, deployment steps, and the exact Namecheap DNS records.
 
 ## Layout
 
 ```text
 plan.md                  the plan this repo was built to, including the feature inventory
-content/*.md             33 pages of documentation (Markdown + a few shortcodes)
+content/*.md             34 pages of documentation (Markdown + a few shortcodes)
+scripts/landing.mjs       product homepage, benefits, interactive examples and downloads
+scripts/product-pages.mjs product, MCP, workflow and download pages
+scripts/site-ui.mjs       shared navigation, footer and product-page layout
+scripts/sections.mjs      shared homepage MCP and download sections
+scripts/seo.mjs           canonical metadata, JSON-LD, sitemap and text exports
+scripts/check.mjs         validates all generated pages and discovery output
+theme/landing.css         responsive homepage design, independent of documentation skins
+theme/landing.js          accessible example/platform tabs, mobile navigation, install-copy action
 scripts/nav.mjs          the information architecture — sidebar order and prev/next
 scripts/md.mjs           the Markdown renderer (a deliberate subset)
 scripts/build.mjs        content + theme + screenshots → site/
@@ -30,7 +47,55 @@ assets/fonts/            Inter + JetBrains Mono, vendored from the app (88 KB)
 assets/screens/light/    40 light-mode screenshots
 assets/screens/dark/     40 dark-mode screenshots (same filenames)
 site/                    build output (not committed — regenerate with scripts/build.mjs)
+site-web/                split website output for canopod.com (ignored)
+site-docs/               split documentation output for docs.canopod.com (ignored)
 ```
+
+`index.html` is the product homepage; `getting-started.html` is the documentation home.
+The product site also includes `features.html`, `canopod-mcp.html`, `workflows.html`, and
+`download.html`. `mcp.html` remains the detailed setup guide and 15-tool reference.
+The homepage uses a real app screenshot, existing local fonts and brandmark. The terminal, log,
+and agent-handoff feature cards are responsive HTML/CSS examples, labeled as illustrations rather
+than live application state. All asset and documentation paths stay relative, so the whole site
+also works under the GitHub Pages subpath.
+The version in `scripts/build.mjs` controls both documentation labels and homepage release links.
+Downloads use the same release filenames documented in the repository README. No third-party
+scripts, analytics, fonts, or runtime dependencies are added.
+
+## Search and AI discovery
+
+All 39 pages are rendered as complete static HTML. Each has a unique title and description,
+canonical URL, Open Graph and Twitter text metadata, a Markdown alternate, and JSON-LD for the
+website and page. Inner pages include breadcrumbs. The homepage also describes Canopod as a free
+SoftwareApplication, with platform limitations and no invented ratings.
+
+The build generates `sitemap.xml`, `robots.txt`, `llms.txt`, `llms-full.txt`, and `content/<slug>.md`.
+Product text exports come from the visible HTML; documentation exports use the same Markdown source
+as the pages. `llms.txt` is an optional reading convenience, not a standard required by search
+engines or a guarantee of AI recommendations.
+
+Combined builds use the canonical base `https://emidhun.github.io/canopod/`. Split builds default
+to `https://canopod.com/` for marketing pages and `https://docs.canopod.com/` for documentation.
+`CANOPOD_SITE_URL` and `CANOPOD_DOCS_URL` override those production bases; use identical values
+for build and checks. The website workflow reads repository variables with those names.
+Do not set them to localhost. The local preview deliberately shows deployment canonical URLs.
+Each split output has its own sitemap, robots file, metadata, Markdown copies and AI reading index.
+
+After publishing:
+
+- Verify the public pages and sitemap are reachable, then submit the sitemap in Google Search Console
+  and the search management tools you use. Account ownership verification must be done in those services.
+- On a root-domain deployment, the generated `robots.txt` is in the correct location. On GitHub Pages
+  under `/canopod/`, crawlers only use the **origin-root** `/robots.txt`; add a sitemap reference there
+  if you control that separate site, or submit the sitemap directly. The generated subpath file
+  documents this limitation and does not override root crawling rules.
+- When the domain changes, rebuild with the new canonical base and configure redirects on the host.
+- Measure actual search impressions and performance after deployment. Passing local checks does not
+  guarantee indexing, rankings, rich results, or inclusion in AI answers.
+
+This follows [Google's AI search guidance](https://developers.google.com/search/docs/appearance/ai-features):
+the useful foundations are accessible pages, crawlable links, clear text and accurate structured data.
+The site avoids keyword stuffing, fabricated reviews, hidden articles, and invented modification dates.
 
 ## Looks
 

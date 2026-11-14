@@ -1,9 +1,12 @@
 import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { expect, it, vi } from 'vitest';
+import { beforeEach, expect, it, vi } from 'vitest';
 import StatusBar from './StatusBar';
 import { useStore } from '../../store';
 import type { WorktreeNode } from '../../types';
+beforeEach(() => {
+  Object.defineProperty(HTMLElement.prototype, 'showPopover', {configurable:true,value:function(this:HTMLElement) {this.style.display='block';}});
+});
 const wt = { wtKey: '/repo', branch: 'checkout', services: [], git: { ahead: 7, behind: 2, dirty: true, lastCommitTs: 0, lastCommitMsg: 'latest' } } as unknown as WorktreeNode;
 const props = { wt, view: 'wt' as const, attn: [], panes: ['shell'] as ('shell' | 'logs')[], onLayout: vi.fn(), onAttn: vi.fn(), worktreeCount: 1, repoCount: 1 };
 it('keeps the labelled Pull action and separate submodule menu without duplicating dirty indicators', async () => {

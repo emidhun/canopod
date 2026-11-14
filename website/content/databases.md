@@ -123,5 +123,7 @@ spinner and the completion toast. Useful when you don't need the main window.
 Switch, snapshot, export, restore and reset assume **Postgres**. Another database still works fine as a
 service; these particular actions just don't apply to it.
 
-There's no snapshot list, because snapshots are databases on the server that you named. And the
-database tools and dialog only appear once a worktree actually has a `PG_DB` in its `.env`.
+There's no snapshot list, because snapshots are databases on the server that you named. The rail's
+**Database tools** shortcut only appears once a worktree has a `PG_DB` in its `.env`. The dialog itself
+is always available from the worktree ⋯ menu → **Database…**: without a configured database, switch,
+snapshot, migration and reset are disabled, and **Restore from file…** still works.

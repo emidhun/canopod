@@ -8,7 +8,7 @@
 import { useEffect, useRef } from "react";
 import { Terminal, type IBufferLine, type ILink } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
-import { WebglAddon } from "@xterm/addon-webgl";
+import { terminalRenderer } from "./terminalRenderer";
 import { WebLinksAddon } from "@xterm/addon-web-links";
 import { errText, hasBackend, ipc, on, type TermCfg } from "../ipc";
 import { useStore } from "../store";
@@ -117,6 +117,9 @@ export default function TerminalPane({
 }) {
   const hostRef = useRef<HTMLDivElement>(null);
   const termRef = useRef<Terminal | null>(null);
+  const rendererRef = useRef<ReturnType<typeof terminalRenderer> | null>(null);
+  const hiddenRef = useRef(hidden);
+  hiddenRef.current = hidden;
   const fitRef = useRef<FitAddon | null>(null);
   const imageInputActive = useRef(false);
   imageInputActive.current = !hidden && !readOnly;
@@ -234,15 +237,7 @@ export default function TerminalPane({
       },
     });
 
-    // GPU rendering — far faster under heavy output. Fall back to the DOM
-    // renderer if WebGL is unavailable or its context is lost.
-    try {
-      const webgl = new WebglAddon();
-      webgl.onContextLoss(() => webgl.dispose());
-      term.loadAddon(webgl);
-    } catch {
-      /* no WebGL — DOM renderer stays */
-    }
+    rendererRef.current = terminalRenderer(term);
 
     let disposed = false;
     let unlistenData: (() => void) | undefined;
@@ -359,7 +354,7 @@ export default function TerminalPane({
 
     // keep the PTY sized to the widget
     const ro = new ResizeObserver(() => {
-      if (hidden || !host.clientWidth || !host.clientHeight) return;
+      if (hiddenRef.current || !host.clientWidth || !host.clientHeight) return;
       safeFit();
       if (!readOnly) ipc.terminalResize(termId, term.cols, term.rows).catch(() => {});
     });
@@ -376,6 +371,8 @@ export default function TerminalPane({
       fileLinks.dispose();
       onDataDisp.dispose();
       ro.disconnect();
+      rendererRef.current?.hide();
+      rendererRef.current = null;
       term.dispose();
       termRef.current = null;
       fitRef.current = null;
@@ -385,19 +382,21 @@ export default function TerminalPane({
 
   // re-fit when the pane becomes visible (tab toggle) or the lane resizes
   useEffect(() => {
-    if (hidden) return;
+    const renderer = rendererRef.current;
+    if (hidden) { renderer?.hide(); return; }
+    renderer?.show();
     const id = requestAnimationFrame(() => {
       const host = hostRef.current;
       if (!host || !fitRef.current || !termRef.current || !host.clientWidth || !host.clientHeight) return;
       try {
         fitRef.current.fit();
-        ipc.terminalResize(termId, termRef.current.cols, termRef.current.rows).catch(() => {});
+        if (!readOnly) ipc.terminalResize(termId, termRef.current.cols, termRef.current.rows).catch(() => {});
       } catch {
         /* ignore */
       }
     });
-    return () => cancelAnimationFrame(id);
-  }, [hidden, termId]);
+    return () => { cancelAnimationFrame(id); renderer?.hide(); };
+  }, [hidden, termId, cwd, command, readOnly]);
 
   return <div ref={hostRef} className="xterm-host" />;
 }

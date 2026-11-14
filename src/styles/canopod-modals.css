@@ -271,6 +271,7 @@
   margin-top: var(--sp-hair);
 }
 .cxm-prog__lines {
+  overflow-wrap: anywhere;
   min-width: 0;
   flex: 1;
   font: var(--fs-small) / 1.65 var(--mono);

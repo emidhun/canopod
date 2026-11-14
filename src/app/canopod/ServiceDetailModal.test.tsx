@@ -24,3 +24,26 @@ it('reflects a service crash while open and restarts the selected service',async
   expect(screen.getByText(/exited with code 1/)).toBeInTheDocument();expect(screen.getByText('database connection failed')).toBeInTheDocument();
   await user.click(screen.getByRole('button',{name:/^Restart/}));expect(useStore.getState().restartService).toHaveBeenCalledWith('server');
 });
+
+it('clears the saved override and allows retry after a reset failure', async()=>{
+  const override = {...wt,services:[{...wt.services[0],port:4050}]};
+  useStore.setState({tree:[{...repo,worktrees:[override]}]});
+  vi.mocked(bridge.ipc.setServicePort).mockRejectedValueOnce(new Error('reset failed'));
+  const user=userEvent.setup(),close=vi.fn();
+  render(<ServiceDetailModal wt={override} svcKey="server" onClose={close}/>);
+  await user.click(screen.getByRole('button',{name:/Reset to default/}));
+  expect(bridge.ipc.setServicePort).toHaveBeenCalledWith('server',null);
+  expect(await screen.findByRole('alert')).toHaveTextContent('reset failed');
+  expect(close).not.toHaveBeenCalled();
+  await user.click(screen.getByRole('button',{name:/Reset to default/}));
+  await waitFor(()=>expect(close).toHaveBeenCalledTimes(1));
+});
+it('blocks repeated port mutations while resetting', async()=>{
+  let resolve!: ()=>void;
+  vi.mocked(bridge.ipc.setServicePort).mockReturnValue(new Promise<void>(done=>{resolve=done;}));
+  const user=userEvent.setup();render(<ServiceDetailModal wt={wt} svcKey="server" onClose={vi.fn()}/>);
+  const reset=screen.getByRole('button',{name:/Reset to default/});
+  await user.click(reset);await user.click(reset);
+  expect(reset).toBeDisabled();expect(bridge.ipc.setServicePort).toHaveBeenCalledTimes(1);
+  await act(async()=>resolve());
+});
