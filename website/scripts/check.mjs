@@ -7,7 +7,9 @@ import { fileURLToPath } from 'node:url';
 
 const website = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const split = process.argv.includes('--split');
-const decode = text => text.replace(/&amp;/g, '&').replace(/&quot;/g, '"').replace(/&#39;/g, "'");
+const entities = { amp: '&', quot: '"', '#39': "'" };
+// One pass, so "&amp;quot;" decodes to the literal text "&quot;".
+const decode = text => text.replace(/&(amp|quot|#39);/g, (_, name) => entities[name]);
 const marketingSlugs = ['index', 'features', 'canopod-mcp', 'workflows', 'download'];
 const docSlugs = readdirSync(join(website, 'content')).filter(file => file.endsWith('.md')).map(file => file.replace(/\.md$/, ''));
 

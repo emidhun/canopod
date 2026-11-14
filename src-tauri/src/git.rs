@@ -46,7 +46,8 @@ async fn run_git_with_timeout(cwd: &str, args: &[&str], dur: Duration) -> Result
         // Clear the inherited multi-valued helper list before selecting one.
         cmd.args(["-c", "credential.helper="]).arg("-c").arg(format!("credential.helper={helper}"));
     }
-    cmd.arg("-C").arg(cwd).args(args);
+    // A directory is process context, never a command-line option.
+    cmd.current_dir(cwd).args(args);
     if !ssh_key.is_empty() {
         // IdentitiesOnly stops ssh-agent offering every other key first, which
         // is what makes "I selected a key and it still used the wrong one"
@@ -851,6 +852,24 @@ pub async fn remove_worktree(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[tokio::test]
+    async fn git_directory_is_literal_and_missing_paths_fail_closed() {
+        let root = std::env::temp_dir().join(format!("canopod-git-literal-{}", std::process::id()));
+        std::fs::create_dir_all(&root).unwrap();
+        // Includes whitespace, quotes and shell metacharacters. Nothing in the
+        // directory name may be interpreted as an option or shell expression.
+        let directory = root.join("--help 'quoted' $HOME ; echo injected");
+        std::fs::create_dir(&directory).unwrap();
+        let cwd = directory.to_str().unwrap();
+        run_git(cwd, &["init"]).await.unwrap();
+        assert!(directory.join(".git").is_dir());
+        let actual = run_git(cwd, &["rev-parse", "--show-toplevel"]).await.unwrap();
+        let actual = std::fs::canonicalize(actual.trim()).unwrap();
+        assert_eq!(actual, std::fs::canonicalize(&directory).unwrap());
+        assert!(run_git(root.join("missing").to_str().unwrap(), &["status"]).await.is_err());
+        std::fs::remove_dir_all(root).unwrap();
+    }
 
     #[test]
     fn parses_worktree_porcelain() {

@@ -231,6 +231,15 @@ fn windows_link_count_is_safe(count: u32, require_linked: bool) -> bool {
 
 fn denied(message: &'static str) -> io::Error { io::Error::new(io::ErrorKind::PermissionDenied, message) }
 
+/// ACCESS_ALLOWED_ACE has an 8-byte header/mask before its variable SID.
+/// Validate the entire SID extent before any Win32 SID API reads it.
+#[cfg(any(windows, test))]
+fn windows_ace_sid_length(ace_size: usize, sub_authorities: u8) -> Option<usize> {
+    if sub_authorities > 15 { return None; }
+    let sid_length = 8 + usize::from(sub_authorities) * 4;
+    (ace_size >= 8 + sid_length).then_some(sid_length)
+}
+
 #[cfg(all(feature = "desktop", windows))]
 pub(crate) fn create_private_config(path: &Path) -> io::Result<File> {
     platform::create_private_config(path)
@@ -248,6 +257,16 @@ mod tests {
         }
     }
     impl Drop for Fixture { fn drop(&mut self) { let _ = fs::remove_dir_all(&self.0); } }
+
+    #[test]
+    fn windows_ace_sid_extent_rejects_truncated_or_oversized_sids() {
+        assert_eq!(windows_ace_sid_length(20, 1), Some(12));
+        assert_eq!(windows_ace_sid_length(16, 0), Some(8));
+        assert_eq!(windows_ace_sid_length(15, 0), None);
+        assert_eq!(windows_ace_sid_length(19, 1), None);
+        assert_eq!(windows_ace_sid_length(76, 15), Some(68));
+        assert_eq!(windows_ace_sid_length(80, 16), None);
+    }
 
     #[test]
     fn windows_link_counts_allow_detached_readers_only() {
